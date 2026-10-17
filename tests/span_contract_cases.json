@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "cases": [
+    {"id": "new_name_with_tool", "messages": [{"role": "user", "content": "Me llamo Mateo."}, {"role": "assistant", "content": "Encantada, Mateo."}, {"role": "user", "content": "¿Cómo me llamo?"}], "expected": {"kind": "reply", "contains": "mateo"}},
+    {"id": "five_minutes", "messages": [{"role": "user", "content": "Avísame dentro de cinco minutos."}], "expected": {"kind": "tool", "seconds": 300}},
+    {"id": "two_hours", "messages": [{"role": "user", "content": "Necesito una cuenta regresiva de dos horas."}], "expected": {"kind": "tool", "seconds": 7200}},
+    {"id": "seventy_seconds", "messages": [{"role": "user", "content": "Pon una alarma para dentro de setenta segundos."}], "expected": {"kind": "tool", "seconds": 70}},
+    {"id": "negation", "messages": [{"role": "user", "content": "No pongas ninguna cuenta regresiva de cinco minutos."}], "expected": {"kind": "reply"}},
+    {"id": "missing", "messages": [{"role": "user", "content": "Me gustaría poner un temporizador."}], "expected": {"kind": "reply"}}
+  ]
+}

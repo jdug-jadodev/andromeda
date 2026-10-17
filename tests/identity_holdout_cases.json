@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "conversations": [
+    {"id": "camila", "turns": [
+      {"id": "introduction", "text": "Soy Camila, mi gata se llama Menta y prefiero que me digas Cami.", "expected": {"type": "reply"}},
+      {"id": "name_and_nickname", "text": "¿Cuál es mi nombre y cómo prefiero que me llames?", "expected": {"type": "reply", "contains_all": ["camila", "cami"]}},
+      {"id": "pet", "text": "¿Cómo se llama mi gata?", "expected": {"type": "reply", "contains": "menta"}},
+      {"id": "assistant_name", "text": "¿Cuál es tu nombre?", "expected": {"type": "reply", "contains": "andromeda"}}
+    ]},
+    {"id": "hugo", "turns": [
+      {"id": "introduction", "text": "Me llamo Hugo. Mi hermana Laura me regaló una planta.", "expected": {"type": "reply"}},
+      {"id": "person_roles", "text": "¿Quién es Laura y cómo me llamo yo?", "expected": {"type": "reply", "contains_all": ["hermana", "laura", "hugo"]}},
+      {"id": "separate_identities", "text": "Mi apodo es Hache. No cambies tu nombre. ¿Cómo nos llamamos tú y yo?", "expected": {"type": "reply", "contains": "andromeda", "contains_any": ["hugo", "hache"]}},
+      {"id": "ownership", "text": "¿La planta es tuya o mía?", "expected": {"type": "reply", "contains_any": ["tuya", "tu planta", "te pertenece", "es tu"]}}
+    ]}
+  ]
+}

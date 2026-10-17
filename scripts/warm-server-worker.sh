@@ -23,11 +23,45 @@ case "$MODEL_ID" in
   lfm) MODEL=/data/local/doha-inference/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf ;;
   qwen3) MODEL=/data/local/doha-inference/Qwen3-0.6B-Q4_K_M.gguf ;;
   qwen17) MODEL=/data/local/doha-inference/Qwen_Qwen3-1.7B-Q4_K_M.gguf ;;
+  qwen17_q8) MODEL=/data/local/doha-inference/Qwen_Qwen3-1.7B-Q8_0.gguf ;;
+  qwen35) MODEL=/data/local/doha-inference/Qwen3.5-2B-Q4_K_M.gguf ;;
   *) exit 2 ;;
 esac
 PID=''
 KV_TYPE=${5:-f16}
 case "$KV_TYPE" in f16|f32) ;; *) exit 2 ;; esac
+CACHE_POLICY=${6:-advanced}
+MICROBATCH=16
+case "$CACHE_POLICY" in
+  advanced) ;;
+  simple) CACHE=0; CHECKPOINTS=0 ;;
+  tokenwise) MICROBATCH=1 ;;
+  hybrid) [ "$MODEL_ID" = qwen35 ] || exit 2; CACHE=64; CHECKPOINTS=4; STEP=16 ;;
+  *) exit 2 ;;
+esac
+THINK_BUDGET=${7:-0}
+case "$THINK_BUDGET" in
+  0) THINK_MODE=off ;;
+  32) THINK_MODE=on ;;
+  *) exit 2 ;;
+esac
+RUNTIME_CONTROL=${8:-baseline}
+LOG_MODE=${9:-normal}
+set --
+case "$RUNTIME_CONTROL" in
+  baseline) ;;
+  no_repack) set -- --no-repack ;;
+  no_flash) set -- --flash-attn off ;;
+  batch16) [ "$MODEL_ID" = qwen17 ] || exit 2; MICROBATCH=16 ;;
+  batch1) [ "$MODEL_ID" = qwen35 ] || exit 2; MICROBATCH=1 ;;
+  greedy) ;; # Request sampling control only; no runtime/kernel changes.
+  *) exit 2 ;;
+esac
+case "$LOG_MODE" in
+  normal) ;;
+  audit) set -- "$@" --log-verbosity 4 ;;
+  *) exit 2 ;;
+esac
 cleanup() {
   if [ -n "$PID" ]; then
     kill -TERM "$PID" 2>/dev/null || true
@@ -45,8 +79,9 @@ export LD_LIBRARY_PATH=$BIN
   --host 127.0.0.1 --port 11435 --api-key-file "$WORK/key" \
   --no-webui --no-slots --no-ui-mcp-proxy --threads-http 1 \
   --cache-ram "$CACHE" --no-cache-idle-slots --cache-prompt --poll 0 --poll-batch 0 \
-  -b 256 -ub 16 --ctx-checkpoints "$CHECKPOINTS" --checkpoint-min-step "$STEP" \
-  -n 96 --reasoning off --jinja > "$WORK/server.log" 2>&1 &
+  -b 256 -ub "$MICROBATCH" --ctx-checkpoints "$CHECKPOINTS" --checkpoint-min-step "$STEP" \
+  -n 96 --reasoning "$THINK_MODE" --reasoning-budget "$THINK_BUDGET" \
+  --reasoning-format deepseek --no-reasoning-preserve --jinja "$@" > "$WORK/server.log" 2>&1 &
 PID=$!
 echo "$PID" > "$WORK/server.pid"
 started=$(date +%s)

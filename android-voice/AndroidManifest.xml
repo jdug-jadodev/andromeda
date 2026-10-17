@@ -1,12 +1,13 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
+    android:versionCode="3" android:versionName="0.3.0-wake-test">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <application android:label="Andrómeda · piloto de voz" android:theme="@android:style/Theme.Material.NoActionBar"
+    <application android:label="Andrómeda · prototipo" android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:debuggable="true" android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="sensorLandscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -25,4 +26,6 @@
         android:label="Pruebas aisladas de temporizadores" android:functionalTest="true" />
     <instrumentation android:name=".PrepareCancelTimerInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Preparar timer real solo con consentimiento" android:functionalTest="true" />
+    <instrumentation android:name=".FaceInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Interfaz sin micrófono ni acciones" android:functionalTest="true" />
 </manifest>

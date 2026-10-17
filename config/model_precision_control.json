@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "status": "completed_neither_precision_approved_for_voice",
+  "hypothesis": "Compare Q4_K_M against Q8_0 for the same Qwen3 1.7B base and frozen conversation-only cases; distinguish precision sensitivity without assuming a universal model or engine fix.",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "repository": "bartowski/Qwen_Qwen3-1.7B-GGUF",
+  "revision": "dcb19155b962dbb6389f4691a982043a8e651022",
+  "fixture": "tests/conversation_only_cases.json",
+  "fixture_sha256": "d3cb1a9816ae57d1518dd9ecf5295b703b7737d6bb8c3b24b9046180b71ca63b",
+  "shared_settings": {
+    "context": 2048,
+    "threads": 4,
+    "microbatch": 1,
+    "kv_type": "f16",
+    "thinking": false,
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "min_p": 0,
+    "seed": 42,
+    "max_output_tokens": 96
+  },
+  "artifacts": [
+    {
+      "profile": "conversation_only",
+      "file": "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
+      "bytes": 1282439584,
+      "sha256": "72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb"
+    },
+    {
+      "profile": "conversation_only_q8",
+      "file": "Qwen_Qwen3-1.7B-Q8_0.gguf",
+      "bytes": 2165039520,
+      "sha256": "74bb7c53538ab2cc81b93f0c64da14a503159de68cff3c6770428d3850479db3"
+    }
+  ]
+}

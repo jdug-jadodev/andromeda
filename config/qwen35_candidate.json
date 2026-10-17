@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "status": "evaluated_not_approved_for_voice_official_or_zero_presence_penalty",
+  "base_model": "Qwen/Qwen3.5-2B",
+  "base_revision_reviewed": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+  "license": "Apache-2.0",
+  "repository": "unsloth/Qwen3.5-2B-GGUF",
+  "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae",
+  "file": "Qwen3.5-2B-Q4_K_M.gguf",
+  "bytes": 1280835840,
+  "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+  "scope": "Text only; no projector, microphone, tools, Internet inference or action executor.",
+  "sampling_source": "https://huggingface.co/Qwen/Qwen3.5-2B/blob/15852e8c16360a2fea060d615a32b45270f8a8fc/README.md#best-practices",
+  "sampling_profile": "qwen35_non_thinking",
+  "sampling_control": {
+    "profile": "qwen35_no_penalty",
+    "only_changed_parameter": "presence_penalty",
+    "baseline": 2.0,
+    "control": 0.0,
+    "hypothesis": "Check whether the high presence penalty harms repetition of names/facts and coherence; preserve all questions, weights and remaining settings."
+  },
+  "runtime": {
+    "engine": "llama.cpp b11669 Android ARM64",
+    "context": 2048,
+    "threads": 4,
+    "microbatch": 16,
+    "kv_type": "f16",
+    "cache_policy": "hybrid",
+    "cache_ram_mib": 64,
+    "context_checkpoints": 4,
+    "checkpoint_min_step": 16,
+    "thinking": false,
+    "max_output_tokens": 96,
+    "seed": 42
+  },
+  "cases": [
+    {"path": "tests/conversation_only_cases.json", "sha256": "d3cb1a9816ae57d1518dd9ecf5295b703b7737d6bb8c3b24b9046180b71ca63b"},
+    {"path": "tests/identity_holdout_cases.json", "sha256": "0e1c8975a9a9985206b20ac051ff0ec4764c7bb046030287b4dad4b7ba62145b"}
+  ]
+}

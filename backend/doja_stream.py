@@ -248,6 +248,82 @@ def calibrate(conn, engines):
     send(conn, {"type": "calibration", "text": "Calibración terminada. Micrófono se apagará."})
 
 
+def wake_only_session(conn, detector, limit):
+    """Isolated wake/ASR path: no intent parser, LLM, TTS or action events."""
+    from vosk import KaldiRecognizer, SetLogLevel
+    if detector is None or not 10 <= limit <= 300:
+        raise ValueError("Invalid wake-only session")
+    SetLogLevel(-1)
+    conn.settimeout(2)
+    began = checked = time.monotonic()
+    activated = None
+    recognizer = None
+    paused = False
+    activations = 0
+    preroll = deque(maxlen=75)
+
+    def reset():
+        nonlocal activated, recognizer
+        activated = recognizer = None
+        preroll.clear()
+        detector.reset()
+        send(conn, {"type": "state", "state": "wake"})
+
+    def activate(source):
+        nonlocal activated, recognizer, activations
+        if limit - (time.monotonic() - began) < 10:
+            return
+        activations += 1
+        if activations > 24:
+            raise ValueError("Wake-only activation limit reached")
+        activated = time.monotonic()
+        send(conn, {"type": "state", "state": "command", "trigger": source})
+        recognizer = KaldiRecognizer(detector.model, 16000)
+        for pcm in preroll:
+            recognizer.AcceptWaveform(pcm)
+        preroll.clear()
+        print(json.dumps({"event": "wake_only_activation", "activation": activations,
+                          "source": source}), flush=True)
+
+    send(conn, {"type": "ready", "seconds": limit, "wake_enabled": True,
+                "wake_only": True, "ai_enabled": False, "listening_seconds": 8})
+    while time.monotonic() - began < limit:
+        now = time.monotonic()
+        if now - checked >= 1:
+            checked = now
+            if not resource_ok():
+                raise RuntimeError("Wake-only resource guard")
+        if activated is not None and now - activated >= 8:
+            reset()
+        kind, data = frame(conn)
+        if kind == 3:
+            action = json.loads(data).get("action")
+            if action == "stop":
+                return
+            if action == "pause":
+                paused = True
+                reset()
+            elif action == "resume":
+                paused = False
+                reset()
+            elif action == "activate" and not paused and activated is None:
+                activate("button")
+            # Tool results and legacy TTS controls never execute anything here.
+            continue
+        if kind != 2 or not data or len(data) % 2 or len(data) > 640:
+            raise ValueError("Invalid wake-only PCM")
+        if paused:
+            continue
+        if activated is None:
+            preroll.append(data)
+            if detector.accept_pcm(data):
+                activate("voice")
+        elif recognizer.AcceptWaveform(data):
+            text = json.loads(recognizer.Result()).get("text", "").strip()[:250]
+            if text and words(text) != words(SETTINGS["wake_word"]):
+                send(conn, {"type": "transcript", "text": text})
+
+
 def main():
     import resource
     parser = argparse.ArgumentParser()
@@ -256,9 +332,12 @@ def main():
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--calibrate", action="store_true")
     parser.add_argument("--test-wake", action="store_true", help="Enable Spanish wake word for this bounded pilot only")
+    parser.add_argument("--wake-only", action="store_true", help="Wake and transcript only; no actions, LLM or speech output")
     parser.add_argument("--ai-key", help="Enable local LLM interpretation; mutations require confirmation")
     parser.add_argument("--chat", action="store_true", help="Conversational tool loop with bounded recent memory")
     args = parser.parse_args()
+    if args.wake_only and (not args.test_wake or args.ai_key or args.chat or args.calibrate or args.smoke):
+        raise ValueError("Wake-only requires --test-wake and forbids AI/legacy modes")
     ai_turns = None
     if args.ai_key:
         if args.chat:
@@ -308,7 +387,7 @@ def main():
         server.listen(1)
         server.settimeout(1)
         print(json.dumps({"event": "ready", "bind": "127.0.0.1:11436"}), flush=True)
-        deadline = time.monotonic() + (60 if ai_turns is not None else 180)
+        deadline = time.monotonic() + (300 if args.wake_only else 60 if ai_turns is not None else 180)
         while time.monotonic() < deadline:
             try:
                 conn, _ = server.accept()
@@ -328,6 +407,8 @@ def main():
                 try:
                     if args.calibrate:
                         calibrate(conn, engines)
+                    elif args.wake_only:
+                        wake_only_session(conn, spotter, args.seconds)
                     else:
                         session(conn, spotter, args.seconds, ai_turns=ai_turns)
                 except (EOFError, OSError) as error:

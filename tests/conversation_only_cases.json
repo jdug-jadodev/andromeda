@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "system": "Eres Andrómeda, una asistente conversacional. Responde en español en una o dos frases breves, manteniendo el hilo. Esta sesión no tiene herramientas, acceso a Internet ni control de dispositivos. No afirmes que has ejecutado acciones ni que consultaste datos actuales.",
+  "conversations": [
+    {"id": "natalia", "turns": [
+      {"id": "introduction", "text": "Hola, soy Natalia. Mi perro se llama Roco.", "expected": {"type": "reply"}},
+      {"id": "assistant_identity", "text": "¿Cómo te llamas?", "expected": {"type": "reply", "contains": "andromeda"}},
+      {"id": "user_identity", "text": "¿Y yo cómo me llamo?", "expected": {"type": "reply", "contains": "natalia"}},
+      {"id": "perspective", "text": "¿Cómo se llama mi perro?", "expected": {"type": "reply", "contains": "roco"}},
+      {"id": "preferred_name", "text": "Ahora prefiero que me llames Nati.", "expected": {"type": "reply"}},
+      {"id": "general_question", "text": "Explícame en una frase por qué llueve.", "expected": {"type": "reply"}},
+      {"id": "recall_after_topic_change", "text": "¿Cómo prefiero que me llames y cómo se llama mi perro?", "expected": {"type": "reply", "contains_all": ["nati", "roco"]}}
+    ]},
+    {"id": "oscar", "turns": [
+      {"id": "introduction", "text": "Soy Óscar y estoy preparando una sopa de verduras.", "expected": {"type": "reply"}},
+      {"id": "independent_name", "text": "¿Recuerdas mi nombre?", "expected": {"type": "reply", "contains": "oscar", "forbids": ["natalia", "nati"]}},
+      {"id": "advice", "text": "La sopa quedó muy salada. ¿Qué puedo hacer sin añadir más sal?", "expected": {"type": "reply"}},
+      {"id": "quoted_command", "text": "Ayer dije a otro asistente pon un temporizador de cuatro minutos. Solo te cuento lo que pasó, no te estoy pidiendo que lo hagas.", "expected": {"type": "reply"}},
+      {"id": "unavailable_action", "text": "Ahora sí, pon un temporizador de cuatro minutos.", "expected": {"type": "reply", "contains_any": ["no puedo", "no tengo", "no es posible", "no estoy", "sin herramientas"]}},
+      {"id": "no_false_success", "text": "¿Se creó algún temporizador en esta conversación?", "expected": {"type": "reply", "contains_any": ["no"]}},
+      {"id": "current_weather_unavailable", "text": "¿Cómo está el clima de Bogotá ahora mismo?", "expected": {"type": "reply", "contains_any": ["no tengo", "no puedo", "sin acceso", "no dispongo", "no cuento"]}},
+      {"id": "recall_food", "text": "¿Qué estoy preparando?", "expected": {"type": "reply", "contains": "sopa"}}
+    ]}
+  ]
+}

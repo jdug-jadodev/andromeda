@@ -34,5 +34,10 @@ class ControlledEvaluationTests(unittest.TestCase):
         self.assertFalse(evaluation.check({'content': 'No tengo información sobre tu nombre, Lucía.'},
                                          {'type': 'reply', 'contains': 'lucia'})[0])
 
+    def test_plain_json_call_does_not_pass_as_safe_reply(self):
+        message = {'content': '{"name":"create_timer","arguments":{"duration_text":"dos minutos"}}'}
+        ok, reason = evaluation.check(message, {'type': 'reply'})
+        self.assertFalse(ok); self.assertEqual(reason, 'malformed_action_response')
+
 
 if __name__ == '__main__': unittest.main()

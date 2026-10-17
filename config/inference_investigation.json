@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "status": "diagnostic_only_not_enabled_for_voice",
+  "engine": "llama.cpp b11669 / 620d2225cc436ab0b001e3200e590e3b286ef9ab",
+  "scope": "Moto inference only. Workstation renders/tokenizes official reference metadata; no model inference outside the Moto.",
+  "baseline": {"context": 2048, "threads": 4, "kv": "f16", "seed": 42, "max_output_tokens": 96},
+  "references": [
+    {
+      "model": "qwen17",
+      "repository": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "fixture_sha256": "0a8d8a5b6bace5b18bad82931a852c17f712a9509a3c35d8801a89cfbe444d7e",
+      "sampling_profile": "qwen_non_thinking",
+      "baseline_microbatch": 1
+    },
+    {
+      "model": "qwen35",
+      "repository": "Qwen/Qwen3.5-2B",
+      "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+      "fixture_sha256": "22e8f3a16941653acd74d242696639b428ee5ec0b38b1ec847f8b7a76eaace74",
+      "sampling_profile": "qwen35_no_penalty",
+      "baseline_microbatch": 16
+    }
+  ],
+  "planned_controls": ["chat_vs_raw_completion", "no_repack", "flash_attention_off_if_active", "microbatch_only"],
+  "additional_sampling_control": {
+    "name": "greedy",
+    "only_change": "temperature to 0",
+    "reason": "Inspect whether selecting the highest-probability token avoids observed low-probability pronoun choices. Diagnostic, not automatic adoption or a universal decoding recommendation."
+  },
+  "conditioning": "Four fixed cases per model: two histories reconstructed with actual previous model replies and two new single-turn controls. Twenty-five full-turn template/tokenizer audits per model.",
+  "route_cache_policy": "Full recomputation on both routes for this diagnostic, not a proposed production fix.",
+  "runtime_duration_cap_seconds": 420,
+  "diagnostic_request_timeout_seconds": 90,
+  "compute_acceptance_budget_seconds": 22,
+  "end_to_end_voice_limit_seconds": 30,
+  "semantic_review_required": true,
+  "production_approved": false
+}

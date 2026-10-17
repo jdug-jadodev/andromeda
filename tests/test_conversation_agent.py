@@ -101,6 +101,12 @@ class ConversationTests(unittest.TestCase):
             with self.subTest(expression=expression), self.assertRaises(ValueError):
                 parse_native_response('<|tool_call_start|>' + expression + '<|tool_call_end|>', [])
 
+    def test_unwrapped_json_or_xml_call_is_not_spoken_or_executed(self):
+        for text in ['{"name":"create_timer","arguments":{"seconds":30}}',
+                     '<tool_call>{"name":"create_timer","arguments":{"seconds":30}}</tool_call>']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                parse_native_response(text, [])
+
     def test_api_history_keeps_last_question_and_tool_pairing(self):
         tool = Tool('list', 'test', object_schema({}))
         history = [{'role': 'user', 'content': 'lista'},

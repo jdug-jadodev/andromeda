@@ -183,6 +183,13 @@ def parse_native_response(text, tools):
     if '<|tool_call_start|>' not in text:
         if '<|' in text or not text or len(text) > 700:
             raise ValueError('Invalid model reply')
+        try:
+            encoded = json.loads(text)
+        except (ValueError, TypeError):
+            encoded = None
+        if ('<tool_call' in text or isinstance(encoded, dict)
+                and ({'name', 'arguments'} <= set(encoded) or 'tool_calls' in encoded)):
+            raise ValueError('Unwrapped tool output is not a conversational reply')
         return {'kind': 'reply', 'text': text}
     encoded = text.split('<|tool_call_start|>', 1)[1]
     if '<|tool_call_end|>' not in encoded:

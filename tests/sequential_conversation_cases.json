@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "memory_and_success",
+      "turns": [
+        {"id": "introduction", "text": "Hola. Me llamo Valeria y mi color favorito es azul.", "expected": {"type": "reply"}},
+        {"id": "name", "text": "¿Cómo me llamo?", "expected": {"type": "reply", "contains": "valeria"}},
+        {"id": "color", "text": "¿Qué color te dije que me gusta?", "expected": {"type": "reply", "contains": "azul"}},
+        {"id": "topic_change", "text": "Cambiando de tema, dime un saludo breve para mi familia.", "expected": {"type": "reply"}},
+        {"id": "recall_both", "text": "¿Qué nombre y color te dije antes?", "expected": {"type": "reply", "contains_all": ["valeria", "azul"]}},
+        {"id": "create_six_minutes", "text": "Avísame dentro de seis minutos.", "expected": {"type": "tool", "seconds": 360}, "simulator": "success"},
+        {"id": "recall_duration", "text": "¿Qué duración acabo de pedir?", "expected": {"type": "reply", "contains_any": ["seis minutos", "6 minutos", "360"]}}
+      ]
+    },
+    {
+      "id": "separate_conversation_and_failures",
+      "turns": [
+        {"id": "different_person", "text": "Hola, soy Andrés.", "expected": {"type": "reply"}},
+        {"id": "no_cross_conversation_name", "text": "¿Recuerdas cómo me llamo?", "expected": {"type": "reply", "contains": "andres", "forbids": ["valeria"]}},
+        {"id": "negation", "text": "No crees un temporizador de nueve minutos.", "expected": {"type": "reply"}},
+        {"id": "past_quote", "text": "Te cuento que ayer dije avísame en siete minutos. No lo hagas ahora.", "expected": {"type": "reply"}},
+        {"id": "not_decided", "text": "Necesito un temporizador, pero no he decidido cuánto debe durar.", "expected": {"type": "reply"}},
+        {"id": "save_fails", "text": "Ponlo por ocho minutos.", "expected": {"type": "tool", "seconds": 480}, "simulator": "failure"},
+        {"id": "failure_remembered", "text": "¿Se alcanzó a crear el temporizador?", "expected": {"type": "reply", "contains_any": ["no", "fallo", "error"]}}
+      ]
+    }
+  ]
+}

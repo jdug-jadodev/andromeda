@@ -6,6 +6,8 @@ require semantic review. Never publishes a production/voice 'passed' verdict.
 import argparse
 import hashlib
 import json
+import os
+import re
 from pathlib import Path
 import sys
 import time
@@ -37,6 +39,15 @@ def check(message, expected):
         return False, 'unexpected_action_request'
     if not text.strip():
         return False, 'empty_reply'
+    # A pseudo-call printed as prose is not a safe conversational answer.
+    # Do not count absence of API tool_calls as sufficient evidence of quality.
+    try:
+        encoded = json.loads(message.get('content') or '')
+    except (ValueError, TypeError):
+        encoded = None
+    if (isinstance(encoded, dict) and ({'name', 'arguments'} <= set(encoded) or 'tool_calls' in encoded)
+            or re.search(r'<(?:\|)?tool_call', text)):
+        return False, 'malformed_action_response'
     if 'contains' in expected and plain(expected['contains']) not in text:
         return False, 'expected_fact_missing'
     if 'contains_any' in expected and not any(plain(term) in text for term in expected['contains_any']):
@@ -79,6 +90,8 @@ def main():
             if time.monotonic() >= ready_deadline: raise
             time.sleep(.25)
     print(json.dumps({'event': 'controlled_evaluation', 'fixture_sha256': hashlib.sha256(raw).hexdigest(),
+                      'model_profile': os.environ.get('ANDROMEDA_MODEL', 'unspecified'),
+                      'cache_policy': os.environ.get('ANDROMEDA_CACHE_POLICY', 'unspecified'),
                       'cases': len(suite['cases']), 'microphone_opened': False,
                       'executor_present': False, 'web_access': False}), flush=True)
     overall = time.monotonic()

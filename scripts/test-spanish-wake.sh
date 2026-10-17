@@ -3,6 +3,8 @@
 set -eu
 [ "$(id -u)" = 0 ] || exit 1
 ROOT=/data/local/linux/debian-final
+MODE=${1:-legacy}
+case "$MODE" in legacy|wake_only) ;; *) exit 2 ;; esac
 SOURCE=/data/user/0/local.doja.voice/files/synthetic
 WORK=$(/data/adb/magisk/busybox mktemp -d "$ROOT/tmp/andromeda-fixtures.XXXXXX")
 INNER=/tmp/${WORK##*/}
@@ -21,6 +23,7 @@ for name in positive command cancel delete negated quoted androide andres adorme
   chmod 600 "$WORK/andromeda_fixture_$name.wav"
 done
 chown 10218:10218 "$WORK"
+if [ "$MODE" = wake_only ]; then PROBE=device_wake_only.py; else PROBE=device_spanish_wake.py; fi
 chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
   /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin /opt/doha-voice/bin/python \
-  /opt/doha-voice/pilot/device_spanish_wake.py "$INNER"
+  /opt/doha-voice/pilot/"$PROBE" "$INNER"

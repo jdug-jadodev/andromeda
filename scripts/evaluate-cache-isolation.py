@@ -24,8 +24,11 @@ def main():
     key = Path(args.key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing credential')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    print(json.dumps({'event': 'cache_precision_profile', 'kv_type': os.environ.get('ANDROMEDA_KV_TYPE', 'unspecified')}), flush=True)
-    def request(path, payload=None, timeout=40): return controlled.post(opener, key, path, payload, timeout)
+    print(json.dumps({'event': 'cache_precision_profile', 'kv_type': os.environ.get('ANDROMEDA_KV_TYPE', 'unspecified'),
+                      'cache_policy': os.environ.get('ANDROMEDA_CACHE_POLICY', 'unspecified')}), flush=True)
+    request_timeout = 90 if os.environ.get('ANDROMEDA_CACHE_POLICY') == 'tokenwise' else 40
+    def request(path, payload=None, timeout=None):
+        return controlled.post(opener, key, path, payload, request_timeout if timeout is None else timeout)
     deadline = time.monotonic() + 30
     while True:
         try: request('/health', timeout=2); break
