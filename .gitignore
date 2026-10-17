@@ -1,0 +1,4 @@
+# Respaldos privados del dispositivo: no publicar.
+backups/
+artifacts/
+__pycache__/

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "cases": [
+    {"id": "memory_user", "messages": [{"role": "user", "content": "Me llamo Lucía."}, {"role": "assistant", "content": "Encantada, Lucía."}, {"role": "user", "content": "¿Cómo me llamo?"}], "expected": {"kind": "reply", "contains": "lucia"}},
+    {"id": "holdout_three_minutes", "messages": [{"role": "user", "content": "Avísame dentro de tres minutos."}], "expected": {"kind": "tool", "seconds": 180}},
+    {"id": "holdout_ninety_seconds", "messages": [{"role": "user", "content": "Quiero una cuenta regresiva de noventa segundos."}], "expected": {"kind": "tool", "seconds": 90}},
+    {"id": "holdout_hour", "messages": [{"role": "user", "content": "Pon un temporizador para dentro de una hora."}], "expected": {"kind": "tool", "seconds": 3600}},
+    {"id": "holdout_negation", "messages": [{"role": "user", "content": "No quiero que pongas un temporizador de tres minutos."}], "expected": {"kind": "reply"}},
+    {"id": "holdout_missing_duration", "messages": [{"role": "user", "content": "Avísame cuando pase un rato."}], "expected": {"kind": "reply"}}
+  ]
+}

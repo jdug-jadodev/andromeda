@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "status": "design_contract_not_runtime_enforcement",
+  "device": "moto_g8_plus_only",
+  "cloud_inference": false,
+  "clock": "device_boottime_ms",
+  "max_useful_response_ms": 30000,
+  "target_routine_response_ms": 10000,
+  "budget_ms": {
+    "endpoint_and_asr": 2500,
+    "model_and_tools_total": 22000,
+    "tts_start": 1500,
+    "bridge_and_reserve": 4000
+  },
+  "required_samples_per_case": 2,
+  "required_voice_cases": {
+    "greeting": "chat",
+    "assistant_identity": "chat",
+    "user_fact_recall": "chat",
+    "followup_reference": "chat",
+    "topic_change": "chat",
+    "timer_proposal": "proposal",
+    "timer_creation_verified": "action",
+    "timer_listing_verified": "tool_read",
+    "timer_cancellation_verified": "action",
+    "negated_action": "chat",
+    "quoted_action": "chat",
+    "ambiguous_action": "chat"
+  },
+  "memory": {
+    "conversation_idle_seconds": 3600,
+    "timers_separate_from_conversations": true,
+    "target_available_kib": 750000,
+    "emergency_stop_available_kib": 500000,
+    "max_active_models": 1
+  },
+  "safety": {
+    "battery_no_new_load_deci_c": 380,
+    "battery_stop_load_deci_c": 400,
+    "continuous_operation_requires_charge_protection": true,
+    "microphone_requires_explicit_consent": true,
+    "never_execute_expired_tool_calls": true
+  }
+}
