@@ -22,6 +22,9 @@ final class VoiceConnection implements Closeable {
         this.socket = socket; this.input = input; this.output = output; this.ready = ready;
     }
     static VoiceConnection open(Context context, String source) throws Exception {
+        return open(context, source, ConversationMemory.emptySnapshot());
+    }
+    static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot) throws Exception {
         if (!"microphone".equals(source) && !"synthetic_pcm".equals(source)) throw new IOException("Fuente inválida");
         SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(null, new TrustManager[]{new X509TrustManager() {
@@ -41,24 +44,34 @@ final class VoiceConnection implements Closeable {
         SSLSocket socket = (SSLSocket)tls.getSocketFactory().createSocket();
         try {
             socket.setSoTimeout(5000); socket.setTcpNoDelay(true);
-            socket.connect(new InetSocketAddress("127.0.0.1", 11436), 1500);
+            try { socket.connect(new InetSocketAddress("127.0.0.1", 11436), 1500); }
+            catch (java.net.ConnectException error) { throw new IOException("Motor local no preparado; hace falta preparar otra prueba. No es un fallo de Internet.", error); }
             socket.startHandshake();
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-            JSONObject hello = new JSONObject().put("protocol", 2).put("mode", "conversation_only").put("source", source).put("token", token);
-            writeFrame(output, 1, hello.toString().getBytes(StandardCharsets.UTF_8));
+            JSONObject hello = new JSONObject().put("protocol", 4).put("mode", "conversation_only").put("source", source)
+                .put("token", token).put("context", ConversationChannel.encode(snapshot));
+            byte[] helloBytes = hello.toString().getBytes(StandardCharsets.UTF_8);
+            if (helloBytes.length > 32768) throw new IOException("Contexto fuera del límite de transporte");
+            writeFrame(output, 1, helloBytes);
             DataInputStream input = new DataInputStream(socket.getInputStream());
             JSONObject ready = readEvent(input);
+            if ("context_expired".equals(ready.optString("reason"))) throw new IOException("El contexto caducó; vuelve a elegir la prueba");
             if (!"ready".equals(ready.optString("type")) || !VoiceSessionPolicy.isConversationReady(
                     ready.optInt("protocol"), ready.optBoolean("conversation_only"), ready.optBoolean("wake_only"),
                     ready.optBoolean("wake_enabled"), ready.optBoolean("ai_enabled"), ready.optBoolean("actions_enabled", true))
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
-                    || ready.optInt("response_start_ms") != 30000
+                    || "microphone".equals(source) && ready.optBoolean("test_fixture")
+                    || ready.optInt("response_start_ms") != 30000 || ready.optInt("context_version") != 1
+                    || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
+                    || !snapshot.conversationId.equals(ready.optString("context_id"))
+                    || !ready.optString("session_id").matches("[0-9a-f]{32}")
+                    || ready.optInt("restored_turns", -1) != snapshot.turns.size()
                     || Math.abs(SystemClock.elapsedRealtime() - ready.optLong("server_time_ms")) > 1000)
                 throw new IOException("El backend no es la conversación restringida o el reloj no coincide");
             return new VoiceConnection(socket, input, output, ready);
-        } catch (Exception error) { socket.close(); throw error; }
+        } catch (Exception error) { try { socket.close(); } catch (Exception ignored) {} throw error; }
     }
     static JSONObject readEvent(DataInputStream input) throws Exception {
         int size = input.readInt();

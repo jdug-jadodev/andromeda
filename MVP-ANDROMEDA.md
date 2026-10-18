@@ -10,7 +10,19 @@ El usuario acepta **LFM2.5 1.2B Instruct QAD Q4_0** como base provisional para c
 
 Decisión registrada en `config/model_selection.json` (registro de intención, no perfil de ejecución). Registrar la elección no activó capacidades; después el usuario pidió iniciar la integración. Siguen vigentes el máximo de 30 s, las confirmaciones basadas en resultados reales y las barreras para acciones.
 
-## Entrega vigente 0.4 — conversación LFM sin acciones
+## Entrega vigente: flujo de chat 0.6 instalada
+
+Usuario aclara que una charla debe contener múltiples turnos y poder retomarse por tema. **0.6/protocolo 4 instalada** tras autorización explícita de actualizar y perder la RAM de pruebas, con respaldo de APK/backend 0.5 y sin borrar datos de timers. Continuidad tras TTS sin wake repetido, cierre explícito/contextual y estado cerrado retomable; hasta 24 turnos con el mismo techo de texto de 5700 unidades UTF-16 por charla y ventana LFM sin ampliar. 183 tests Python/249 aserciones JVM pasan. En Moto pasan UI, transferencia TLS/aislamiento/olvido y cierre TLS/Silenciar sin audio/modelo. También pasan sintéticos reales Vosk/LFM/síntesis con una sola activación para tres turnos y cierres posteriores sin wake por «cierra la conversación»/«gracias», con retención y separación del chat nuevo. No captura ni reproducción y falta ensayo humano/VoiceService real de este flujo. Búsqueda/confirmación por tema sigue **sin integrar**; no atribuirla al LFM ni probarla como entregada. Contrato y evidencia: `FLUJO-CHARLAS-ANDROMEDA.md`.
+
+## Entrega anterior 0.5 — contexto independiente de captura/modelo
+
+**0.5.0-context-trial / código 6 instalada**, con respaldo de 0.4.1 y sin borrar datos/HOME. Hasta cuatro charlas en RAM de Android, seis turnos cada una, caducidad independiente de una hora de inactividad humana; Silenciar/salir detiene voz/modelo sin borrar automáticamente el hilo. No sobrevive a cierre del proceso/reinicio. Menú **Contexto** permite elegir, crear u olvidar una charla con confirmación; temporizadores no se tocan.
+
+Protocolo 3 TLS/pin/token transfiere snapshot acotado/validado y verifica IDs de charla/sesión; LFM sigue recibiendo roles nativos, no el formato experimental rechazado. Preguntas interrumpidas se conservan sin respuesta inventada, callbacks antiguos no pueden escribir tras reabrir/olvidar. Límite 2048/1536/96 y plazo de turno intactos; sin herramientas, daemon ni micrófono automático. Conexión rechazada explica motor local no preparado.
+
+**171 tests Python/157 aserciones JVM**, UI, retención TLS real con dobles de voz, olvido confirmado, compatibilidad nativa LFM y flujo sintético ASR/LLM/TTS pasan sin captura/reproducción humana ni cambios de timers. Sigue el error semántico Menta/Luna: no afirmar que conservar datos arregla su uso por LFM. Pendiente prueba humana de silenciar/reabrir y latencia audible útil <=30 s. Evidencia/límites: `CONTEXTO-ANDROMEDA.md`. Timers ya tienen almacenamiento Android separado; alarmas/recordatorios y herramientas conversacionales siguen pendientes según `ACCIONES-ANDROMEDA.md`.
+
+## Entrega anterior 0.4 — conversación LFM sin acciones
 
 **0.4.1-conversation-trial / código 5 instalada** (corrección posterior a 0.4.0), con respaldos previos y sin borrar datos/cambiar HOME. Menú Micrófono separa conversación LFM y prueba original solo activación. Sesiones manuales 90 s/5 min, Vosk + memoria corta tokenizada + LFM + voz española offline, sin catálogo/ejecutor. Canal TLS fijado + token de cliente independiente, turno con plazo compartido, cancelación del servidor dedicado y rechazo de TTS tardío/duplicado. No abre micrófono al preparar ni al abrir la app.
 

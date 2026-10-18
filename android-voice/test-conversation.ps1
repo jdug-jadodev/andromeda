@@ -1,6 +1,6 @@
 param(
     [string]$Serial = 'ZY227BCQ85',
-    [ValidateSet('normal', 'cancel_inference', 'late_start')][string]$Mode = 'normal'
+    [ValidateSet('normal', 'cancel_inference', 'late_start', 'close', 'thanks')][string]$Mode = 'normal'
 )
 $ErrorActionPreference = 'Stop'
 # Backend must already be prepared with `start-andromeda-conversation.sh test 90`.
@@ -18,4 +18,12 @@ if ($exit -ne 0 -or $text -notmatch '(?m)^INSTRUMENTATION_CODE:\s*-1\s*$' -or
     $text -notmatch '(?m)^INSTRUMENTATION_RESULT: wrong_source_rejected=true\s*$' -or
     $text -match 'INSTRUMENTATION_(FAILED|ABORTED)|INSTRUMENTATION_RESULT: (error|shortMsg)=') {
     throw 'Synthetic conversation failed; adb exit code alone is not success'
+}
+if ($Mode -in @('normal', 'close', 'thanks') -and $text -notmatch '(?m)^INSTRUMENTATION_RESULT: one_wake_only=true\s*$') {
+    throw 'Continuous conversation did not verify a single wake activation'
+}
+if ($Mode -in @('close', 'thanks') -and ($text -notmatch '(?m)^INSTRUMENTATION_RESULT: chat_closed=true\s*$' -or
+    $text -notmatch '(?m)^INSTRUMENTATION_RESULT: new_chat_isolated=true\s*$' -or
+    $text -notmatch '(?m)^INSTRUMENTATION_RESULT: closed_chat_resumable=true\s*$')) {
+    throw 'Chat close/isolation/resume checks failed'
 }

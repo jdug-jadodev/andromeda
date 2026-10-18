@@ -41,11 +41,14 @@ public final class UiPolicyTest {
         check(VoiceSessionPolicy.wakeOnlyEventAllowed("transcript"), "Transcript event rejected");
         for (String type : new String[]{null, "timer", "cancel_timer", "list_timers", "stop_alarm", "say", "thinking"})
             check(!VoiceSessionPolicy.wakeOnlyEventAllowed(type), "Restricted mode accepted " + type);
-        check(VoiceSessionPolicy.isConversationReady(2, true, false, true, true, false), "Conversation peer rejected");
+        check(VoiceSessionPolicy.isConversationReady(4, true, false, true, true, false), "Conversation peer rejected");
         check(!VoiceSessionPolicy.isConversationReady(1, true, false, true, true, false), "Old protocol accepted");
-        check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, true, true), "Actions accepted");
-        check(!VoiceSessionPolicy.isConversationReady(2, true, true, true, true, false), "Wake-only overlap accepted");
-        check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, false, false), "Missing AI accepted");
+        check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, true, false), "Old memoryless peer accepted");
+        check(!VoiceSessionPolicy.isConversationReady(3, true, false, true, true, false), "Old single-query flow accepted");
+        check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, true, true), "Actions accepted");
+        check(!VoiceSessionPolicy.isConversationReady(4, true, true, true, true, false), "Wake-only overlap accepted");
+        check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, false, false), "Missing AI accepted");
+        check(VoiceSessionPolicy.conversationEventAllowed("conversation_closed"), "Conversation close rejected");
         for (String type : new String[]{"timer", "cancel_timer", "list_timers", "stop_alarm", "tool_result"})
             check(!VoiceSessionPolicy.conversationEventAllowed(type), "Conversation accepted " + type);
         ConversationTurnPolicy turn = new ConversationTurnPolicy();
@@ -54,18 +57,28 @@ public final class UiPolicyTest {
         check(!turn.begin(id, 1, 3000, 33000, 2000), "Future audio accepted");
         check(!turn.begin(id, 1, 1000, 31000, 31000), "Expired turn accepted");
         check(turn.begin(id, 1, 1000, 31000, 2000), "Turn rejected");
+        check(!turn.speechStarted(id), "Unstarted speech reported delivered");
         check(!turn.begin(id, 2, 1000, 31000, 2000), "Concurrent turn accepted");
         check(!turn.acceptStart(id, 2000), "Unscheduled TTS accepted");
+        check(turn.acceptClose(id, 1, 1000, 31000, 2000), "Explicit matching close rejected");
+        check(!turn.acceptClose("wrong", 1, 1000, 31000, 2000), "Wrong close ID accepted");
+        check(!turn.acceptClose(id, 2, 1000, 31000, 2000), "Wrong close sequence accepted");
+        check(!turn.acceptClose(id, 1, 1001, 31000, 2000), "Changed close timestamp accepted");
+        check(!turn.acceptClose(id, 1, 1000, 31001, 2000), "Changed close deadline accepted");
+        check(!turn.acceptClose(id, 1, 1000, 31000, 31000), "Late close accepted");
         check(!turn.acceptReply("wrong", 1, 1000, 31000, 2000), "Wrong turn reply accepted");
         check(!turn.acceptReply(id, 2, 1000, 31000, 2000), "Wrong sequence accepted");
         check(!turn.acceptReply(id, 1, 1001, 31000, 2000), "Rebased deadline accepted");
         check(turn.acceptReply(id, 1, 1000, 31000, 2000), "Reply rejected");
+        check(!turn.acceptClose(id, 1, 1000, 31000, 2000), "Scheduled speech replaced by close");
         check(!turn.acceptReply(id, 1, 1000, 31000, 2000), "Duplicate TTS scheduled");
         check(!turn.acceptStart(id, 31001), "Late TTS started");
         check(turn.acceptStart(id, 30000), "In-time TTS rejected");
+        check(turn.speechStarted(id), "Accepted speech start missing");
         check(!turn.acceptStart(id, 30000), "Duplicate TTS start accepted");
         check(!turn.expiredBeforeStart(32000), "Already-started TTS expired");
         turn.clear();
+        check(!turn.speechStarted(id), "Cancelled speech still reported started");
         check(!turn.acceptReply(id, 1, 1000, 31000, 2000), "Cancelled response accepted");
         check(!turn.begin(id, 1, 2000, 32000, 3000), "Replayed sequence accepted");
         check(turn.begin(id, 2, 2000, 32000, 3000), "Next turn rejected");

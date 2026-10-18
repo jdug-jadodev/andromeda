@@ -3,7 +3,12 @@
 set -eu
 [ "$(id -u)" = 0 ] || exit 1
 MODE=${1:-test}
-case "$MODE" in test) EVALUATOR=evaluate-conversation-memory.py ;; structured) EVALUATOR=evaluate-structured-context.py ;; *) exit 2 ;; esac
+case "$MODE" in
+  test) EVALUATOR=evaluate-conversation-memory.py ;;
+  structured) EVALUATOR=evaluate-structured-context.py ;;
+  native_resume) EVALUATOR=device_context_native.py ;;
+  *) exit 2 ;;
+esac
 [ "$#" -le 1 ] || exit 2
 ROOT=/data/local/linux/debian-final
 BASE=/data/local/doha-inference

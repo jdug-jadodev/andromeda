@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="5" android:versionName="0.4.1-conversation-trial">
+    android:versionCode="7" android:versionName="0.6.0-dialogue-trial">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -32,4 +32,6 @@
         android:label="Conversación sintética sin micrófono ni reproducción" android:functionalTest="true" />
     <instrumentation android:name=".ShutdownInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Silenciar y cierre TLS sin micrófono ni modelo" android:functionalTest="true" />
+    <instrumentation android:name=".ContextInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Contexto en RAM sin audio ni modelo" android:functionalTest="true" />
 </manifest>

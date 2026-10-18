@@ -27,6 +27,9 @@ public final class ConversationInstrumentation extends Instrumentation {
     private volatile String speechId = "";
     private Thread sender;
     private long waveformEnd;
+    private final ConversationMemory memory = new ConversationMemory();
+    private ConversationMemory.Lease lease;
+    private ConversationChannel channel;
     public void onCreate(Bundle arguments) { super.onCreate(arguments); mode = arguments == null ? "normal" : arguments.getString("mode", "normal"); start(); }
     private static void check(boolean value, String message) { if (!value) throw new IllegalStateException(message); }
     private void control(String action, String id, long at) throws Exception {
@@ -125,7 +128,7 @@ public final class ConversationInstrumentation extends Instrumentation {
         Bundle result = new Bundle(); File output = null;
         Context context = getTargetContext(); Map<String, ?> timersBefore = new HashMap<>(TimerStore.prefs(context).getAll());
         try {
-            check(Arrays.asList("normal", "cancel_inference", "late_start").contains(mode), "Invalid synthetic mode");
+            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks").contains(mode), "Invalid synthetic mode");
             check(!VoiceService.active && !RingService.ringing, "A real session/alarm is active");
             initializeVoice();
             activity = (MainActivity)startActivitySync(new Intent(context, MainActivity.class).putExtra("offline_preview", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -136,19 +139,28 @@ public final class ConversationInstrumentation extends Instrumentation {
             catch (IOException expected) { wrongSourceRejected = true; }
             check(wrongSourceRejected, "Synthetic backend accepted microphone source");
             result.putBoolean("wrong_source_rejected", true);
-            connection = VoiceConnection.open(context, "synthetic_pcm"); connection.socket.setSoTimeout(35000);
+            lease = memory.acquire(SystemClock.elapsedRealtime());
+            connection = VoiceConnection.open(context, "synthetic_pcm", memory.snapshot(lease, SystemClock.elapsedRealtime()));
+            channel = new ConversationChannel(memory, lease, connection.ready);
+            connection.socket.setSoTimeout(35000);
             JSONArray rows = new JSONArray();
-            String[] fixtures = "normal".equals(mode) ? new String[]{"ai_chat", "conversation_intro", "conversation_followup"} : new String[]{"ai_chat"};
+            boolean closingMode = "close".equals(mode) || "thanks".equals(mode);
+            int wakeActivations = 0, followupRearms = 0;
+            String[] fixtures = "normal".equals(mode) ? new String[]{"ai_chat", "dialogue_intro", "dialogue_followup"}
+                : closingMode ? new String[]{"ai_chat", "close".equals(mode) ? "dialogue_close" : "dialogue_thanks"} : new String[]{"ai_chat"};
             for (String fixture : fixtures) {
                 sendFixture(fixture); JSONObject thinking = null;
                 while (true) {
                     JSONObject event = VoiceConnection.readEvent(connection.input); String type = event.optString("type");
                     check(VoiceSessionPolicy.conversationEventAllowed(type) && !event.has("tool_call_id"), "Unexpected executor event");
+                    channel.verify(event);
                     if ("state".equals(type)) {
+                        if ("command".equals(event.optString("state")) && "voice".equals(event.optString("trigger"))) wakeActivations++;
                         if ("command".equals(event.optString("state"))) present(FaceState.LISTENING, "ASR con audio público");
                     } else if ("thinking".equals(type)) {
                         stopSender(); thinking = event;
                         check(turns.begin(event.getString("turn_id"), event.getLong("turn_seq"), event.getLong("speech_end_ms"), event.getLong("deadline_ms"), SystemClock.elapsedRealtime()), "Invalid global turn deadline");
+                        channel.human(event, SystemClock.elapsedRealtime());
                         present(FaceState.THINKING, "LFM real · sin acciones");
                         if ("cancel_inference".equals(mode)) {
                             long stopped = SystemClock.elapsedRealtime(); connection.close();
@@ -156,6 +168,7 @@ public final class ConversationInstrumentation extends Instrumentation {
                             break;
                         }
                     } else if ("say".equals(type)) {
+                        check(!fixture.equals("dialogue_close") && !fixture.equals("dialogue_thanks"), "Closing control was sent to LFM instead of closing");
                         check(thinking != null && event.getInt("actions_executed") == 0, "Reply without a turn");
                         String id = event.getString("turn_id"); long end = event.getLong("speech_end_ms"), deadline = event.getLong("deadline_ms");
                         check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime()), "Late/duplicate reply");
@@ -174,14 +187,45 @@ public final class ConversationInstrumentation extends Instrumentation {
                             .put("reply", event.getString("text")).put("estimated_end_to_first_synthetic_pcm_ms", firstPcm.get() - end)
                             .put("waveform_end_to_first_synthetic_pcm_ms", firstPcm.get() - waveformEnd)
                             .put("asr_end_estimate_minus_waveform_end_ms", end - waveformEnd));
+                        check(channel.answer(id, event.getString("text"), SystemClock.elapsedRealtime()), "Completed synthetic response not retained");
                         control("tts_done", id, SystemClock.elapsedRealtime()); turns.clear(); speechId = "";
                         check(output.delete(), "Synthetic TTS output cleanup failed"); output = null;
                         while (true) {
                             JSONObject reset = VoiceConnection.readEvent(connection.input);
+                            channel.verify(reset);
                             check("state".equals(reset.optString("type")), "Unexpected post-TTS event");
-                            if ("wake".equals(reset.optString("state"))) break;
+                            if ("command".equals(reset.optString("state")) && "followup".equals(reset.optString("trigger"))) { followupRearms++; break; }
                         }
+                        // Follow-up ASR deliberately rejects the final 600 ms of
+                        // queued speech-tail audio, just like real capture pause.
+                        SystemClock.sleep(700);
                         present(FaceState.READY, "Turno sintético completado"); break;
+                    } else if ("conversation_closed".equals(type)) {
+                        check(closingMode && thinking != null && "explicit_close".equals(event.optString("reason")), "Unexpected chat close");
+                        String id = event.getString("turn_id");
+                        check(turns.acceptClose(id, event.getLong("turn_seq"), event.getLong("speech_end_ms"),
+                            event.getLong("deadline_ms"), SystemClock.elapsedRealtime()), "Foreign or late chat close");
+                        check(channel.end(id, SystemClock.elapsedRealtime()), "Closed chat was not retained"); turns.clear();
+                        ConversationMemory.Info info = memory.list(SystemClock.elapsedRealtime()).get(0);
+                        check(info.closed && !info.current && info.turns == 2, "Closing did not release selected chat");
+                        String closedId = lease.conversationId;
+                        long stopped = SystemClock.elapsedRealtime(); connection.close();
+                        result.putLong("close_to_inference_down_ms", waitInferenceDown(stopped));
+                        ConversationMemory.Lease fresh = memory.acquire(SystemClock.elapsedRealtime());
+                        check(!fresh.conversationId.equals(closedId) && memory.snapshot(fresh, SystemClock.elapsedRealtime()).turns.isEmpty(), "New chat inherited old context");
+                        memory.release(fresh);
+                        check(memory.select(closedId, SystemClock.elapsedRealtime()), "Closed chat cannot be resumed");
+                        lease = memory.acquire(SystemClock.elapsedRealtime());
+                        ConversationMemory.Snapshot resumed = memory.snapshot(lease, SystemClock.elapsedRealtime());
+                        check(resumed.turns.size() == 2 && resumed.turns.get(0).assistant != null && resumed.turns.get(1).assistant == null,
+                            "Closed chat lost spoken history or fabricated a closing reply");
+                        result.putBoolean("chat_closed", true); result.putBoolean("new_chat_isolated", true);
+                        result.putBoolean("closed_chat_resumable", true);
+                        result.putString("close_transcript", thinking.getString("text"));
+                        present(FaceState.MUTED, "Charla cerrada · contexto retomable");
+                        waitForIdleSync();
+                        check(activity.idleLayer.getVisibility() == android.view.View.VISIBLE && !activity.isFinishing(), "Closing preview did not retain clock");
+                        result.putBoolean("clock_after_close_preview", true); break;
                     } else throw new IllegalStateException("Synthetic turn failed: " + event.optString("reason"));
                 }
                 check(failure.get() == null, "PCM failed");
@@ -196,11 +240,18 @@ public final class ConversationInstrumentation extends Instrumentation {
             result.putInt("app_pss_kib_at_end", memory.getTotalPss()); result.putString("turns", rows.toString());
             result.putString("test", "synthetic_conversation_" + mode); result.putBoolean("microphone_opened", false);
             result.putBoolean("audio_played", false); result.putBoolean("real_voice_acceptance", false);
+            result.putBoolean("real_service_started", false);
+            if ("normal".equals(mode) || closingMode)
+                check(wakeActivations == 1 && followupRearms == rows.length(), "Extra wake activation or missing follow-up ASR");
+            result.putInt("wake_activations", wakeActivations); result.putInt("followup_rearms", followupRearms);
+            result.putBoolean("one_wake_only", "normal".equals(mode) || closingMode);
             result.putInt("actions_executed", 0); finish(Activity.RESULT_OK, result);
         } catch (Exception error) {
             result.putString("error", error.getClass().getSimpleName() + ": " + error.getMessage()); finish(Activity.RESULT_CANCELED, result);
         } finally {
             sending.set(false); if (connection != null) try { connection.close(); } catch (IOException ignored) {}
+            if (channel != null) channel.close();
+            if (lease != null) memory.release(lease);
             if (tts != null) { tts.stop(); tts.shutdown(); }
             if (output != null) output.delete();
             if (activity != null) runOnMainSync(() -> activity.finish());

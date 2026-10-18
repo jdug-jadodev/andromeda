@@ -17,8 +17,8 @@ class ConversationVoiceTests(unittest.TestCase):
     def test_memory_is_bounded_and_independent_from_bot_activity(self):
         clock = [100000]; memory = voice.ShortMemory(lambda: clock[0])
         memory.messages('hola')
-        for n in range(9): memory.commit(str(n), 'respuesta')
-        self.assertEqual(len(memory.pairs), 6)
+        for n in range(27): memory.commit(str(n), 'respuesta')
+        self.assertEqual(len(memory.pairs), 24)
         self.assertEqual(memory.pairs[0][0]['content'], '3')
         clock[0] += 3599999
         memory.commit('más', 'sí')
@@ -65,7 +65,7 @@ class ConversationVoiceTests(unittest.TestCase):
     def test_hello_is_bounded_and_json_object_only(self):
         connection = Mock(); connection.recv.side_effect = [struct.pack('!BI', 1, 2), b'{}']
         with patch.object(voice, 'now_ms', return_value=1000): self.assertEqual(voice.read_hello(connection, 2000), {})
-        for kind, size, body in [(1, 4097, b''), (3, 2, b'{}'), (1, 2, b'[]')]:
+        for kind, size, body in [(1, 32769, b''), (3, 2, b'{}'), (1, 2, b'[]')]:
             connection.recv.side_effect = [struct.pack('!BI', kind, size), body]
             with self.subTest(kind=kind, size=size, body=body), patch.object(voice, 'now_ms', return_value=1000):
                 with self.assertRaises(ValueError): voice.read_hello(connection, 2000)
@@ -108,6 +108,7 @@ class ConversationVoiceTests(unittest.TestCase):
             self.assertEqual(final['max_tokens'], 96); self.assertNotIn('tools', final)
             self.assertEqual(model.context_metrics, {'history_pairs_available': 2,
                 'history_pairs_used': 1, 'history_pairs_trimmed': 1,
+                'history_turns_available': 2, 'history_turns_used': 1, 'history_turns_trimmed': 1,
                 'input_tokens': 1500, 'input_token_budget': 1536})
 
     def test_four_public_turns_reach_generation_with_both_earlier_questions(self):
@@ -168,13 +169,14 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.'):
         clock = [100000]; events = []
-        model = Mock(result='Hola.', error=None, context_metrics={})
+        model = Mock(result=answer, error=None, context_metrics={})
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
         model.observed_contexts = []
-        def start(text, *_):
-            model.observed_contexts.append(model.memory.messages(text))
+        def start(text, speech_end, *_):
+            model.done.clear()
+            model.observed_contexts.append(model.memory.messages(text, activity_ms=speech_end))
             if ready: model.done.set()
             return 123000
         model.start.side_effect = start
@@ -215,6 +217,7 @@ class ConversationVoiceTests(unittest.TestCase):
         events, model = self.run_session(self.utterance() + [(101000, acknowledge)])
         self.assertEqual([e['type'] for e in events], ['ready', 'state', 'thinking', 'say', 'state'])
         self.assertEqual(events[0]['input_source'], 'synthetic_pcm'); self.assertFalse(events[0]['actions_enabled'])
+        self.assertEqual(events[-1]['state'], 'command'); self.assertEqual(events[-1]['trigger'], 'followup')
         self.assertEqual(len(model.memory.pairs), 1); model.cancel.assert_called_once()
 
     def test_voice_actor_keeps_history_across_four_acknowledged_turns(self):
@@ -226,13 +229,15 @@ class ConversationVoiceTests(unittest.TestCase):
                     self.control('tts_done', turn_id=event['turn_id'])]
         for n in range(4):
             start = 100000 + n * 3000
-            steps.extend([(start, [self.control('activate')]), (start + 20, [self.pcm(start + 20)]),
+            if n == 0: steps.append((start, [self.control('activate')]))
+            steps.extend([(start + 20, [self.pcm(start + 20)]),
                           (start + 1000, acknowledge)])
         with patch.object(voice, 'print') as log:
             events, model = self.run_session(steps, transcripts=questions)
         self.assertEqual([len(m) for m in model.observed_contexts], [2, 4, 6, 8])
         self.assertEqual([m['content'] for m in model.observed_contexts[-1] if m['role'] == 'user'], questions)
         self.assertEqual(len(model.memory.pairs), 4)
+        self.assertEqual(len([e for e in events if e.get('trigger') == 'button']), 1)
         records = [json.loads(call.args[0]) for call in log.call_args_list]
         commits = [r for r in records if r['event'] == 'conversation_memory_commit']
         self.assertEqual([r['retained_pairs'] for r in commits], [1, 2, 3, 4])
@@ -244,11 +249,65 @@ class ConversationVoiceTests(unittest.TestCase):
             return [self.control('tts_failed', turn_id=event['turn_id'])]
         with patch.object(voice, 'print') as log:
             _, model = self.run_session(self.utterance() + [(101000, failed)])
-        self.assertEqual(model.memory.pairs, [])
+        self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'hola'}]])
         records = [json.loads(call.args[0]) for call in log.call_args_list]
         skipped = [r for r in records if r['event'] == 'conversation_memory_skipped']
         self.assertEqual(skipped, [{'event': 'conversation_memory_skipped', 'source': 'synthetic_pcm',
-                                   'turn_seq': 1, 'reason': 'tts_failed', 'retained_pairs': 0}])
+                                   'turn_seq': 1, 'reason': 'tts_failed', 'retained_turns': 1, 'retained_pairs': 0}])
+
+    def test_explicit_chat_close_retains_human_but_never_calls_model_or_tools(self):
+        for closing in ['cierra la conversación', 'gracias']:
+            with self.subTest(closing=closing):
+                events, model = self.run_session(self.utterance(), transcripts=[closing])
+                self.assertEqual(events[-1]['type'], 'conversation_closed')
+                self.assertEqual(events[-1]['reason'], 'explicit_close')
+                self.assertEqual(events[-1]['turn_id'], events[-2]['turn_id'])
+                self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': closing}]])
+                model.start.assert_not_called(); model.cancel.assert_called_once()
+
+    def test_no_closes_only_after_a_completed_followup_offer(self):
+        def ack(events):
+            event = next(e for e in reversed(events) if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
+                    self.control('tts_done', turn_id=event['turn_id'])]
+        steps = self.utterance() + [(101000, ack), (103020, [self.pcm(103020)])]
+        events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='¿Necesitas algo más?')
+        self.assertEqual(events[-1]['type'], 'conversation_closed')
+        self.assertEqual(events[-1]['reason'], 'declined_more'); self.assertEqual(model.start.call_count, 1)
+        events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='¿Quieres que hablemos de las luces?')
+        self.assertNotIn('conversation_closed', [e['type'] for e in events]); self.assertEqual(model.start.call_count, 2)
+
+    def test_failed_offer_cannot_authorize_closing_on_no(self):
+        def failed(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_failed', turn_id=event['turn_id']), self.control('activate')]
+        events, model = self.run_session(self.utterance() + [(101000, failed), (103020, [self.pcm(103020)])],
+                                        transcripts=['hola', 'no'], answer='¿Necesitas algo más?')
+        self.assertNotIn('conversation_closed', [e['type'] for e in events]); self.assertEqual(model.start.call_count, 2)
+
+    def test_yes_and_continued_speech_remain_ordinary_contextual_conversation(self):
+        def ack(events):
+            event = next(e for e in reversed(events) if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
+                    self.control('tts_done', turn_id=event['turn_id'])]
+        events, model = self.run_session(self.utterance() + [(101000, ack), (103020, [self.pcm(103020)])],
+                                        transcripts=['hola', 'sí y las luces de la sala'], answer='¿Necesitas algo más?')
+        self.assertNotIn('conversation_closed', [e['type'] for e in events])
+        self.assertEqual(model.observed_contexts[-1][-1]['content'], 'sí y las luces de la sala')
+        self.assertEqual(model.observed_contexts[-1][-2]['content'], '¿Necesitas algo más?')
+
+    def test_fifty_second_listen_timeout_pauses_without_forgetting_chat(self):
+        events, model = self.run_session([(100000, [self.control('activate')]), (150000, [])])
+        self.assertEqual(events[-1]['state'], 'wake'); self.assertNotIn('conversation_closed', [e['type'] for e in events])
+        model.start.assert_not_called()
+
+    def test_speech_tail_is_not_fed_to_a_followup_recognizer(self):
+        def ack_and_echo(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
+                    self.control('tts_done', turn_id=event['turn_id']), self.pcm(101000)]
+        events, model = self.run_session(self.utterance() + [(101000, ack_and_echo)], transcripts=['hola', 'gracias'])
+        self.assertNotIn('conversation_closed', [e['type'] for e in events]); self.assertEqual(model.start.call_count, 1)
 
     def test_disconnect_during_inference_cancels_and_never_speaks(self):
         events, model = self.run_session(self.utterance(), ready=False)

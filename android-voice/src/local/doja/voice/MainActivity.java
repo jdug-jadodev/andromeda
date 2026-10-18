@@ -159,6 +159,7 @@ public class MainActivity extends Activity {
         button(first, "Vista previa", () -> { closeOptions(); togglePreview(); });
         button(first, "Color del brillo", this::chooseColor);
         button(first, "Temporizadores", this::timerOptions);
+        button(first, "Contexto", this::contextOptions);
         button(second, "Micrófono", this::voiceDiagnostics);
         button(second, "Silenciar", this::stopMicrophone);
         button(second, "Volver", this::closeOptions);
@@ -266,6 +267,47 @@ public class MainActivity extends Activity {
                 else stopService(new Intent(this, RingService.class));
             }).setNegativeButton("Volver", null).create());
     }
+    void contextOptions() {
+        long now = SystemClock.elapsedRealtime();
+        List<ConversationMemory.Info> items = ConversationContexts.MEMORY.list(now);
+        if (VoiceService.active) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Contexto local en RAM")
+                .setMessage("Silencia primero para cambiar u olvidar una charla. Silenciar conserva los mensajes; los timers son independientes.\n\nLFM todavía puede usar mal el historial recibido.")
+                .setPositiveButton("Cerrar", null).create()); return;
+        }
+        List<String> labels = new ArrayList<>();
+        for (ConversationMemory.Info info : items) labels.add((info.current ? "✓ " : "") + info.label
+            + (info.closed ? " · cerrada, retomable" : "") + " · " + info.turns + " turnos · " + Math.max(1, (info.remainingMs + 59999) / 60000) + " min restantes");
+        labels.add("Nueva conversación"); labels.add("Olvidar la conversación seleccionada…");
+        showDialog(new AlertDialog.Builder(this).setTitle("Contexto · solo RAM, hasta 1 h sin hablar")
+            .setItems(labels.toArray(new String[0]), (dialog, index) -> {
+                if (VoiceService.active) return;
+                long at = SystemClock.elapsedRealtime();
+                if (index < items.size()) ConversationContexts.MEMORY.select(items.get(index).id, at);
+                else if (index == items.size()) {
+                    if (ConversationContexts.MEMORY.create(at) == null) {
+                        showDialog(new AlertDialog.Builder(this).setMessage("Hay cuatro charlas. Olvida una antes de crear otra.")
+                            .setPositiveButton("Cerrar", null).create()); return;
+                    }
+                } else {
+                    ConversationMemory.Info selected = null;
+                    for (ConversationMemory.Info info : items) if (info.current) selected = info;
+                    if (selected == null) return;
+                    final String id = selected.id;
+                    showDialog(new AlertDialog.Builder(this).setTitle("Olvidar solo este contexto")
+                        .setMessage("Los mensajes de esta charla se borran. No cancela temporizadores, alarmas ni recordatorios. Cerrar el proceso o reiniciar también borra la memoria RAM.")
+                        .setNegativeButton("Volver", null).setPositiveButton("Olvidar", (confirmation, which) -> {
+                            if (!VoiceService.active) {
+                                ConversationContexts.MEMORY.forget(id, SystemClock.elapsedRealtime());
+                                VoiceService.lastTranscript = ""; VoiceService.lastStatus = "Micrófono apagado · contexto olvidado";
+                                VoiceService.uiState = FaceState.MUTED; refreshServiceState();
+                            }
+                            ConversationContexts.scheduleExpiry();
+                        }).create()); return;
+                }
+                ConversationContexts.scheduleExpiry();
+            }).setNegativeButton("Volver", null).create());
+    }
     void voiceDiagnostics() {
         if (VoiceService.active) {
             showDialog(new AlertDialog.Builder(this).setTitle("Sesión de prueba activa")
@@ -282,7 +324,7 @@ public class MainActivity extends Activity {
     private void explainVoiceTrial(boolean conversation) {
         showDialog(new AlertDialog.Builder(this).setTitle(conversation ? "Conversación local · experimental" : "Micrófono · prueba de activación")
             .setMessage(conversation
-                ? "Di Andrómeda, espera la cara y habla brevemente. LFM responde con voz española offline y memoria corta. Vuelve a decir el nombre para otro turno. Puede equivocarse. No ejecuta órdenes ni consulta Internet.\n\nDurante el cálculo y la respuesta pausa el micrófono. Descarta respuestas tardías; 30 s todavía no están certificados con voz humana. El backend debe estar preparado. Silenciar o salir cierra la sesión."
+                ? "Di Andrómeda una vez, espera la cara y conversa: después de cada respuesta continúa sin repetir el nombre. La captura se pausa mientras piensa/habla. Di «cierra la conversación» o «gracias» a solas para cerrar; «no» solo cierra si acaba de preguntarte si necesitas algo más. No ejecuta órdenes ni consulta Internet.\n\n50 s sin hablar vuelve a esperar el nombre sin borrar la charla; la prueba sigue limitada a 90 s/5 min. Silenciar conserva la selección; cerrar deja la charla retomable en Contexto hasta 1 h de inactividad. RAM: se borra al cerrar el proceso/reiniciar. Búsqueda por tema aún no integrada; LFM puede usar mal los mensajes. Motor preparado manualmente; 30 s de audio útil sin certificar."
                 : "Di Andrómeda: aparece la cara y escucha durante 8 segundos; después vuelve al reloj. Muestra lo reconocido, sin ejecutar órdenes, hablar ni cargar la IA.\n\nEl detector local debe estar preparado. La sesión termina sola; puedes silenciar o salir de la app.")
             .setNegativeButton("Volver", null).setPositiveButton("Elegir prueba limitada", (dialog, which) ->
                 showDialog(new AlertDialog.Builder(this).setTitle("Micrófono local · duración máxima")

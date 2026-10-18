@@ -22,6 +22,11 @@ final class ConversationTurnPolicy {
         started = true; return true;
     }
     synchronized boolean matches(String value) { return !id.isEmpty() && id.equals(value); }
+    synchronized boolean speechStarted(String value) { return matches(value) && started; }
+    synchronized boolean acceptClose(String value, long seq, long end, long expires, long now) {
+        return matches(value) && seq == sequence && end == speechEnd && expires == deadline
+            && !scheduled && !started && now < deadline;
+    }
     synchronized boolean expiredBeforeStart(long now) { return !id.isEmpty() && !started && now >= deadline; }
     synchronized boolean hasActiveTurn() { return !id.isEmpty(); }
     synchronized void clear() { id = ""; scheduled = started = false; }

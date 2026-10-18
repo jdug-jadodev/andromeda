@@ -18,6 +18,15 @@ import uuid
 from assistant_config import SETTINGS
 from spanish_wake import words
 from doja_intents import normalized
+from conversation_flow import ConversationFlow
+
+PROTOCOL = 4
+MAX_STORED_TURNS = 24
+MAX_TEXT_UNITS = 5700  # Same text budget as six maximum-sized 0.5 turns.
+
+
+def text_units(text):
+    return len(text.encode('utf-16-le')) // 2  # Match Android String.length().
 
 SYSTEM = (f'Eres {SETTINGS["name"]}, una asistente conversacional. Responde en español en una o dos frases breves, '
           'manteniendo el hilo. Esta sesión no tiene herramientas, acceso a Internet ni control de dispositivos. '
@@ -69,7 +78,7 @@ def read_hello(conn, deadline):
             data.extend(chunk)
         return bytes(data)
     kind, size = struct.unpack('!BI', exact(5))
-    if kind != 1 or not 0 < size <= 4096: raise ValueError('Invalid conversation hello')
+    if kind != 1 or not 0 < size <= 32768: raise ValueError('Invalid conversation hello')
     hello = json.loads(exact(size))
     if not isinstance(hello, dict): raise ValueError('Invalid conversation authentication')
     return hello
@@ -122,15 +131,60 @@ class ShortMemory:
     def __init__(self, clock=now_ms):
         self.clock, self.pairs, self.last_human = clock, [], 0
 
-    def messages(self, text):
+    def messages(self, text, activity_ms=None):
         if self.clock() - self.last_human >= 3600000: self.pairs.clear()
-        self.last_human = self.clock()
+        self.last_human = self.clock() if activity_ms is None else activity_ms
         return [{'role': 'system', 'content': SYSTEM}] + [copy.deepcopy(m) for pair in self.pairs for m in pair] + [
             {'role': 'user', 'content': text}]
 
     def commit(self, text, answer):
         self.pairs.append([{'role': 'user', 'content': text}, {'role': 'assistant', 'content': answer}])
-        self.pairs = self.pairs[-6:]
+        self.trim()
+
+    def unanswered(self, text):
+        self.pairs.append([{'role': 'user', 'content': text}])
+        self.trim()
+
+    def trim(self):
+        units = sum(text_units(m['content']) for group in self.pairs for m in group)
+        while len(self.pairs) > MAX_STORED_TURNS or units > MAX_TEXT_UNITS:
+            units -= sum(text_units(m['content']) for m in self.pairs.pop(0))
+
+    def restore(self, context):
+        """Authenticated, bounded app RAM snapshot; never a prompt/system message."""
+        def invalid(): raise ValueError('Invalid context snapshot')
+        if not isinstance(context, dict) or set(context) != {'version', 'id', 'last_human_ms', 'turns'}: invalid()
+        identity, last, turns = context['id'], context['last_human_ms'], context['turns']
+        if type(context['version']) is not int or context['version'] != 1: invalid()
+        if not isinstance(identity, str) or not re.fullmatch('[0-9a-f]{32}', identity): invalid()
+        if type(last) is not int or not isinstance(turns, list) or len(turns) > MAX_STORED_TURNS: invalid()
+        now = self.clock()
+        if not 0 <= last <= now + 100 or bool(turns) != bool(last): invalid()
+        if last and now - last >= 3600000: raise ContextExpired('Context expired')
+        restored, identifiers, previous, units = [], set(), 0, 0
+        for turn in turns:
+            if not isinstance(turn, dict) or not {'id', 'user', 'human_ms'} <= set(turn) <= {'id', 'user', 'human_ms', 'assistant'}: invalid()
+            turn_id, user, at = turn['id'], turn['user'], turn['human_ms']
+            if not isinstance(turn_id, str) or not re.fullmatch('[0-9a-f]{32}', turn_id) or turn_id in identifiers: invalid()
+            if not isinstance(user, str) or not user.strip() or text_units(user) > 250 or '<|' in user: invalid()
+            if type(at) is not int or not 0 < at <= last or at < previous: invalid()
+            identifiers.add(turn_id); previous = at
+            group = [{'role': 'user', 'content': user}]
+            if 'assistant' in turn:
+                answer = turn['assistant']
+                if not isinstance(answer, str) or conversational_reply({'content': answer}, 'stop') != answer: invalid()
+                if text_units(answer) > 700: invalid()
+                group.append({'role': 'assistant', 'content': answer})
+            units += sum(text_units(m['content']) for m in group)
+            if units > MAX_TEXT_UNITS: invalid()
+            restored.append(group)
+        if turns and previous != last: invalid()
+        self.pairs, self.last_human = restored, last
+        return identity
+
+
+class ContextExpired(ValueError):
+    pass
 
 
 class OwnedInference:
@@ -214,7 +268,9 @@ class ConversationModel:
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
         self.context_metrics = {}
         deadline = min(self.clock() + 22000, speech_end + 26500, session_end - 1500)
-        messages = self.memory.messages(text)
+        messages = self.memory.messages(text, activity_ms=speech_end)
+        available_pairs = sum(len(group) == 2 for group in self.memory.pairs)
+        available_turns = len(self.memory.pairs)
         def work():
             try:
                 while True:
@@ -222,11 +278,18 @@ class ConversationModel:
                     tokens = self.post('/tokenize', {'content': rendered, 'add_special': True, 'parse_special': True}, deadline)['tokens']
                     if len(tokens) <= 1536: break
                     if len(messages) <= 2: raise ValueError('Input exceeds context budget')
-                    del messages[1:3]  # Drop an entire completed user/assistant pair.
+                    # Unanswered human turns have no fabricated assistant reply.
+                    count = 2 if len(messages) > 3 and messages[2]['role'] == 'assistant' else 1
+                    del messages[1:1 + count]
+                used_pairs = sum(m['role'] == 'assistant' for m in messages[1:-1])
+                used_turns = sum(m['role'] == 'user' for m in messages[1:-1])
                 self.context_metrics = {
-                    'history_pairs_available': len(self.memory.pairs),
-                    'history_pairs_used': (len(messages) - 2) // 2,
-                    'history_pairs_trimmed': len(self.memory.pairs) - (len(messages) - 2) // 2,
+                    'history_pairs_available': available_pairs,
+                    'history_pairs_used': used_pairs,
+                    'history_pairs_trimmed': available_pairs - used_pairs,
+                    'history_turns_available': available_turns,
+                    'history_turns_used': used_turns,
+                    'history_turns_trimmed': available_turns - used_turns,
                     'input_tokens': len(tokens), 'input_token_budget': 1536,
                 }
                 result = self.post('/v1/chat/completions', self.payload(messages), deadline)
@@ -252,61 +315,74 @@ class ConversationModel:
         if self.thread is not None: self.thread.join(timeout=.5)
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone'):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None):
     from vosk import KaldiRecognizer, SetLogLevel
     if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
     SetLogLevel(-1)
     pump = FramePump(conn)
     session_id = uuid.uuid4().hex
+    context_id = context_id or uuid.uuid4().hex
+    def emit(event):
+        send_event(conn, dict(event, session_id=session_id, context_id=context_id))
     began = checked = now_ms(); session_end = began + limit * 1000
     state, recognizer, timeline = 'wake', None, None
     preroll = deque(maxlen=75)
     activation = last_audio = 0
     turn = None
     sequence = 0
+    flow = ConversationFlow()
 
-    def reset():
+    def reset(continue_chat=False):
         nonlocal state, recognizer, timeline, turn
         recognizer = timeline = turn = None
         preroll.clear(); detector.reset(); state = 'wake'
-        send_event(conn, {'type': 'state', 'state': 'wake'})
+        if continue_chat:
+            activate('followup', delay_ms=600)
+        else:
+            flow.reset()
+            emit({'type': 'state', 'state': 'wake'})
 
-    def activate(trigger):
+    def activate(trigger, delay_ms=0):
         nonlocal state, recognizer, timeline, activation
-        if session_end - now_ms() < 10000: return
-        state, activation = 'listen', now_ms()
+        if session_end - now_ms() < 10000:
+            emit({'type': 'state', 'state': 'wake'}); return
+        state, activation = 'listen', now_ms() + delay_ms
         recognizer = KaldiRecognizer(detector.model, 16000); recognizer.SetWords(True)
         timeline = AudioTimeline()
         for stamp, pcm in preroll:
             timeline.add(stamp, pcm); recognizer.AcceptWaveform(pcm)
         preroll.clear()
-        send_event(conn, {'type': 'state', 'state': 'command', 'trigger': trigger})
+        emit({'type': 'state', 'state': 'command', 'trigger': trigger})
 
-    send_event(conn, {'type': 'ready', 'protocol': 2, 'conversation_only': True, 'wake_only': False,
+    emit({'type': 'ready', 'protocol': PROTOCOL, 'conversation_only': True, 'wake_only': False,
                      'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': False,
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
-                     'session_id': session_id, 'response_start_ms': 30000, 'input_source': source})
+                     'response_start_ms': 30000, 'input_source': source, 'context_version': 1,
+                      'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
+                      'listen_idle_ms': 50000})
     try:
         while now_ms() < session_end:
             current = now_ms()
             if current - checked >= 1000:
                 checked = current
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation resource/server guard')
-            if state == 'listen' and current - activation >= 8000: reset()
+            # Inactivity pauses reception; it does not delete or split a chat.
+            if state == 'listen' and current - activation >= 50000: reset()
             if turn is not None:
                 if state == 'thinking' and current >= turn['compute_end']:
-                    send_event(conn, {'type': 'error', 'reason': 'deadline', 'turn_id': turn['id']})
+                    emit({'type': 'error', 'reason': 'deadline', 'turn_id': turn['id']})
                     return  # finally stops this dedicated inference process.
                 if state == 'thinking' and model.done.is_set():
                     print(json.dumps({'event': 'conversation_context', 'source': source,
                         'turn_seq': turn['seq'], **model.context_metrics}), flush=True)
                     if model.error or not model.result:
-                        send_event(conn, {'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
+                        model.memory.unanswered(turn['text'])
+                        emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
                         reset()
                     elif current < turn['deadline_ms'] - 1500:
                         turn['answer'] = model.result; state = 'speech'
-                        send_event(conn, {'type': 'say', 'text': model.result, 'id': turn['id'],
+                        emit({'type': 'say', 'text': model.result, 'id': turn['id'],
                             'turn_id': turn['id'], 'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
                             'deadline_ms': turn['deadline_ms'], 'actions_executed': 0})
                     else: return
@@ -332,13 +408,17 @@ def session(conn, detector, model, limit, resource_check, source='microphone'):
                                 'actions_executed': 0}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
                             model.memory.commit(turn['text'], turn['answer'])
+                            flow.spoken(turn['answer'])
                             print(json.dumps({'event': 'conversation_memory_commit', 'source': source,
-                                'turn_seq': turn['seq'], 'retained_pairs': len(model.memory.pairs)}), flush=True)
-                            reset()
+                                'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
+                                'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
+                            reset(continue_chat=True)
                         elif action == 'tts_failed':
+                            model.memory.unanswered(turn['text'])
                             print(json.dumps({'event': 'conversation_memory_skipped', 'source': source,
                                 'turn_seq': turn['seq'], 'reason': 'tts_failed',
-                                'retained_pairs': len(model.memory.pairs)}), flush=True)
+                                'retained_turns': len(model.memory.pairs),
+                                'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             reset()
                     continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
@@ -352,6 +432,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone'):
                     preroll.append((stamp, pcm))
                     if detector.accept_pcm(pcm): activate('voice')
                 elif state == 'listen':
+                    if stamp < activation: continue  # Discard queued audio/TTS tail.
                     timeline.add(stamp, pcm)
                     if not recognizer.AcceptWaveform(pcm): continue
                     result = json.loads(recognizer.Result()); text = result.get('text', '').strip()[:250]
@@ -364,8 +445,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone'):
                     if sequence > 24: return
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
                             'deadline_ms': speech_end + 30000, 'text': text}
-                    send_event(conn, {'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
-                        'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms']})
+                    emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
+                         'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms']})
+                    closing = flow.closing_reason(text)
+                    if closing:
+                        model.memory.last_human = speech_end
+                        model.memory.unanswered(text)
+                        emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': sequence,
+                            'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'], 'reason': closing})
+                        return  # Close this bounded channel/model, not its retained RAM.
                     turn['compute_end'] = model.start(text, speech_end, session_end)
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:
@@ -383,8 +471,10 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(cert, tls_key)
         with socket.socket() as server:
+            # Reuse TIME_WAIT only; bind/listener guards still refuse an active peer.
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(('127.0.0.1', 11436)); server.listen(1); server.settimeout(.5)
-            print(json.dumps({'event': 'conversation_ready', 'protocol': 2, 'tls': True,
+            print(json.dumps({'event': 'conversation_ready', 'protocol': PROTOCOL, 'tls': True,
                               'input_source': source, 'microphone_opened': False, 'actions_enabled': False}), flush=True)
             deadline = now_ms() + 300000
             while now_ms() < deadline:
@@ -398,11 +488,18 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                         with context.wrap_socket(raw, server_side=True) as conn:
                             hello = read_hello(conn, authentication_end)
                             supplied = hello.get('token', '')
-                            if (hello.get('protocol') != 2 or hello.get('mode') != 'conversation_only'
+                            if (hello.get('protocol') != PROTOCOL or hello.get('mode') != 'conversation_only'
                                     or hello.get('source') != source or not isinstance(supplied, str)
                                     or not hmac.compare_digest(supplied.encode(), key.encode())):
                                 continue
-                            session(conn, detector, model, limit, resource_check, source)
+                            try: context_id = model.memory.restore(hello.get('context'))
+                            except ContextExpired:
+                                send_event(conn, {'type': 'error', 'reason': 'context_expired'})
+                                continue
+                            print(json.dumps({'event': 'conversation_context_restored', 'source': source,
+                                'restored_turns': len(model.memory.pairs),
+                                'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
+                            session(conn, detector, model, limit, resource_check, source, context_id)
                             return
                     except (OSError, EOFError, ValueError):
                         # No credentials, frames or speech text in diagnostics.

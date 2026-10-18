@@ -25,7 +25,8 @@ public class VoiceService extends Service {
     public static volatile String lastTranscript = "";
     public static volatile FaceState uiState = FaceState.IDLE;
     public static volatile String lastStatus = "Micrófono apagado · activa solo una prueba autorizada";
-    boolean pilotExpired;
+    boolean pilotExpired, sessionStarted, conversationClosed;
+    volatile boolean dialogueListening;
     volatile boolean running, speaking, ttsReady;
     volatile String activeSpeechId = "";
     volatile String activeSpeechText = "";
@@ -36,6 +37,8 @@ public class VoiceService extends Service {
     volatile boolean wakeOnly;
     volatile boolean conversationOnly;
     final ConversationTurnPolicy conversationTurn = new ConversationTurnPolicy();
+    ConversationMemory.Lease contextLease;
+    ConversationChannel contextChannel;
     final ExecutorService controls = Executors.newSingleThreadExecutor();
     volatile long resumeAfter;
     volatile Socket socket;
@@ -86,6 +89,8 @@ public class VoiceService extends Service {
         if ("STOP".equals(action)) { stopSelf(); return START_NOT_STICKY; }
         if ("PUSH".equals(action)) { if (running) control("activate"); else stopSelf(); return START_NOT_STICKY; }
         if (running) return START_NOT_STICKY;
+        if (sessionStarted) { lastError = "La sesión anterior se está cerrando; vuelve a elegir la prueba"; stopSelf(); return START_NOT_STICKY; }
+        sessionStarted = true;
         wakeOnly = intent != null && intent.getBooleanExtra("wake_only", false);
         conversationOnly = intent != null && intent.getBooleanExtra("conversation_only", false);
         if (wakeOnly && conversationOnly) { lastError = "Modo de sesión inválido"; stopSelf(); return START_NOT_STICKY; }
@@ -103,6 +108,13 @@ public class VoiceService extends Service {
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop).build();
         startForeground(10, notification);
         running = active = true;
+        if (conversationOnly) {
+            try { contextLease = ConversationContexts.MEMORY.acquire(SystemClock.elapsedRealtime()); }
+            catch (IllegalStateException error) {
+                lastError = error.getMessage(); stopSelf(); return START_NOT_STICKY;
+            }
+            ConversationContexts.scheduleExpiry();
+        }
         lastTranscript = "";
         expiresAt = SystemClock.elapsedRealtime() + seconds * 1000L;
         state("Preparando canal local · micrófono aún apagado", FaceState.PREPARING, null);
@@ -147,9 +159,11 @@ public class VoiceService extends Service {
     }
     void captureConversation() {
         try {
-            VoiceConnection connection = VoiceConnection.open(this, "microphone");
+            VoiceConnection connection = VoiceConnection.open(this, "microphone",
+                ConversationContexts.MEMORY.snapshot(contextLease, SystemClock.elapsedRealtime()));
             socket = connection.socket; output = connection.output;
             if (!running) throw new IOException("Sesión detenida");
+            contextChannel = new ConversationChannel(ConversationContexts.MEMORY, contextLease, connection.ready);
             wakeEnabled = aiEnabled = true;
             int seconds = connection.ready.optInt("seconds");
             if (seconds != 90 && seconds != 300) throw new IOException("Duración inválida");
@@ -197,7 +211,10 @@ public class VoiceService extends Service {
                 if (end > now + 100 || now - end > 1000) throw new IOException("El audio llegó atrasado o con otro reloj");
                 if (!clockReady) {
                     clockReady = true; wakeListening = true;
-                    if (!conversationTurn.hasActiveTurn()) state("MICRÓFONO ACTIVO · LFM sin acciones · di " + AssistantConfig.NAME, FaceState.READY, null);
+                    if (!conversationTurn.hasActiveTurn()) state(dialogueListening
+                        ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
+                        : "MICRÓFONO ACTIVO · LFM sin acciones · di " + AssistantConfig.NAME,
+                        dialogueListening ? FaceState.LISTENING : FaceState.READY, null);
                 }
                 if (running && !speaking) {
                     stampBytes.putLong(0, end); System.arraycopy(data, 0, packet, 8, count); frame(4, packet, count + 8);
@@ -207,6 +224,8 @@ public class VoiceService extends Service {
             if (running) { lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
             running = active = wakeListening = microphoneRecording = false;
+            if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
+            ConversationContexts.scheduleExpiry();
             if (recorder != null) { try { recorder.stop(); } catch (Exception ignored) {} recorder.release(); recorder = null; }
             try { if (socket != null) socket.close(); } catch (IOException ignored) {}
             main.post(() -> stopSelf());
@@ -305,10 +324,13 @@ public class VoiceService extends Service {
                     throw new IOException("Evento no permitido en prueba de activación");
                 if (conversationOnly) {
                     if (!VoiceSessionPolicy.conversationEventAllowed(type) || event.has("tool_call_id")) throw new IOException("Evento de acción rechazado");
+                    contextChannel.verify(event);
                     if ("thinking".equals(type)) {
                         String id = event.optString("turn_id"); long deadline = event.optLong("deadline_ms");
                         if (!conversationTurn.begin(id, event.optLong("turn_seq"), event.optLong("speech_end_ms"), deadline, SystemClock.elapsedRealtime()))
                             throw new IOException("Turno duplicado o fuera de plazo");
+                        contextChannel.human(event, SystemClock.elapsedRealtime());
+                        ConversationContexts.scheduleExpiry();
                         speaking = true;
                         state("LFM pensando · pausando micrófono · sin acciones", FaceState.THINKING, "Escuché: " + event.optString("text"));
                         main.postDelayed(() -> {
@@ -321,8 +343,20 @@ public class VoiceService extends Service {
                     } else if ("error".equals(type)) {
                         conversationTurn.clear(); speaking = false;
                         state("No se obtuvo una respuesta completa a tiempo · sin acciones", FaceState.ERROR, null);
+                    } else if ("conversation_closed".equals(type)) {
+                        String reason = event.optString("reason");
+                        if (!("explicit_close".equals(reason) || "declined_more".equals(reason))
+                                || !conversationTurn.acceptClose(event.optString("turn_id"), event.optLong("turn_seq"),
+                                    event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime())
+                                || !contextChannel.end(event.optString("turn_id"), SystemClock.elapsedRealtime()))
+                            throw new IOException("Cierre de otra charla, turno o sesión rechazado");
+                        conversationClosed = true; running = false;
+                        conversationTurn.clear(); ConversationContexts.scheduleExpiry();
+                        main.post(() -> stopSelf());
                     } else if ("state".equals(type)) {
-                        if ("command".equals(event.optString("state"))) state("Escuchando · conversación sin acciones", FaceState.LISTENING, null);
+                        dialogueListening = "command".equals(event.optString("state"));
+                        if (dialogueListening) state(microphoneRecording ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
+                            : "Reanudando micrófono · continúa sin repetir Andrómeda", FaceState.LISTENING, null);
                         else if (!conversationTurn.hasActiveTurn()) state(microphoneRecording ? "MICRÓFONO ACTIVO · LFM · di " + AssistantConfig.NAME : "Reanudando micrófono · LFM sin acciones", FaceState.READY, null);
                     }
                     continue;
@@ -395,13 +429,15 @@ public class VoiceService extends Service {
     }
     void finishSpeech(boolean completed) {
         if (conversationOnly && !activeSpeechId.isEmpty()) {
+            if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null)
+                contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
             controlTurn(completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
             conversationTurn.clear();
         }
         resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = "";
         if (running) {
             if (!conversationOnly) control("tts_done");
-            if (uiState != FaceState.ERROR) state(conversationOnly ? "Reanudando micrófono · LFM sin acciones" : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), FaceState.READY, null);
+            if (uiState != FaceState.ERROR) state(conversationOnly ? "Reanudando micrófono · continúa sin repetir Andrómeda" : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
         }
     }
     void state(String text, FaceState presentation, String words) {
@@ -419,11 +455,15 @@ public class VoiceService extends Service {
     public void onDestroy() {
         running = active = wakeListening = wakeTestActive = conversationTestActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
         conversationTurn.clear();
+        if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
+        ConversationContexts.scheduleExpiry();
+        lastTranscript = ""; activeSpeechId = activeSpeechText = "";
         expiresAt = 0;
         controls.shutdownNow();
         closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
         if (tts != null) { tts.stop(); tts.shutdown(); }
-        state(lastError.isEmpty() ? (pilotExpired ? "Micrófono apagado · terminó el piloto" : "Micrófono apagado") : "Micrófono apagado · " + lastError, lastError.isEmpty() ? FaceState.MUTED : FaceState.ERROR, null); stopForeground(true); super.onDestroy();
+        state(lastError.isEmpty() ? (conversationClosed ? "Micrófono apagado · charla cerrada; contexto retomable hasta 1 h sin actividad"
+            : pilotExpired ? "Micrófono apagado · terminó el piloto" : "Micrófono apagado") : "Micrófono apagado · " + lastError, lastError.isEmpty() ? FaceState.MUTED : FaceState.ERROR, null); stopForeground(true); super.onDestroy();
     }
 }

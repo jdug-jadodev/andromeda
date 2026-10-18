@@ -10,10 +10,10 @@ final class VoiceSessionPolicy {
     }
     static boolean isConversationReady(int protocol, boolean conversation, boolean wakeOnly,
             boolean wakeEnabled, boolean aiEnabled, boolean actionsEnabled) {
-        return protocol == 2 && conversation && !wakeOnly && wakeEnabled && aiEnabled && !actionsEnabled;
+        return protocol == 4 && conversation && !wakeOnly && wakeEnabled && aiEnabled && !actionsEnabled;
     }
     static boolean conversationEventAllowed(String type) {
         return "state".equals(type) || "transcript".equals(type) || "thinking".equals(type)
-            || "say".equals(type) || "error".equals(type);
+            || "say".equals(type) || "error".equals(type) || "conversation_closed".equals(type);
     }
 }
