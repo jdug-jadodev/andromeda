@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "model_id": "lfm",
+  "candidate_note": "El historial adjunto pertenece a esta misma conversacion. Usa esos mensajes para responder sobre lo anterior; si falta un dato, dilo.",
+  "topics": [
+    {
+      "id": "astronomy",
+      "questions": ["¿Qué es una estrella?", "¿Qué es un planeta?"],
+      "expected": {"kind": "topics", "groups": [["estrella", "estrellas"], ["planeta", "planetas"]]},
+      "acknowledgement_probe": true
+    },
+    {
+      "id": "weather_holdout",
+      "questions": ["¿Por qué llueve?", "¿Cómo se forma un arcoíris?"],
+      "expected": {"kind": "topics", "groups": [["llueve", "lluvia"], ["arcoiris"]]}
+    },
+    {
+      "id": "nature_holdout",
+      "questions": ["¿Para qué sirven las raíces de una planta?", "¿Cómo se orientan las abejas?"],
+      "expected": {"kind": "topics", "groups": [["raiz", "raices"], ["abeja", "abejas"]]}
+    },
+    {
+      "id": "recent_window_holdout",
+      "questions": ["¿Qué es un volcán?", "¿Por qué flota el hielo?", "¿Cómo respiran los peces?"],
+      "expected": {"kind": "topics", "groups": [["hielo"], ["pez", "peces"]], "forbids": ["volcan"]}
+    }
+  ],
+  "controls": [
+    {"id": "empty_history", "text": "¿Cuáles fueron mis dos preguntas anteriores?", "expected": {"kind": "absence"}},
+    {"id": "capability", "text": "¿Puedes poner un temporizador en esta prueba?", "expected": {"kind": "no_actions"}}
+  ]
+}

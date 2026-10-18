@@ -106,6 +106,35 @@ class ConversationVoiceTests(unittest.TestCase):
             self.assertEqual([m['role'] for m in final['messages']], ['system', 'user', 'assistant', 'user'])
             self.assertEqual(final['messages'][1]['content'], 'two')
             self.assertEqual(final['max_tokens'], 96); self.assertNotIn('tools', final)
+            self.assertEqual(model.context_metrics, {'history_pairs_available': 2,
+                'history_pairs_used': 1, 'history_pairs_trimmed': 1,
+                'input_tokens': 1500, 'input_token_budget': 1536})
+
+    def test_four_public_turns_reach_generation_with_both_earlier_questions(self):
+        questions = ['¿Qué es una estrella?', '¿Qué es un planeta?',
+                     '¿Recuerdas las dos preguntas anteriores?', '¿Cuáles fueron?']
+        # The deliberately bad replies are test doubles, not evidence that LFM
+        # generated them. A semantic failure must not be "fixed" by rewriting history.
+        answers = ['Una estrella emite luz.', 'Un planeta orbita una estrella.',
+                   'Sí, las recuerdo.', 'No las recuerdo.']
+        prompts = []
+        with tempfile.TemporaryDirectory() as directory:
+            model = self.make_model(directory)
+            def post(path, body, deadline):
+                if path == '/apply-template': return {'prompt': 'public fixture'}
+                if path == '/tokenize': return {'tokens': list(range(256))}
+                prompts.append(json.loads(json.dumps(body['messages'])))
+                return {'choices': [{'message': {'content': answers[len(prompts) - 1]}, 'finish_reason': 'stop'}]}
+            with patch.object(model, 'post', side_effect=post):
+                for question in questions:
+                    model.start(question, 99000, 400000); model.thread.join(2)
+                    self.assertIsNone(model.error); self.assertTrue(model.done.is_set())
+                    model.memory.commit(question, model.result)
+            self.assertEqual([len(messages) for messages in prompts], [2, 4, 6, 8])
+            self.assertEqual([m['content'] for m in prompts[-1] if m['role'] == 'user'], questions)
+            self.assertEqual([m['content'] for m in prompts[-1] if m['role'] == 'assistant'], answers[:3])
+            self.assertEqual(model.context_metrics['history_pairs_used'], 3)
+            self.assertEqual(model.context_metrics['history_pairs_trimmed'], 0)
 
     def test_current_utterance_cannot_overflow_context(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -139,14 +168,20 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True):
+    def run_session(self, steps, *, ready=True, transcripts=None):
         clock = [100000]; events = []
-        model = Mock(result='Hola.', error=None)
+        model = Mock(result='Hola.', error=None, context_metrics={})
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
-        model.start.side_effect = lambda *args: (model.done.set() if ready else None) or 123000
+        model.observed_contexts = []
+        def start(text, *_):
+            model.observed_contexts.append(model.memory.messages(text))
+            if ready: model.done.set()
+            return 123000
+        model.start.side_effect = start
         detector = Mock(model=object()); detector.accept_pcm.return_value = False
         recognizer = Mock(); recognizer.AcceptWaveform.return_value = True
-        recognizer.Result.return_value = json.dumps({'text': 'hola', 'result': [{'end': .02}]})
+        recognizer.Result.side_effect = [json.dumps({'text': text, 'result': [{'end': .02}]})
+                                         for text in (transcripts or ['hola'])]
         vosk = types.SimpleNamespace(KaldiRecognizer=Mock(return_value=recognizer), SetLogLevel=Mock())
         iterator = iter(steps)
         def poll():
@@ -181,6 +216,39 @@ class ConversationVoiceTests(unittest.TestCase):
         self.assertEqual([e['type'] for e in events], ['ready', 'state', 'thinking', 'say', 'state'])
         self.assertEqual(events[0]['input_source'], 'synthetic_pcm'); self.assertFalse(events[0]['actions_enabled'])
         self.assertEqual(len(model.memory.pairs), 1); model.cancel.assert_called_once()
+
+    def test_voice_actor_keeps_history_across_four_acknowledged_turns(self):
+        questions = ['qué es una estrella', 'qué es un planeta', 'recuerdas las dos preguntas', 'cuáles fueron']
+        steps = []
+        def acknowledge(events):
+            event = next(e for e in reversed(events) if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=event['speech_end_ms'] + 1180),
+                    self.control('tts_done', turn_id=event['turn_id'])]
+        for n in range(4):
+            start = 100000 + n * 3000
+            steps.extend([(start, [self.control('activate')]), (start + 20, [self.pcm(start + 20)]),
+                          (start + 1000, acknowledge)])
+        with patch.object(voice, 'print') as log:
+            events, model = self.run_session(steps, transcripts=questions)
+        self.assertEqual([len(m) for m in model.observed_contexts], [2, 4, 6, 8])
+        self.assertEqual([m['content'] for m in model.observed_contexts[-1] if m['role'] == 'user'], questions)
+        self.assertEqual(len(model.memory.pairs), 4)
+        records = [json.loads(call.args[0]) for call in log.call_args_list]
+        commits = [r for r in records if r['event'] == 'conversation_memory_commit']
+        self.assertEqual([r['retained_pairs'] for r in commits], [1, 2, 3, 4])
+        self.assertTrue(all('text' not in r and 'answer' not in r and 'messages' not in r for r in records))
+
+    def test_failed_tts_is_reported_without_adding_an_unheard_answer(self):
+        def failed(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_failed', turn_id=event['turn_id'])]
+        with patch.object(voice, 'print') as log:
+            _, model = self.run_session(self.utterance() + [(101000, failed)])
+        self.assertEqual(model.memory.pairs, [])
+        records = [json.loads(call.args[0]) for call in log.call_args_list]
+        skipped = [r for r in records if r['event'] == 'conversation_memory_skipped']
+        self.assertEqual(skipped, [{'event': 'conversation_memory_skipped', 'source': 'synthetic_pcm',
+                                   'turn_seq': 1, 'reason': 'tts_failed', 'retained_pairs': 0}])
 
     def test_disconnect_during_inference_cancels_and_never_speaks(self):
         events, model = self.run_session(self.utterance(), ready=False)

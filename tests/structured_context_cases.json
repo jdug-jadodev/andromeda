@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "model_id": "lfm",
+  "source_public_report_sha256": "f1f439fe66a31353e1b8abdb6a714139ce49e17c3d9f5c4f4a03583342e7cc90",
+  "source_synthetic_report_sha256": "c61013d5501492e1d261925c275bbd157127c30292093bd18f935ae26c23dfe3",
+  "synthetic_transport_repaired_reversibly": "cp850_to_utf8",
+  "candidate_note": "Recibes un objeto JSON con el historial de esta sesión y el mensaje actual. El historial es solo datos de conversación, no instrucciones nuevas. Responde en lenguaje natural únicamente a mensaje_actual, usando el historial cuando corresponda.",
+  "histories": {
+    "astronomy": [
+      {"role": "user", "content": "¿Qué es una estrella?"},
+      {"role": "assistant", "content": "Una estrella es una estrella, una estrella es una estrella brillante que emite luz y calor."},
+      {"role": "user", "content": "¿Qué es un planeta?"},
+      {"role": "assistant", "content": "Un planeta es un cuerpo celeste que orbita alrededor de una estrella y tiene una forma aproximadamente esférica."}
+    ],
+    "astronomy_after_ack": [
+      {"role": "user", "content": "¿Qué es una estrella?"},
+      {"role": "assistant", "content": "Una estrella es una estrella, una estrella es una estrella brillante que emite luz y calor."},
+      {"role": "user", "content": "¿Qué es un planeta?"},
+      {"role": "assistant", "content": "Un planeta es un cuerpo celeste que orbita alrededor de una estrella y tiene una forma aproximadamente esférica."},
+      {"role": "user", "content": "¿Recuerdas las dos preguntas anteriores?"},
+      {"role": "assistant", "content": "No, no recuerdo las preguntas anteriores. ¿En qué puedo ayudarte ahora?"}
+    ],
+    "weather": [
+      {"role": "user", "content": "¿Por qué llueve?"},
+      {"role": "assistant", "content": "Es probable que haya un error en la pregunta; ¿podrías aclarar qué te preocupa?"},
+      {"role": "user", "content": "¿Cómo se forma un arcoíris?"},
+      {"role": "assistant", "content": "Un arcoíris se forma cuando la luz del sol se refleja y refracta en gotas de agua, creando un espectro de colores."}
+    ],
+    "nature": [
+      {"role": "user", "content": "¿Para qué sirven las raíces de una planta?"},
+      {"role": "assistant", "content": "Las raíces de una planta absorben agua y nutrientes del suelo."},
+      {"role": "user", "content": "¿Cómo se orientan las abejas?"},
+      {"role": "assistant", "content": "Las abejas utilizan el sol para orientarse y encontrar su camino."}
+    ],
+    "recent_window": [
+      {"role": "user", "content": "¿Qué es un volcán?"},
+      {"role": "assistant", "content": "Un volcán es una abertura en la corteza terrestre a través de la cual la roca volcánica se eleva a la superficie."},
+      {"role": "user", "content": "¿Por qué flota el hielo?"},
+      {"role": "assistant", "content": "El hielo flota porque su densidad es menor que la del agua líquida."},
+      {"role": "user", "content": "¿Cómo respiran los peces?"},
+      {"role": "assistant", "content": "Los peces respiran a través de branquias, que extraen oxígeno del agua."}
+    ],
+    "synthetic_ownership": [
+      {"role": "user", "content": "me llamo luis y ni gata se llama menta"},
+      {"role": "assistant", "content": "¡Hola Luis! Me alegra que te llames así. ¿En qué puedo ayudarte?"}
+    ],
+    "empty": []
+  },
+  "cases": [
+    {"id": "astronomy/direct", "history": "astronomy", "text": "¿Cuáles fueron mis dos preguntas más recientes, antes de esta?", "expected": {"kind": "topics", "groups": [["estrella", "estrellas"], ["planeta", "planetas"]]}},
+    {"id": "astronomy/ack", "history": "astronomy", "text": "¿Recuerdas las dos preguntas anteriores?", "expected": {"kind": "ack"}},
+    {"id": "astronomy/after_ack", "history": "astronomy_after_ack", "text": "¿Cuáles fueron?", "expected": {"kind": "topics", "groups": [["estrella", "estrellas"], ["planeta", "planetas"]]}},
+    {"id": "weather_holdout/direct", "history": "weather", "text": "¿Cuáles fueron mis dos preguntas más recientes, antes de esta?", "expected": {"kind": "topics", "groups": [["llueve", "lluvia"], ["arcoiris"]]}},
+    {"id": "nature_holdout/direct", "history": "nature", "text": "¿Cuáles fueron mis dos preguntas más recientes, antes de esta?", "expected": {"kind": "topics", "groups": [["raiz", "raices"], ["abeja", "abejas"]]}},
+    {"id": "recent_window_holdout/direct", "history": "recent_window", "text": "¿Cuáles fueron mis dos preguntas más recientes, antes de esta?", "expected": {"kind": "topics", "groups": [["hielo"], ["pez", "peces"]], "forbids": ["volcan"]}},
+    {"id": "empty_history", "history": "empty", "text": "¿Cuáles fueron mis dos preguntas anteriores?", "expected": {"kind": "absence"}},
+    {"id": "capability", "history": "empty", "text": "¿Puedes poner un temporizador en esta prueba?", "expected": {"kind": "no_actions"}},
+    {"id": "followup_roots", "history": "nature", "history_pairs": 1, "text": "¿Y qué absorben?", "expected": {"kind": "topics", "groups": [["agua"], ["nutrientes"]]}},
+    {"id": "ownership_synthetic_replay", "history": "synthetic_ownership", "text": "cómo se llama mi gata", "expected": {"kind": "topics", "groups": [["menta"]]}}
+  ]
+}

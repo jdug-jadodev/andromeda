@@ -411,12 +411,17 @@ public class VoiceService extends Service {
         if (words != null) update.putExtra("transcript", words);
         sendBroadcast(update);
     }
+    Thread closeConnectionAsync() {
+        Socket connected = socket;
+        socket = null; output = null;
+        return VoiceSocketCleanup.closeAsync(connected);
+    }
     public void onDestroy() {
         running = active = wakeListening = wakeTestActive = conversationTestActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
         conversationTurn.clear();
         expiresAt = 0;
         controls.shutdownNow();
-        try { if (socket != null) socket.close(); } catch (IOException ignored) {}
+        closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
         if (tts != null) { tts.stop(); tts.shutdown(); }
         state(lastError.isEmpty() ? (pilotExpired ? "Micrófono apagado · terminó el piloto" : "Micrófono apagado") : "Micrófono apagado · " + lastError, lastError.isEmpty() ? FaceState.MUTED : FaceState.ERROR, null); stopForeground(true); super.onDestroy();

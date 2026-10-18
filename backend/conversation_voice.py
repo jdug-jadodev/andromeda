@@ -180,6 +180,7 @@ class ConversationModel:
         self.cancelled, self.done = threading.Event(), threading.Event()
         self.http = None
         self.result = self.error = self.thread = None
+        self.context_metrics = {}
 
     def post(self, path, body, deadline):
         if self.cancelled.is_set() or self.clock() >= deadline: raise TimeoutError()
@@ -211,6 +212,7 @@ class ConversationModel:
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
+        self.context_metrics = {}
         deadline = min(self.clock() + 22000, speech_end + 26500, session_end - 1500)
         messages = self.memory.messages(text)
         def work():
@@ -221,6 +223,12 @@ class ConversationModel:
                     if len(tokens) <= 1536: break
                     if len(messages) <= 2: raise ValueError('Input exceeds context budget')
                     del messages[1:3]  # Drop an entire completed user/assistant pair.
+                self.context_metrics = {
+                    'history_pairs_available': len(self.memory.pairs),
+                    'history_pairs_used': (len(messages) - 2) // 2,
+                    'history_pairs_trimmed': len(self.memory.pairs) - (len(messages) - 2) // 2,
+                    'input_tokens': len(tokens), 'input_token_budget': 1536,
+                }
                 result = self.post('/v1/chat/completions', self.payload(messages), deadline)
                 choice = result['choices'][0]; message = choice['message']
                 answer = conversational_reply(message, choice.get('finish_reason'))
@@ -291,6 +299,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone'):
                     send_event(conn, {'type': 'error', 'reason': 'deadline', 'turn_id': turn['id']})
                     return  # finally stops this dedicated inference process.
                 if state == 'thinking' and model.done.is_set():
+                    print(json.dumps({'event': 'conversation_context', 'source': source,
+                        'turn_seq': turn['seq'], **model.context_metrics}), flush=True)
                     if model.error or not model.result:
                         send_event(conn, {'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
                         reset()
@@ -321,8 +331,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone'):
                                 'speech_end_estimated': True, 'useful_audio_verified': False,
                                 'actions_executed': 0}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
-                            model.memory.commit(turn['text'], turn['answer']); reset()
-                        elif action == 'tts_failed': reset()
+                            model.memory.commit(turn['text'], turn['answer'])
+                            print(json.dumps({'event': 'conversation_memory_commit', 'source': source,
+                                'turn_seq': turn['seq'], 'retained_pairs': len(model.memory.pairs)}), flush=True)
+                            reset()
+                        elif action == 'tts_failed':
+                            print(json.dumps({'event': 'conversation_memory_skipped', 'source': source,
+                                'turn_seq': turn['seq'], 'reason': 'tts_failed',
+                                'retained_pairs': len(model.memory.pairs)}), flush=True)
+                            reset()
                     continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
                     raise ValueError('Expected timestamped PCM16')
