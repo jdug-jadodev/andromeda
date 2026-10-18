@@ -1,5 +1,7 @@
 # Charlas continuas · petición aclarada por el usuario
 
+**Corrección vigente posterior: 0.7 instalada, entrada por voz.** El usuario descartó elegir retomar/nueva manualmente al abrir: sin «recuerdas» se crea una charla nueva; con «recuerdas…» se busca y se confirma una candidata real. La conversación activa conserva sus intercambios hasta cerrar. Implementación, búsqueda léxica, límites y pruebas en `ENTRADA-VOZ-ANDROMEDA.md`. Las propuestas de selector manual y la búsqueda todavía pendiente que aparecen más abajo son antecedentes, no el flujo vigente.
+
 ## Entrega vigente 0.6.1 · oferta explícita y despedida antes de cerrar
 
 El usuario solicita preparar cinco minutos **después** de que cada respuesta ofrezca más ayuda y de que «no» produzca una despedida. **0.6.1-dialogue-trial / código 8 / protocolo 5 instalada**, con respaldo previo del APK 0.6 en `artifacts/android-voice/pre-v061-*.apk` y backend anterior en `/data/local/doha-voice/backups/pre-dialogue-v061-20261018`. No cambia el prompt, motor, pesos, ventana 2048/1536/96 ni el techo de texto RAM de 5700 unidades UTF-16 por charla.
@@ -31,6 +33,30 @@ MemAvailable mínimo **1295756 KiB**, pico servidor **737184 KiB**, backend/Vosk
 El usuario pide **una última prueba de contexto antes de dormir y seguir mañana**. Se prepara únicamente `pilot 90`, sin micrófono automático, reinstalaciones ni instrumentación. Reposo previo: MemAvailable **1496476 KiB**, batería **25.4 °C**, sin voz/modelo activos. Como el cierre deja la charla archivada y sin selección, **primero Contexto → seleccionar la misma charla cerrada** (la primera contiene tres turnos); no crear una nueva ni esperar recuperación automática por tema. Luego elegir Conversación LFM → 90 segundos, preguntar por un detalle concreto ya mencionado sin repetirlo y cerrar con «no» tras la oferta. El backend debe mostrar restauración de los turnos, separada de la corrección de la respuesta. Al acabar, no preparar más sesiones; comprobar reposo y conservar el resultado para mañana.
 
 Se recuerda expresamente que **el chat caduca tras una hora de su propia inactividad** y que la RAM no garantiza sobrevivir a muerte del proceso. Dormir hasta mañana no conserva esta charla por defecto; no ampliar TTL, exportar texto humano ni persistirlo sin una nueva decisión. El trabajo/código/evidencias del proyecto sí quedan documentados para continuar. Próximo bloque tras validar este ensayo: consulta real del catálogo y confirmación para retomar por tema, sin prometerlo como implementado ni saltar a herramientas por dar el contexto por resuelto.
+
+### Resultado del último ensayo de contexto y cierre de jornada
+
+La ventana `pilot 90` terminó. El handshake registró **cero turnos/cero respuestas restaurados**, no los tres de la charla cerrada que se pretendía retomar. Por tanto, **este ensayo no valida recuperación de la conversación anterior**. No afirmar que el usuario seleccionó mal ni que falló la RAM: selección no aplicada, contexto no disponible o caducidad/muerte de proceso son hipótesis que el registro numérico no resuelve. El reinicio posterior del servidor del agente no demuestra un reinicio del teléfono ni explica por sí solo aquel snapshot vacío.
+
+Dentro de esta nueva sesión hubo cuatro consultas LFM: **0/1/2/3 pares previos enviados sin recortes**, entradas de **85/130/179/235 tokens**. Inicios TTS a **7.078 / 6.843 / 8.925 / 10.654 s** desde fin estimado; solo constan **tres pares completados**. No consta commit del cuarto ni turno de despedida; no atribuir la parada a «no», Silenciar o vencimiento sin feedback humano. Haber enviado historial dentro de esta sesión no certifica que el modelo recordase correctamente ni que el audio fuese útil.
+
+Recursos del ensayo: MemAvailable mínimo **1288252 KiB**, pico servidor **737760 KiB**, backend/Vosk **155388 KiB**, batería máxima **26.1 °C**, cero acciones; preparación separada **7.203 s**. Tras reiniciarse el servidor del agente se hizo **solo inspección de lectura**, sin repetir pruebas/instalaciones ni preparar otra ventana: sin VoiceService/RingService ni listeners 11435/11436, Andrómeda en primer plano, SSH :2222 y web :8080 escuchando, hash de timers idéntico. Muestra posterior: MemAvailable **1568344 KiB**, batería **20.5 °C**. No se exportaron conversaciones ni se alteró su caducidad.
+
+**Punto de continuación:** primero aclarar el resultado humano y por qué este intento empezó sin la charla anterior, revisando selección/identidad/caducidad sin culpar al modelo por datos que no recibió. No repetir automáticamente el mismo ensayo ni habilitar memoria permanente. Después seguir con catálogo/búsqueda por tema y confirmación; herramientas/timers conversacionales siguen pendientes. Por petición de descanso, no iniciar más inferencia, captura, pruebas o cambios funcionales hasta una nueva indicación.
+
+### Feedback posterior: afirmación de recuerdo seguida de negativa de acceso
+
+El usuario aclara que hizo preguntas y recibió respuestas; al preguntar si recordaba, LFM dijo que sí, pero al pedir qué recordaba respondió que no tenía acceso a memoria específica. **El «sí» no es evidencia de recuerdo** y esta contradicción es un fallo conversacional reportado, no una aceptación de contexto. No se han extraído transcripciones humanas del teléfono ni conocemos el texto completo o la posición exacta de cada intervención.
+
+Separar dos problemas: el intento de retomar arrancó sin historial anterior, pero las siguientes consultas **sí recibieron 1/2/3 pares de esa misma sesión**, sin recorte de tokens. Por ello, una negativa general de acceso no describe fielmente los mensajes disponibles dentro de ella. Los registros de esta muestra no apuntan a agotamiento de RAM. Tampoco demostrar que el texto llegó equivale a demostrar que LFM lo comprendió o recordó.
+
+**Siguiente entrega propuesta, aún no implementada:**
+
+1. **Entrada de charla explícita y verificable.** `ConversationMemory.acquire()` crea una charla nueva si no existe selección, y el cierre deselecciona la anterior. No se afirma que esto causara aquel ensayo, pero permite entrar vacío sin una decisión visible. Antes de conectar, distinguir claramente retomar/nueva, mostrar el número de turnos a cargar y rechazar una selección caducada o desaparecida en vez de sustituirla silenciosamente por otra identidad. Sin renovar la hora al consultar/seleccionar ni reabrir captura por sí sola.
+2. **Disponibilidad basada en el almacén real.** Que una charla exista, tenga N turnos o haya caducado debe determinarlo el registro de la app, no un «sí/no» libre del modelo. Una eventual consulta de memoria/catálogo debe devolver solo datos existentes y acotados, con identidad/procedencia validada, sin fingir que añadir esa consulta ya arregla la interpretación.
+3. **Aceptación semántica de referencias concretas.** Antes de otro ensayo humano, verificar con casos públicos que la respuesta usa un detalle realmente presente y reconoce lo ausente. No puntuar un «sí recuerdo» como éxito, sustituir preguntas por respuestas preparadas, atribuir ausencia al sistema cuando el historial fue enviado ni reabrir por defecto comparaciones de modelos/formatos ya rechazados. La selección LFM y la RAM se mantienen; si el método ensayado no mejora el uso del contexto de forma equilibrada y dentro del plazo, registrar el límite, no anunciarlo reparado.
+
+La búsqueda por tema y los timers conversacionales siguen después de este bloque. Esta revisión registra feedback y plan; **no cambia el APK/prompt/modelo, no instala nada ni inicia otra sesión**.
 
 ## Entrega anterior: 0.6 instalada; validación sintética superada
 

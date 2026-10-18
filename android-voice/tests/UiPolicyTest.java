@@ -41,14 +41,15 @@ public final class UiPolicyTest {
         check(VoiceSessionPolicy.wakeOnlyEventAllowed("transcript"), "Transcript event rejected");
         for (String type : new String[]{null, "timer", "cancel_timer", "list_timers", "stop_alarm", "say", "thinking"})
             check(!VoiceSessionPolicy.wakeOnlyEventAllowed(type), "Restricted mode accepted " + type);
-        check(VoiceSessionPolicy.isConversationReady(5, true, false, true, true, false), "Conversation peer rejected");
+        check(VoiceSessionPolicy.isConversationReady(6, true, false, true, true, false), "Conversation peer rejected");
         check(!VoiceSessionPolicy.isConversationReady(1, true, false, true, true, false), "Old protocol accepted");
         check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, true, false), "Old memoryless peer accepted");
         check(!VoiceSessionPolicy.isConversationReady(3, true, false, true, true, false), "Old single-query flow accepted");
         check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, true, false), "Old farewell-less peer accepted");
-        check(!VoiceSessionPolicy.isConversationReady(5, true, false, true, true, true), "Actions accepted");
-        check(!VoiceSessionPolicy.isConversationReady(5, true, true, true, true, false), "Wake-only overlap accepted");
-        check(!VoiceSessionPolicy.isConversationReady(5, true, false, true, false, false), "Missing AI accepted");
+        check(!VoiceSessionPolicy.isConversationReady(5, true, false, true, true, false), "Old manual-selection peer accepted");
+        check(!VoiceSessionPolicy.isConversationReady(6, true, false, true, true, true), "Actions accepted");
+        check(!VoiceSessionPolicy.isConversationReady(6, true, true, true, true, false), "Wake-only overlap accepted");
+        check(!VoiceSessionPolicy.isConversationReady(6, true, false, true, false, false), "Missing AI accepted");
         check(VoiceSessionPolicy.conversationEventAllowed("conversation_closed"), "Conversation close rejected");
         for (String type : new String[]{"timer", "cancel_timer", "list_timers", "stop_alarm", "tool_result"})
             check(!VoiceSessionPolicy.conversationEventAllowed(type), "Conversation accepted " + type);

@@ -272,14 +272,14 @@ public class MainActivity extends Activity {
         List<ConversationMemory.Info> items = ConversationContexts.MEMORY.list(now);
         if (VoiceService.active) {
             showDialog(new AlertDialog.Builder(this).setTitle("Contexto local en RAM")
-                .setMessage("Silencia primero para cambiar u olvidar una charla. Silenciar conserva los mensajes; los timers son independientes.\n\nLFM todavía puede usar mal el historial recibido.")
+                .setMessage("Silencia primero para gestionar u olvidar una charla. Para retomar por voz abre con «Andrómeda, recuerdas…» y confirma la coincidencia. Una apertura normal crea otra charla.\n\nLFM todavía puede usar mal el historial recibido.")
                 .setPositiveButton("Cerrar", null).create()); return;
         }
         List<String> labels = new ArrayList<>();
         for (ConversationMemory.Info info : items) labels.add((info.current ? "✓ " : "") + info.label
             + (info.closed ? " · cerrada, retomable" : "") + " · " + info.turns + " turnos · " + Math.max(1, (info.remainingMs + 59999) / 60000) + " min restantes");
         labels.add("Nueva conversación"); labels.add("Olvidar la conversación seleccionada…");
-        showDialog(new AlertDialog.Builder(this).setTitle("Contexto · solo RAM, hasta 1 h sin hablar")
+        showDialog(new AlertDialog.Builder(this).setTitle("Gestionar RAM · retoma por voz con «recuerdas»")
             .setItems(labels.toArray(new String[0]), (dialog, index) -> {
                 if (VoiceService.active) return;
                 long at = SystemClock.elapsedRealtime();
@@ -324,7 +324,7 @@ public class MainActivity extends Activity {
     private void explainVoiceTrial(boolean conversation) {
         showDialog(new AlertDialog.Builder(this).setTitle(conversation ? "Conversación local · experimental" : "Micrófono · prueba de activación")
             .setMessage(conversation
-                ? "Di Andrómeda una vez, espera la cara y conversa sin repetir el nombre. Tras responder pregunta si necesitas algo más: «sí» u otra pregunta continúa; «no» a solas se despide y cierra. También cierran «cierra la conversación» y «gracias» a solas. Micrófono pausado mientras piensa/habla. No ejecuta órdenes ni consulta Internet.\n\nCerrar termina la prueba y apaga micrófono/modelo: otra activación necesita preparar una ventana nueva. 50 s sin hablar vuelve a esperar el nombre sin borrar la charla; máximo 90 s/5 min. Contexto en RAM hasta 1 h sin actividad; cerrar proceso/reiniciar lo borra. Búsqueda por tema pendiente; LFM puede usar mal los mensajes. 30 s de audio útil sin certificar."
+                ? "Abre con «Andrómeda» y una pregunta para una charla nueva. Para buscar una anterior di «Andrómeda, recuerdas…» y el tema; confirma «sí» para retomarla. La búsqueda usa palabras del tema, no recuerdos inventados por LFM. Luego conversa sin repetir el nombre.\n\nTras responder ofrece más ayuda; «no», «gracias» o «cierra la conversación» cierran con despedida y apagan micrófono/modelo. Nueva prueba: preparación manual, máximo 90 s/5 min. RAM: 1 h sin actividad; se pierde al cerrar proceso/reiniciar. No acciones ni Internet; LFM aún puede usar mal el historial. 30 s de audio útil sin certificar."
                 : "Di Andrómeda: aparece la cara y escucha durante 8 segundos; después vuelve al reloj. Muestra lo reconocido, sin ejecutar órdenes, hablar ni cargar la IA.\n\nEl detector local debe estar preparado. La sesión termina sola; puedes silenciar o salir de la app.")
             .setNegativeButton("Volver", null).setPositiveButton("Elegir prueba limitada", (dialog, which) ->
                 showDialog(new AlertDialog.Builder(this).setTitle("Micrófono local · duración máxima")

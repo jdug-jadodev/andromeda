@@ -4,7 +4,7 @@
 
 **La IA interpreta y propone; Android guarda/programa y confirma hechos reales.** El modelo no se queda contando segundos y la memoria de conversación no es el registro de acciones. Olvidar una charla o caducar su contexto no borra obligaciones ya confirmadas. Silenciar detiene captura/voz/modelo, **no cancela timers**; detener un sonido y cancelar un evento son operaciones distintas.
 
-La conversación actual 0.5 **sigue sin herramientas/ejecutor**. Esta nota responde al alcance preguntado por el usuario; no habilita órdenes de voz, scheduling nuevo ni cambios de permisos/arranque.
+La conversación instalada **0.7 sigue sin herramientas/ejecutor**. Esta nota describe el bloque siguiente; no habilita órdenes de voz, scheduling nuevo ni cambios de permisos/arranque. El usuario valora positivamente el ensayo de recuperación y aclara que su pregunta por Internet era curiosidad, **no una petición de añadir búsqueda web**.
 
 ## Lo existente y lo pendiente
 
@@ -28,6 +28,7 @@ Silenciar/cerrar una charla no equivale a **forzar la detención del paquete And
 1. La IA elige una herramienta tipada de un catálogo restringido, no una regla por frase. Nunca recibe shell/root ni un ejecutor de código libre.
 2. Validar tipo, rango, fecha/zona, literal de duración y permisos; mantener barreras frente a negaciones, citas y duraciones inventadas. Si falta información, pedirla. El usuario acepta errores casuales de conversación, **no acciones incorrectas**.
 3. En prototipo, propuesta legible y confirmación humana antes de persistir. Correlacionar autorización con propuesta/turno/ID, comprobar plazo justo antes de mutar y rechazar reintentos tardíos o de otra sesión.
+   La confirmación de una acción es un estado distinto de «¿Necesitas algo más?» y «¿Quieres retomar esa charla?»: un «sí» dado a cualquiera de esas preguntas no autoriza un timer. No reutilizar sin corregir el piloto histórico con acciones: sus limitaciones de autenticación/plazo no quedan reparadas por la conversación actual.
 4. Generar ID de acción independiente del ID de charla, guardar y programar de forma recuperable/idempotente. Confirmar solo tras resultado real del ejecutor; si falla, comunicarlo y no afirmar éxito ni inventar un registro.
 5. Consultar/listar/cancelar desde el registro real, no desde lo que el modelo recuerda haber hecho. Cancelar un objetivo concreto; si hay varios y no está claro cuál, preguntar. No cancelar todos implícitamente.
 6. Al vencimiento, notificación/sonido o TTS offline según capacidad validada, sin llamar al LLM. Evitar que su propia voz/alarma entre a ASR. El modo conversacional actual detiene su sesión ante un sonido de alarma y conserva contexto RAM.
@@ -36,4 +37,4 @@ Puede persistirse también el resultado confirmado para ayudar a conversar, pero
 
 ## Orden de entrega
 
-Primero cerrar la conservación/reapertura de contexto y parada de 0.5. Después **una herramienta de temporizador** con validación, confirmación, ID y resultado real, dentro del plazo global, sin abrir aún todas las acciones. Luego alarmas por fecha y recordatorios; después recurrencias y casos de reinicio/reloj/OEM. Cada uno requiere pruebas sintéticas y acotadas antes del uso humano correspondiente. Sin escuchar permanentemente, nube de inferencia ni requisitos nuevos de hardware.
+Tras la recuperación mecánica entre ventanas 0.7 y valoración positiva del ensayo por el usuario, el siguiente bloque propuesto es **una herramienta de creación de temporizador** con validación, confirmación, ID y resultado Android real, dentro del plazo global, sin abrir aún todas las acciones. Reutilizar el almacén/planificador Android existente, no el historial como registro ni un modelo contando segundos. Primero crear uno y comprobar que vence con conversación/modelo apagados; después consultar/cancelar por voz, alarmas por fecha y recordatorios; luego recurrencias y casos de reinicio/reloj/OEM. Cada capacidad requiere pruebas sintéticas y acotadas antes del uso humano correspondiente. La prueba de contexto no certifica memoria general ni seguridad de herramientas. Sin escuchar permanentemente, nube de inferencia, búsqueda web implícita ni requisitos nuevos de hardware.

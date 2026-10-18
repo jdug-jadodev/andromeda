@@ -1,6 +1,6 @@
 # Conversación local 0.4 · prueba personal acotada
 
-**Entrega vigente posterior: 0.6.1-dialogue-trial / código 8 instalada**, contexto en RAM de Android independiente del modelo y protocolo 5. Añade oferta de más ayuda y despedida antes de cerrar, sin otra generación. Conserva conversación sin acciones y wake-only; este documento mantiene las evidencias históricas 0.4. Contexto anterior en `CONTEXTO-ANDROMEDA.md` y flujo actual/pruebas/límites en `FLUJO-CHARLAS-ANDROMEDA.md`. Timers/alarmas/recordatorios separados de las charlas: `ACCIONES-ANDROMEDA.md`.
+**Entrega vigente posterior: 0.7.0-voice-entry-trial / código 9 instalada**, contexto RAM Android y protocolo 6. Nueva por defecto al abrir; «recuerdas…» busca y pide confirmar recuperación, sin selector manual. Conserva oferta de ayuda, despedida, conversación sin acciones y wake-only. Este documento mantiene las evidencias históricas 0.4. Flujo vigente/límites/pruebas: `ENTRADA-VOZ-ANDROMEDA.md`; versiones anteriores: `CONTEXTO-ANDROMEDA.md` y `FLUJO-CHARLAS-ANDROMEDA.md`. Timers/alarmas/recordatorios separados: `ACCIONES-ANDROMEDA.md`.
 
 **Actualización anterior 0.6 autorizada y desplegada:** continuidad de varios turnos, cierre retomable y presupuesto de historial variable 0.6/protocolo 4 en `FLUJO-CHARLAS-ANDROMEDA.md`; búsqueda por tema todavía pendiente. La RAM de prueba anterior se perdió con esa actualización consentida, no se exportó. Sus ensayos históricos usaron protocolo 4; la revisión 0.6.1 y las fixtures actuales usan protocolo 5.
 

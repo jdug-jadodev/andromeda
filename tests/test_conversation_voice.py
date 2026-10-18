@@ -65,7 +65,7 @@ class ConversationVoiceTests(unittest.TestCase):
     def test_hello_is_bounded_and_json_object_only(self):
         connection = Mock(); connection.recv.side_effect = [struct.pack('!BI', 1, 2), b'{}']
         with patch.object(voice, 'now_ms', return_value=1000): self.assertEqual(voice.read_hello(connection, 2000), {})
-        for kind, size, body in [(1, 32769, b''), (3, 2, b'{}'), (1, 2, b'[]')]:
+        for kind, size, body in [(1, 131073, b''), (3, 2, b'{}'), (1, 2, b'[]')]:
             connection.recv.side_effect = [struct.pack('!BI', kind, size), body]
             with self.subTest(kind=kind, size=size, body=body), patch.object(voice, 'now_ms', return_value=1000):
                 with self.assertRaises(ValueError): voice.read_hello(connection, 2000)
@@ -169,7 +169,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.'):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None):
         clock = [100000]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
@@ -194,7 +194,7 @@ class ConversationVoiceTests(unittest.TestCase):
         pump = Mock(); pump.poll.side_effect = poll
         with patch.dict(sys.modules, vosk=vosk), patch.object(voice, 'now_ms', side_effect=lambda: clock[0]), \
                 patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)):
-            voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm')
+            voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None)
         return events, model
 
     @staticmethod
@@ -211,6 +211,35 @@ class ConversationVoiceTests(unittest.TestCase):
         event = next(e for e in reversed(events) if e['type'] == 'say')
         return [self.control('tts_started', turn_id=event['turn_id'], at_ms=event['speech_end_ms'] + 1180),
                 self.control('tts_done', turn_id=event['turn_id'])]
+
+    @staticmethod
+    def voice_entry(clock):
+        old = voice.ShortMemory(lambda: clock[0]); old.last_human = 99000
+        old.commit('hablamos de luces', 'Respuesta anterior pública.')
+        return voice.ConversationEntry({'a' * 32: old}, 'b' * 32, lambda: clock[0])
+
+    def test_voice_entry_normal_question_starts_empty_without_old_history(self):
+        events, model = self.run_session(self.utterance(), entry=self.voice_entry)
+        selected = next(e for e in events if e['type'] == 'context_selected')
+        self.assertEqual(selected['selection'], 'new'); self.assertEqual(selected['restored_turns'], 0)
+        self.assertEqual(len(model.observed_contexts[0]), 2)
+
+    def test_voice_entry_search_and_yes_restore_before_followup_generation(self):
+        steps = self.utterance() + [(101000, self.ack_last), (103020, [self.pcm(103020)]),
+                                   (104000, self.ack_last), (106020, [self.pcm(106020)])]
+        events, model = self.run_session(steps, transcripts=['recuerdas luces', 'sí', 'qué dije antes'], entry=self.voice_entry)
+        selected = next(e for e in events if e['type'] == 'context_selected')
+        self.assertEqual(selected['selection'], 'resume'); self.assertEqual(selected['restored_turns'], 1)
+        model.start.assert_called_once()
+        self.assertEqual(model.observed_contexts[0][1]['content'], 'hablamos de luces')
+        self.assertNotIn('recuerdas luces', [m['content'] for m in model.observed_contexts[0]])
+
+    def test_missing_search_and_no_close_without_creating_or_generating(self):
+        steps = self.utterance() + [(101000, self.ack_last), (103020, [self.pcm(103020)]), (104000, self.ack_last)]
+        events, model = self.run_session(steps, transcripts=['recuerdas cámaras', 'no'], entry=self.voice_entry)
+        self.assertNotIn('context_selected', [e['type'] for e in events])
+        self.assertEqual(events[-1]['type'], 'conversation_closed'); self.assertEqual(model.memory.pairs, [])
+        model.start.assert_not_called()
 
     def test_session_has_no_executor_and_commits_only_acknowledged_spoken_pair(self):
         def acknowledge(events):

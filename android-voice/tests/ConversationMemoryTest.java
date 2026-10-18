@@ -122,6 +122,28 @@ public final class ConversationMemoryTest {
         for (ConversationMemory.Turn turn : limited.turns) units += turn.user.length() + turn.assistant.length();
         check(units == 5700, "Text budget not measured as UTF-16 units");
         check(!textBudget.human(budgetLease, id(208), String.join("", Collections.nCopies(126, "🚀")), 100200, 100200), "UTF-16 question limit exceeded");
+        ConversationMemory entry = new ConversationMemory();
+        List<ConversationMemory.Snapshot> noChats = entry.catalog(100000);
+        check(noChats.isEmpty() && entry.list(100000).isEmpty(), "Opening voice entry created an empty chat");
+        String explicit = id(400);
+        ConversationMemory.Lease created = entry.acquireExact(explicit, true, 100000);
+        check(created.conversationId.equals(explicit), "Client-proposed new identity changed");
+        check(entry.human(created, id(401), "Luces", 100010, 100020), "New entry human turn rejected");
+        check(entry.answer(created, id(401), "Respuesta", 100030), "New entry reply rejected");
+        check(entry.end(created, id(401), 100040), "Could not close entry chat");
+        List<ConversationMemory.Snapshot> catalog = entry.catalog(100100);
+        check(catalog.size() == 1 && catalog.get(0).turns.size() == 1, "Closed chat missing from voice catalog");
+        check(entry.nextExpiry(100100) == 3700010, "Exporting catalog renewed human inactivity");
+        ConversationMemory.Lease exact = entry.acquireExact(explicit, false, 100200);
+        check(entry.snapshot(exact, 100200).turns.size() == 1, "Exact resume lost history");
+        entry.release(exact);
+        try { entry.acquireExact(id(500), false, 100300); throw new AssertionError("Unknown resume silently created a chat"); }
+        catch (IllegalStateException expected) { assertions++; }
+        try { entry.acquireExact(explicit, true, 100300); throw new AssertionError("New entry reused old identity"); }
+        catch (IllegalStateException expected) { assertions++; }
+        try { entry.acquireExact(explicit, false, 3700010); throw new AssertionError("Expired resume silently created a chat"); }
+        catch (IllegalStateException expected) { assertions++; }
+        check(entry.list(3700010).isEmpty(), "Failed resume left a new empty chat");
         System.out.println("Conversation RAM: " + assertions + " assertions passed (no device/disk/network/audio).");
     }
 }

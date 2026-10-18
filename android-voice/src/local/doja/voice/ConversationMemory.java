@@ -39,12 +39,13 @@ final class ConversationMemory {
         }
     }
     private static final class Chat {
-        final String id = newId();
+        final String id;
         final int number;
         long createdMs, lastHumanMs;
         boolean closed;
         final List<Turn> turns = new ArrayList<>();
-        Chat(int number, long now) { this.number = number; createdMs = now; }
+        Chat(int number, long now) { this(number, now, newId()); }
+        Chat(int number, long now, String id) { this.number = number; createdMs = now; this.id = id; }
         long activity() { return lastHumanMs > 0 ? lastHumanMs : createdMs; }
     }
     private final LinkedHashMap<String, Chat> chats = new LinkedHashMap<>();
@@ -103,6 +104,25 @@ final class ConversationMemory {
         chats.get(currentId).closed = false;
         active = new Lease(currentId, ++generation);
         return active;
+    }
+    synchronized List<Snapshot> catalog(long now) {
+        prune(now);
+        if (active != null) throw new IllegalStateException("Silencia la charla antes de abrir otra");
+        List<Snapshot> result = new ArrayList<>();
+        for (Chat chat : chats.values()) result.add(new Snapshot(chat.id, chat.lastHumanMs, chat.turns));
+        return Collections.unmodifiableList(result);
+    }
+    synchronized Lease acquireExact(String id, boolean isNew, long now) {
+        prune(now);
+        if (active != null || !validId(id)) throw new IllegalStateException("Selección de charla no válida");
+        if (isNew) {
+            if (chats.containsKey(id) || chats.size() >= MAX_CONVERSATIONS) throw new IllegalStateException("No se puede crear otra charla");
+            Chat chat = new Chat(++number, now, id);
+            // Keep the client-proposed fresh identity, never a model-generated ID.
+            chats.put(id, chat);
+        } else if (!chats.containsKey(id)) throw new IllegalStateException("Esa charla ya no está disponible");
+        currentId = id; chats.get(id).closed = false;
+        active = new Lease(id, ++generation); return active;
     }
     synchronized void release(Lease lease) { if (owns(lease)) active = null; }
     synchronized boolean end(Lease lease, String turnId, long now) {

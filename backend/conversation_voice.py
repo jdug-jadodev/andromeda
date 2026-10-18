@@ -19,8 +19,9 @@ from assistant_config import SETTINGS
 from spanish_wake import words
 from doja_intents import normalized
 from conversation_flow import ConversationFlow
+from conversation_entry import ConversationEntry
 
-PROTOCOL = 5
+PROTOCOL = 6
 MAX_STORED_TURNS = 24
 MAX_TEXT_UNITS = 5700  # Same text budget as six maximum-sized 0.5 turns.
 
@@ -78,7 +79,7 @@ def read_hello(conn, deadline):
             data.extend(chunk)
         return bytes(data)
     kind, size = struct.unpack('!BI', exact(5))
-    if kind != 1 or not 0 < size <= 32768: raise ValueError('Invalid conversation hello')
+    if kind != 1 or not 0 < size <= 131072: raise ValueError('Invalid conversation hello')
     hello = json.loads(exact(size))
     if not isinstance(hello, dict): raise ValueError('Invalid conversation authentication')
     return hello
@@ -315,7 +316,7 @@ class ConversationModel:
         if self.thread is not None: self.thread.join(timeout=.5)
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None):
     from vosk import KaldiRecognizer, SetLogLevel
     if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
@@ -341,6 +342,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             activate('followup', delay_ms=600)
         else:
             flow.reset()
+            if entry is not None: entry.cancel_pending()
             emit({'type': 'state', 'state': 'wake'})
 
     def activate(trigger, delay_ms=0):
@@ -355,14 +357,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         preroll.clear()
         emit({'type': 'state', 'state': 'command', 'trigger': trigger})
 
-    def say(answer, close_reason=''):
+    def say(answer, close_reason='', offered_more=None):
         nonlocal state
         turn['answer'], turn['close_reason'] = answer, close_reason
         state = 'speech'
+        turn['offered_more'] = not bool(close_reason) if offered_more is None else offered_more
         emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
             'deadline_ms': turn['deadline_ms'], 'actions_executed': 0,
-            'close_reason': close_reason, 'offered_more': not bool(close_reason)})
+            'close_reason': close_reason, 'offered_more': turn['offered_more']})
 
     def closed():
         emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
@@ -374,7 +377,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                      'response_start_ms': 30000, 'input_source': source, 'context_version': 1,
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
-                      'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True})
+                       'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
+                       'voice_entry': entry is not None})
     try:
         while now_ms() < session_end:
             current = now_ms()
@@ -425,16 +429,16 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'speech_end_estimated': True, 'useful_audio_verified': False,
                                 'actions_executed': 0}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
-                            model.memory.commit(turn['text'], turn['answer'])
-                            flow.spoken(turn['answer'], offered_more=not bool(turn['close_reason']))
-                            print(json.dumps({'event': 'conversation_memory_commit', 'source': source,
+                            if not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
+                            flow.spoken(turn['answer'], offered_more=turn['offered_more'])
+                            print(json.dumps({'event': 'conversation_entry_notice' if turn.get('administrative') else 'conversation_memory_commit', 'source': source,
                                 'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             if turn['close_reason']:
                                 closed(); return
                             reset(continue_chat=True)
                         elif action == 'tts_failed':
-                            model.memory.unanswered(turn['text'])
+                            if not turn.get('administrative'): model.memory.unanswered(turn['text'])
                             print(json.dumps({'event': 'conversation_memory_skipped', 'source': source,
                                 'turn_seq': turn['seq'], 'reason': 'tts_failed',
                                 'retained_turns': len(model.memory.pairs),
@@ -466,10 +470,30 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     sequence += 1
                     if sequence > 24: return
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
-                            'deadline_ms': speech_end + 30000, 'text': text}
+                             'deadline_ms': speech_end + 30000, 'text': text}
+                    route = entry.route(text) if entry is not None else {'kind': 'model'}
+                    if route['kind'] in {'new', 'resume'}:
+                        old_id = context_id
+                        model.memory = ShortMemory(now_ms) if route['kind'] == 'new' else entry.catalog[route['id']]
+                        context_id = route['id']
+                        emit({'type': 'context_selected', 'previous_context_id': old_id,
+                            'selection': route['kind'], 'restored_turns': len(model.memory.pairs)})
+                        print(json.dumps({'event': 'conversation_context_selected', 'source': source,
+                            'selection': route['kind'], 'restored_turns': len(model.memory.pairs)}), flush=True)
+                    turn['administrative'] = route['kind'] in {'notice', 'close'}
                     emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
-                         'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms']})
+                          'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
+                          'administrative': turn['administrative']})
+                    recognizer = timeline = None; preroll.clear()
+                    if route['kind'] == 'notice':
+                        say(route['text'], offered_more=False); continue
+                    if route['kind'] == 'resume' or route['kind'] == 'new' and plain_confirmation(text):
+                        model.memory.last_human = speech_end
+                        say('Retomamos esa charla. ¿En qué seguimos?' if route['kind'] == 'resume' else
+                            'Empezamos una charla nueva. ¿De qué quieres hablar?', offered_more=False)
+                        continue
                     closing = flow.closing_reason(text)
+                    if route['kind'] == 'close': closing = route.get('reason', 'declined_more')
                     if closing:
                         model.memory.last_human = speech_end
                         say(ConversationFlow.FAREWELL, closing)
@@ -481,6 +505,23 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         return
     finally:
         model.cancel()
+
+
+def plain_confirmation(text):
+    return normalized(text).strip(' .,!¡?¿') == 'si'
+
+
+def restore_catalog(value):
+    if not isinstance(value, list) or len(value) > 4: raise ValueError('Invalid conversation catalog')
+    catalog, identifiers = {}, set()
+    for snapshot in value:
+        memory = ShortMemory(now_ms)
+        try: identity = memory.restore(snapshot)
+        except ContextExpired: continue
+        if identity in identifiers: raise ValueError('Duplicate catalog identity')
+        identifiers.add(identity)
+        catalog[identity] = memory
+    return catalog
 
 
 def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check):
@@ -517,10 +558,18 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             except ContextExpired:
                                 send_event(conn, {'type': 'error', 'reason': 'context_expired'})
                                 continue
+                            entry = None
+                            if hello.get('voice_entry') is True:
+                                if model.memory.pairs: raise ValueError('Voice entry must start unselected')
+                                catalog = restore_catalog(hello.get('catalog'))
+                                if context_id in catalog: raise ValueError('New identity already exists')
+                                entry = ConversationEntry(catalog, context_id, now_ms)
+                            elif source == 'microphone':
+                                raise ValueError('Microphone requires explicit voice entry')
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
-                            session(conn, detector, model, limit, resource_check, source, context_id)
+                            session(conn, detector, model, limit, resource_check, source, context_id, entry)
                             return
                     except (OSError, EOFError, ValueError):
                         # No credentials, frames or speech text in diagnostics.

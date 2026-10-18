@@ -128,7 +128,7 @@ public final class ConversationInstrumentation extends Instrumentation {
         Bundle result = new Bundle(); File output = null;
         Context context = getTargetContext(); Map<String, ?> timersBefore = new HashMap<>(TimerStore.prefs(context).getAll());
         try {
-            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks", "decline", "yes").contains(mode), "Invalid synthetic mode");
+            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks", "decline", "yes", "entry_new", "entry_resume", "entry_missing").contains(mode), "Invalid synthetic mode");
             check(!VoiceService.active && !RingService.ringing, "A real session/alarm is active");
             initializeVoice();
             activity = (MainActivity)startActivitySync(new Intent(context, MainActivity.class).putExtra("offline_preview", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -139,15 +139,32 @@ public final class ConversationInstrumentation extends Instrumentation {
             catch (IOException expected) { wrongSourceRejected = true; }
             check(wrongSourceRejected, "Synthetic backend accepted microphone source");
             result.putBoolean("wrong_source_rejected", true);
-            lease = memory.acquire(SystemClock.elapsedRealtime());
-            connection = VoiceConnection.open(context, "synthetic_pcm", memory.snapshot(lease, SystemClock.elapsedRealtime()));
-            channel = new ConversationChannel(memory, lease, connection.ready);
+            boolean voiceEntry = mode.startsWith("entry_");
+            String seededId = "";
+            if (voiceEntry) {
+                long at = SystemClock.elapsedRealtime(); ConversationMemory.Lease seed = memory.acquire(at - 2000);
+                seededId = seed.conversationId;
+                String turn = UUID.randomUUID().toString().replace("-", "");
+                check(memory.human(seed, turn, "Las luces del patio son azules.", at - 1900, at - 1800), "Public seed failed");
+                check(memory.answer(seed, turn, "Hablamos de las luces del patio.", at - 1700) && memory.end(seed, turn, at - 1600), "Public seed close failed");
+                ConversationMemory.Snapshot fresh = ConversationMemory.emptySnapshot();
+                List<ConversationMemory.Snapshot> catalog = memory.catalog(at);
+                connection = VoiceConnection.open(context, "synthetic_pcm", fresh, catalog);
+                channel = new ConversationChannel(memory, fresh, catalog, connection.ready);
+            } else {
+                lease = memory.acquire(SystemClock.elapsedRealtime());
+                connection = VoiceConnection.open(context, "synthetic_pcm", memory.snapshot(lease, SystemClock.elapsedRealtime()));
+                channel = new ConversationChannel(memory, lease, connection.ready);
+            }
             connection.socket.setSoTimeout(35000);
             JSONArray rows = new JSONArray();
-            boolean closingMode = Arrays.asList("close", "thanks", "decline", "yes").contains(mode);
-            String closingReason = Arrays.asList("decline", "yes").contains(mode) ? "declined_more" : "explicit_close";
+            boolean closingMode = voiceEntry || Arrays.asList("close", "thanks", "decline", "yes").contains(mode);
+            String closingReason = voiceEntry || Arrays.asList("decline", "yes").contains(mode) ? "declined_more" : "explicit_close";
             int wakeActivations = 0, followupRearms = 0;
             String[] fixtures = "normal".equals(mode) ? new String[]{"ai_chat", "dialogue_intro", "dialogue_followup"}
+                : "entry_resume".equals(mode) ? new String[]{"entry_search", "entry_yes", "entry_followup", "dialogue_no"}
+                : "entry_missing".equals(mode) ? new String[]{"entry_missing", "dialogue_no"}
+                : "entry_new".equals(mode) ? new String[]{"ai_chat", "dialogue_no"}
                 : "yes".equals(mode) ? new String[]{"ai_chat", "dialogue_yes", "dialogue_no"}
                 : closingMode ? new String[]{"ai_chat", "close".equals(mode) ? "dialogue_close" : "thanks".equals(mode) ? "dialogue_thanks" : "dialogue_no"}
                 : new String[]{"ai_chat"};
@@ -156,6 +173,15 @@ public final class ConversationInstrumentation extends Instrumentation {
                 while (true) {
                     JSONObject event = VoiceConnection.readEvent(connection.input); String type = event.optString("type");
                     check(VoiceSessionPolicy.conversationEventAllowed(type) && !event.has("tool_call_id"), "Unexpected executor event");
+                    if ("context_selected".equals(type)) {
+                        check(voiceEntry, "Unexpected selection in direct context test");
+                        channel.select(event, SystemClock.elapsedRealtime()); lease = channel.lease;
+                        boolean resumed = "entry_resume".equals(mode);
+                        check(event.getString("selection").equals(resumed ? "resume" : "new")
+                            && event.getInt("restored_turns") == (resumed ? 1 : 0)
+                            && (resumed == seededId.equals(lease.conversationId)), "Wrong entry history selected");
+                        result.putString("entry_selection", event.getString("selection")); continue;
+                    }
                     channel.verify(event);
                     if ("state".equals(type)) {
                         if ("command".equals(event.optString("state")) && "voice".equals(event.optString("trigger"))) wakeActivations++;
@@ -176,7 +202,8 @@ public final class ConversationInstrumentation extends Instrumentation {
                         boolean farewell = !reason.isEmpty();
                         boolean closingFixture = Arrays.asList("dialogue_close", "dialogue_thanks", "dialogue_no").contains(fixture);
                         check(farewell == closingFixture && (!farewell || reason.equals(closingReason)), "Wrong farewell/offer scope");
-                        check(event.optBoolean("offered_more") != farewell, "Missing follow-up offer or offer on farewell");
+                        boolean notice = thinking.optBoolean("administrative") || fixture.equals("entry_yes");
+                        check(notice || event.optBoolean("offered_more") != farewell, "Missing follow-up offer or offer on farewell");
                         String id = event.getString("turn_id"); long end = event.getLong("speech_end_ms"), deadline = event.getLong("deadline_ms");
                         check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime(), reason), "Late/duplicate reply");
                         check(!turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime()), "Duplicate reply was accepted");
@@ -216,7 +243,15 @@ public final class ConversationInstrumentation extends Instrumentation {
                         check(turns.acceptClose(id, event.getLong("turn_seq"), event.getLong("speech_end_ms"),
                             event.getLong("deadline_ms"), SystemClock.elapsedRealtime()), "Foreign or late chat close");
                         check(channel.end(id, SystemClock.elapsedRealtime()), "Closed chat was not retained"); turns.clear();
-                        ConversationMemory.Info info = memory.list(SystemClock.elapsedRealtime()).get(0);
+                        if (lease == null) {
+                            check("entry_missing".equals(mode) && memory.list(SystemClock.elapsedRealtime()).size() == 1,
+                                "Missing lookup invented a new chat");
+                            connection.close(); result.putLong("close_to_inference_down_ms", waitInferenceDown(SystemClock.elapsedRealtime()));
+                            result.putBoolean("lookup_missing", true); result.putBoolean("no_chat_invented", true); break;
+                        }
+                        ConversationMemory.Info info = null;
+                        for (ConversationMemory.Info item : memory.list(SystemClock.elapsedRealtime())) if (item.id.equals(lease.conversationId)) info = item;
+                        check(info != null, "Selected chat disappeared");
                         check(info.closed && !info.current && info.turns == fixtures.length, "Closing did not release selected chat");
                         String closedId = lease.conversationId;
                         long stopped = SystemClock.elapsedRealtime(); connection.close();

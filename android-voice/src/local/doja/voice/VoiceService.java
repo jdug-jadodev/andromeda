@@ -108,13 +108,7 @@ public class VoiceService extends Service {
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop).build();
         startForeground(10, notification);
         running = active = true;
-        if (conversationOnly) {
-            try { contextLease = ConversationContexts.MEMORY.acquire(SystemClock.elapsedRealtime()); }
-            catch (IllegalStateException error) {
-                lastError = error.getMessage(); stopSelf(); return START_NOT_STICKY;
-            }
-            ConversationContexts.scheduleExpiry();
-        }
+        if (conversationOnly) ConversationContexts.scheduleExpiry();
         lastTranscript = "";
         expiresAt = SystemClock.elapsedRealtime() + seconds * 1000L;
         state("Preparando canal local · micrófono aún apagado", FaceState.PREPARING, null);
@@ -159,11 +153,13 @@ public class VoiceService extends Service {
     }
     void captureConversation() {
         try {
-            VoiceConnection connection = VoiceConnection.open(this, "microphone",
-                ConversationContexts.MEMORY.snapshot(contextLease, SystemClock.elapsedRealtime()));
+            ConversationMemory.Snapshot fresh = ConversationMemory.emptySnapshot();
+            List<ConversationMemory.Snapshot> catalog = ConversationContexts.MEMORY.catalog(SystemClock.elapsedRealtime());
+            VoiceConnection connection = VoiceConnection.open(this, "microphone", fresh, catalog);
             socket = connection.socket; output = connection.output;
             if (!running) throw new IOException("Sesión detenida");
-            contextChannel = new ConversationChannel(ConversationContexts.MEMORY, contextLease, connection.ready);
+            contextChannel = new ConversationChannel(ConversationContexts.MEMORY, fresh, catalog, connection.ready);
+            if (!running) { contextChannel.close(); throw new IOException("Sesión detenida"); }
             wakeEnabled = aiEnabled = true;
             int seconds = connection.ready.optInt("seconds");
             if (seconds != 90 && seconds != 300) throw new IOException("Duración inválida");
@@ -224,6 +220,7 @@ public class VoiceService extends Service {
             if (running) { lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
             running = active = wakeListening = microphoneRecording = false;
+            if (contextChannel != null) contextChannel.close();
             if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
             ConversationContexts.scheduleExpiry();
             if (recorder != null) { try { recorder.stop(); } catch (Exception ignored) {} recorder.release(); recorder = null; }
@@ -319,11 +316,16 @@ public class VoiceService extends Service {
         try {
             while (running) {
                 JSONObject event = readEvent(input);
+                if (!running) return;
                 String type = event.optString("type");
                 if (wakeOnly && !VoiceSessionPolicy.wakeOnlyEventAllowed(type))
                     throw new IOException("Evento no permitido en prueba de activación");
                 if (conversationOnly) {
                     if (!VoiceSessionPolicy.conversationEventAllowed(type) || event.has("tool_call_id")) throw new IOException("Evento de acción rechazado");
+                    if ("context_selected".equals(type)) {
+                        contextChannel.select(event, SystemClock.elapsedRealtime()); contextLease = contextChannel.lease;
+                        ConversationContexts.scheduleExpiry(); continue;
+                    }
                     contextChannel.verify(event);
                     if ("thinking".equals(type)) {
                         String id = event.optString("turn_id"); long deadline = event.optLong("deadline_ms");
@@ -332,7 +334,8 @@ public class VoiceService extends Service {
                         contextChannel.human(event, SystemClock.elapsedRealtime());
                         ConversationContexts.scheduleExpiry();
                         speaking = true;
-                        state("LFM pensando · pausando micrófono · sin acciones", FaceState.THINKING, "Escuché: " + event.optString("text"));
+                        state(event.optBoolean("administrative") ? "Consultando charlas guardadas · micrófono en pausa"
+                            : "LFM pensando · pausando micrófono · sin acciones", FaceState.THINKING, "Escuché: " + event.optString("text"));
                         main.postDelayed(() -> {
                             if (running && conversationTurn.matches(id) && conversationTurn.expiredBeforeStart(SystemClock.elapsedRealtime())) {
                                 lastError = "Se agotó el plazo; respuesta descartada"; stopSelf();
@@ -470,6 +473,7 @@ public class VoiceService extends Service {
     public void onDestroy() {
         running = active = wakeListening = wakeTestActive = conversationTestActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
         conversationTurn.clear();
+        if (contextChannel != null) contextChannel.close();
         if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
         ConversationContexts.scheduleExpiry();
         lastTranscript = ""; activeSpeechId = activeSpeechText = "";
@@ -478,7 +482,7 @@ public class VoiceService extends Service {
         closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
         if (tts != null) { tts.stop(); tts.shutdown(); }
-        state(lastError.isEmpty() ? (conversationClosed ? "Micrófono apagado · charla cerrada; contexto retomable hasta 1 h sin actividad"
+        state(lastError.isEmpty() ? (conversationClosed ? (contextLease == null ? "Micrófono apagado · búsqueda cerrada" : "Micrófono apagado · charla cerrada; contexto retomable hasta 1 h sin actividad")
             : pilotExpired ? "Micrófono apagado · terminó el piloto" : "Micrófono apagado") : "Micrófono apagado · " + lastError, lastError.isEmpty() ? FaceState.MUTED : FaceState.ERROR, null); stopForeground(true); super.onDestroy();
     }
 }
