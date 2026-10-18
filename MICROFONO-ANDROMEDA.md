@@ -1,6 +1,6 @@
 # Micrófono y carita: prueba aislada 0.3
 
-**Actualización vigente:** instalada 0.6, que conserva esta prueba como «Solo activación y transcripción (0.3)» y mantiene **otra ruta** de conversación LFM sin acciones, con contexto RAM independiente y continuidad de varios turnos. Este documento conserva evidencia de activación; preparación/guardas en `CONVERSACION-ANDROMEDA.md`, contexto anterior en `CONTEXTO-ANDROMEDA.md` y flujo actual en `FLUJO-CHARLAS-ANDROMEDA.md`. No se habilitó IA dentro del protocolo wake-only.
+**Actualización vigente:** instalada 0.6.1, que conserva esta prueba como «Solo activación y transcripción (0.3)» y mantiene **otra ruta** de conversación LFM sin acciones, con contexto RAM independiente, continuidad, oferta de ayuda y despedida. Este documento conserva evidencia de activación; preparación/guardas en `CONVERSACION-ANDROMEDA.md`, contexto anterior en `CONTEXTO-ANDROMEDA.md` y flujo actual en `FLUJO-CHARLAS-ANDROMEDA.md`. No se habilitó IA dentro del protocolo wake-only.
 
 ## Alcance autorizado
 

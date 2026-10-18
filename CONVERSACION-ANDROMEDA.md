@@ -1,8 +1,10 @@
 # Conversación local 0.4 · prueba personal acotada
 
-**Entrega vigente posterior: 0.6.0-dialogue-trial / código 7 instalada**, contexto en RAM de Android independiente del modelo y protocolo 4. Conserva conversación sin acciones y wake-only; este documento mantiene las evidencias históricas 0.4. Contexto anterior en `CONTEXTO-ANDROMEDA.md` y flujo actual/pruebas/límites en `FLUJO-CHARLAS-ANDROMEDA.md`. Timers/alarmas/recordatorios separados de las charlas: `ACCIONES-ANDROMEDA.md`.
+**Entrega vigente posterior: 0.6.1-dialogue-trial / código 8 instalada**, contexto en RAM de Android independiente del modelo y protocolo 5. Añade oferta de más ayuda y despedida antes de cerrar, sin otra generación. Conserva conversación sin acciones y wake-only; este documento mantiene las evidencias históricas 0.4. Contexto anterior en `CONTEXTO-ANDROMEDA.md` y flujo actual/pruebas/límites en `FLUJO-CHARLAS-ANDROMEDA.md`. Timers/alarmas/recordatorios separados de las charlas: `ACCIONES-ANDROMEDA.md`.
 
-**Actualización autorizada y desplegada:** continuidad de varios turnos, cierre retomable y presupuesto de historial variable 0.6/protocolo 4 en `FLUJO-CHARLAS-ANDROMEDA.md`; búsqueda por tema todavía pendiente. La RAM de prueba anterior se pierde con esta actualización consentida, no se exporta. Las pruebas/fixtures del repositorio usan protocolo 4 y necesitan backend/cliente coincidentes, ya desplegados.
+**Actualización anterior 0.6 autorizada y desplegada:** continuidad de varios turnos, cierre retomable y presupuesto de historial variable 0.6/protocolo 4 en `FLUJO-CHARLAS-ANDROMEDA.md`; búsqueda por tema todavía pendiente. La RAM de prueba anterior se perdió con esa actualización consentida, no se exportó. Sus ensayos históricos usaron protocolo 4; la revisión 0.6.1 y las fixtures actuales usan protocolo 5.
+
+**Petición posterior antes de la prueba de cinco minutos:** 0.6.1/protocolo 5 pregunta por más ayuda tras la respuesta; sí/continuación mantiene el hilo y no contextual sintetiza despedida antes del cierre confirmado. Las fixtures actuales usan **protocolo 5**; evidencia 0.6 anterior queda histórica. No prometer «solo di Andrómeda» tras apagar el micrófono. El usuario pide una ventana `pilot 300` después de validar los cambios, sin captura iniciada por ADB.
 
 ## Alcance vigente
 

@@ -346,6 +346,7 @@ public class VoiceService extends Service {
                     } else if ("conversation_closed".equals(type)) {
                         String reason = event.optString("reason");
                         if (!("explicit_close".equals(reason) || "declined_more".equals(reason))
+                                || !reason.equals(conversationTurn.closeReason())
                                 || !conversationTurn.acceptClose(event.optString("turn_id"), event.optLong("turn_seq"),
                                     event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime())
                                 || !contextChannel.end(event.optString("turn_id"), SystemClock.elapsedRealtime()))
@@ -388,7 +389,8 @@ public class VoiceService extends Service {
             if (conversationOnly) {
                 if (!"say".equals(event.optString("type")) || event.has("tool_call_id") || event.optInt("actions_executed", -1) != 0
                         || !conversationTurn.acceptReply(event.optString("turn_id"), event.optLong("turn_seq"),
-                            event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime())) return;
+                            event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime(),
+                            event.optString("close_reason"))) return;
                 message = event.getString("text");
                 if (message.isEmpty() || message.length() > 700) throw new IOException("Respuesta inválida");
             } else switch (event.optString("type")) {
@@ -431,8 +433,21 @@ public class VoiceService extends Service {
         if (conversationOnly && !activeSpeechId.isEmpty()) {
             if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null)
                 contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
+            if (!conversationTurn.finishSpeech(activeSpeechId, completed)) {
+                speaking = true; activeSpeechId = "";
+                lastError = "Finalización de voz inválida; sesión detenida";
+                main.post(() -> stopSelf()); return;
+            }
             controlTurn(completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
-            conversationTurn.clear();
+        }
+        boolean closing = conversationOnly && conversationTurn.awaitingClose();
+        if (closing) {
+            activeSpeechId = ""; speaking = true; // Keep capture stopped until authenticated close.
+            state("Cerrando charla · micrófono en pausa", FaceState.PREPARING, null);
+            main.postDelayed(() -> { if (running && conversationTurn.awaitingClose()) {
+                lastError = "No se confirmó el cierre de la charla"; stopSelf();
+            } }, 2000);
+            return;
         }
         resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = "";
         if (running) {

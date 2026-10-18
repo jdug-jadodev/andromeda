@@ -58,6 +58,8 @@ public class FixtureInstrumentation extends Instrumentation {
                 {"dialogue_followup", "Cómo se llama mi gata."},
                 {"dialogue_close", "Cierra la conversación."},
                 {"dialogue_thanks", "Gracias."},
+                {"dialogue_no", "No."},
+                {"dialogue_yes", "Sí, cuéntame qué es una estrella."},
                 {"cancel", "Andrómeda, cancela el temporizador."},
                 {"delete", "Andrómeda, elimina el temporizador."},
                 {"negated", "Andrómeda, no pongas un temporizador de diez segundos."},

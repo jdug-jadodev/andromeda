@@ -50,7 +50,7 @@ final class VoiceConnection implements Closeable {
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-            JSONObject hello = new JSONObject().put("protocol", 4).put("mode", "conversation_only").put("source", source)
+            JSONObject hello = new JSONObject().put("protocol", 5).put("mode", "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
             byte[] helloBytes = hello.toString().getBytes(StandardCharsets.UTF_8);
             if (helloBytes.length > 32768) throw new IOException("Contexto fuera del límite de transporte");
@@ -65,6 +65,7 @@ final class VoiceConnection implements Closeable {
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
                     || ready.optInt("response_start_ms") != 30000 || ready.optInt("context_version") != 1
                     || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
+                    || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
                     || !snapshot.conversationId.equals(ready.optString("context_id"))
                     || !ready.optString("session_id").matches("[0-9a-f]{32}")
                     || ready.optInt("restored_turns", -1) != snapshot.turns.size()

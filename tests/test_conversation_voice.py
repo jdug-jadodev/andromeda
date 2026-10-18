@@ -207,6 +207,11 @@ class ConversationVoiceTests(unittest.TestCase):
     def utterance(self):
         return [(100000, [self.control('activate')]), (100020, [self.pcm(100020)])]
 
+    def ack_last(self, events):
+        event = next(e for e in reversed(events) if e['type'] == 'say')
+        return [self.control('tts_started', turn_id=event['turn_id'], at_ms=event['speech_end_ms'] + 1180),
+                self.control('tts_done', turn_id=event['turn_id'])]
+
     def test_session_has_no_executor_and_commits_only_acknowledged_spoken_pair(self):
         def acknowledge(events):
             event = next(e for e in events if e['type'] == 'say'); identity = event['turn_id']
@@ -258,11 +263,12 @@ class ConversationVoiceTests(unittest.TestCase):
     def test_explicit_chat_close_retains_human_but_never_calls_model_or_tools(self):
         for closing in ['cierra la conversación', 'gracias']:
             with self.subTest(closing=closing):
-                events, model = self.run_session(self.utterance(), transcripts=[closing])
+                events, model = self.run_session(self.utterance() + [(101000, self.ack_last)], transcripts=[closing])
                 self.assertEqual(events[-1]['type'], 'conversation_closed')
                 self.assertEqual(events[-1]['reason'], 'explicit_close')
                 self.assertEqual(events[-1]['turn_id'], events[-2]['turn_id'])
-                self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': closing}]])
+                self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': closing},
+                                                      {'role': 'assistant', 'content': voice.ConversationFlow.FAREWELL}]])
                 model.start.assert_not_called(); model.cancel.assert_called_once()
 
     def test_no_closes_only_after_a_completed_followup_offer(self):
@@ -270,12 +276,34 @@ class ConversationVoiceTests(unittest.TestCase):
             event = next(e for e in reversed(events) if e['type'] == 'say')
             return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
                     self.control('tts_done', turn_id=event['turn_id'])]
-        steps = self.utterance() + [(101000, ack), (103020, [self.pcm(103020)])]
+        steps = self.utterance() + [(101000, ack), (103020, [self.pcm(103020)]), (104000, self.ack_last)]
         events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='¿Necesitas algo más?')
         self.assertEqual(events[-1]['type'], 'conversation_closed')
         self.assertEqual(events[-1]['reason'], 'declined_more'); self.assertEqual(model.start.call_count, 1)
-        events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='¿Quieres que hablemos de las luces?')
-        self.assertNotIn('conversation_closed', [e['type'] for e in events]); self.assertEqual(model.start.call_count, 2)
+        events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='Una respuesta normal.')
+        self.assertEqual(events[-1]['type'], 'conversation_closed'); self.assertEqual(model.start.call_count, 1)
+        self.assertEqual(model.memory.pairs[0][1]['content'], 'Una respuesta normal. ¿Necesitas algo más?')
+
+    def test_no_without_a_current_completed_offer_is_ordinary_conversation(self):
+        events, model = self.run_session(self.utterance(), transcripts=['no'])
+        self.assertNotIn('conversation_closed', [e['type'] for e in events]); model.start.assert_called_once()
+
+    def test_farewell_without_delivery_ack_never_closes_or_enters_memory(self):
+        events, model = self.run_session(self.utterance(), transcripts=['gracias'])
+        self.assertEqual(events[-1]['text'], voice.ConversationFlow.FAREWELL)
+        self.assertNotIn('conversation_closed', [e['type'] for e in events]); self.assertEqual(model.memory.pairs, [])
+
+    def test_failed_farewell_closes_without_inventing_speech(self):
+        def failed(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_failed', turn_id=event['turn_id'])]
+        events, model = self.run_session(self.utterance() + [(101000, failed)], transcripts=['gracias'])
+        self.assertEqual(events[-1]['type'], 'conversation_closed')
+        self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'gracias'}]])
+
+    def test_oversized_answer_with_offer_fails_without_cutting_or_speaking(self):
+        events, model = self.run_session(self.utterance(), answer='x' * 700)
+        self.assertNotIn('say', [e['type'] for e in events]); self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'hola'}]])
 
     def test_failed_offer_cannot_authorize_closing_on_no(self):
         def failed(events):

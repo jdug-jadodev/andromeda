@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "protocol": 4,
+  "protocol": 5,
   "mode": "conversation_only",
   "model_id": "lfm",
   "context_tokens": 2048,
@@ -9,6 +9,8 @@
   "recent_turns": 24,
   "history_text_utf16_units": 5700,
   "continuous_chat": true,
+  "followup_offer": true,
+  "closing_farewell": true,
   "listen_idle_ms": 50000,
   "memory_owner": "android_process_ram",
   "conversations_max": 4,

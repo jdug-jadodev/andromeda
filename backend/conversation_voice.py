@@ -20,7 +20,7 @@ from spanish_wake import words
 from doja_intents import normalized
 from conversation_flow import ConversationFlow
 
-PROTOCOL = 4
+PROTOCOL = 5
 MAX_STORED_TURNS = 24
 MAX_TEXT_UNITS = 5700  # Same text budget as six maximum-sized 0.5 turns.
 
@@ -355,12 +355,26 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         preroll.clear()
         emit({'type': 'state', 'state': 'command', 'trigger': trigger})
 
+    def say(answer, close_reason=''):
+        nonlocal state
+        turn['answer'], turn['close_reason'] = answer, close_reason
+        state = 'speech'
+        emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
+            'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
+            'deadline_ms': turn['deadline_ms'], 'actions_executed': 0,
+            'close_reason': close_reason, 'offered_more': not bool(close_reason)})
+
+    def closed():
+        emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
+            'speech_end_ms': turn['speech_end'], 'deadline_ms': turn['deadline_ms'],
+            'reason': turn['close_reason']})
+
     emit({'type': 'ready', 'protocol': PROTOCOL, 'conversation_only': True, 'wake_only': False,
                      'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': False,
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                      'response_start_ms': 30000, 'input_source': source, 'context_version': 1,
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
-                      'listen_idle_ms': 50000})
+                      'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True})
     try:
         while now_ms() < session_end:
             current = now_ms()
@@ -381,10 +395,14 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
                         reset()
                     elif current < turn['deadline_ms'] - 1500:
-                        turn['answer'] = model.result; state = 'speech'
-                        emit({'type': 'say', 'text': model.result, 'id': turn['id'],
-                            'turn_id': turn['id'], 'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
-                            'deadline_ms': turn['deadline_ms'], 'actions_executed': 0})
+                        try:
+                            answer = flow.with_offer(model.result)
+                            conversational_reply({'content': answer}, 'stop')
+                        except ValueError:
+                            model.memory.unanswered(turn['text'])
+                            emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
+                            reset(); continue
+                        say(answer)
                     else: return
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
@@ -408,10 +426,12 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'actions_executed': 0}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
                             model.memory.commit(turn['text'], turn['answer'])
-                            flow.spoken(turn['answer'])
+                            flow.spoken(turn['answer'], offered_more=not bool(turn['close_reason']))
                             print(json.dumps({'event': 'conversation_memory_commit', 'source': source,
                                 'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
+                            if turn['close_reason']:
+                                closed(); return
                             reset(continue_chat=True)
                         elif action == 'tts_failed':
                             model.memory.unanswered(turn['text'])
@@ -419,6 +439,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'turn_seq': turn['seq'], 'reason': 'tts_failed',
                                 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
+                            if turn['close_reason']:
+                                closed(); return
                             reset()
                     continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
@@ -450,10 +472,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     closing = flow.closing_reason(text)
                     if closing:
                         model.memory.last_human = speech_end
-                        model.memory.unanswered(text)
-                        emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': sequence,
-                            'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'], 'reason': closing})
-                        return  # Close this bounded channel/model, not its retained RAM.
+                        say(ConversationFlow.FAREWELL, closing)
+                        recognizer = timeline = None; preroll.clear()
+                        continue  # Close only after farewell receipt/failure; never invoke LFM.
                     turn['compute_end'] = model.start(text, speech_end, session_end)
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:

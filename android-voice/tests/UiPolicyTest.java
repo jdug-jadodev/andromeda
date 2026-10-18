@@ -41,13 +41,14 @@ public final class UiPolicyTest {
         check(VoiceSessionPolicy.wakeOnlyEventAllowed("transcript"), "Transcript event rejected");
         for (String type : new String[]{null, "timer", "cancel_timer", "list_timers", "stop_alarm", "say", "thinking"})
             check(!VoiceSessionPolicy.wakeOnlyEventAllowed(type), "Restricted mode accepted " + type);
-        check(VoiceSessionPolicy.isConversationReady(4, true, false, true, true, false), "Conversation peer rejected");
+        check(VoiceSessionPolicy.isConversationReady(5, true, false, true, true, false), "Conversation peer rejected");
         check(!VoiceSessionPolicy.isConversationReady(1, true, false, true, true, false), "Old protocol accepted");
         check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, true, false), "Old memoryless peer accepted");
         check(!VoiceSessionPolicy.isConversationReady(3, true, false, true, true, false), "Old single-query flow accepted");
-        check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, true, true), "Actions accepted");
-        check(!VoiceSessionPolicy.isConversationReady(4, true, true, true, true, false), "Wake-only overlap accepted");
-        check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, false, false), "Missing AI accepted");
+        check(!VoiceSessionPolicy.isConversationReady(4, true, false, true, true, false), "Old farewell-less peer accepted");
+        check(!VoiceSessionPolicy.isConversationReady(5, true, false, true, true, true), "Actions accepted");
+        check(!VoiceSessionPolicy.isConversationReady(5, true, true, true, true, false), "Wake-only overlap accepted");
+        check(!VoiceSessionPolicy.isConversationReady(5, true, false, true, false, false), "Missing AI accepted");
         check(VoiceSessionPolicy.conversationEventAllowed("conversation_closed"), "Conversation close rejected");
         for (String type : new String[]{"timer", "cancel_timer", "list_timers", "stop_alarm", "tool_result"})
             check(!VoiceSessionPolicy.conversationEventAllowed(type), "Conversation accepted " + type);
@@ -60,7 +61,7 @@ public final class UiPolicyTest {
         check(!turn.speechStarted(id), "Unstarted speech reported delivered");
         check(!turn.begin(id, 2, 1000, 31000, 2000), "Concurrent turn accepted");
         check(!turn.acceptStart(id, 2000), "Unscheduled TTS accepted");
-        check(turn.acceptClose(id, 1, 1000, 31000, 2000), "Explicit matching close rejected");
+        check(!turn.acceptClose(id, 1, 1000, 31000, 2000), "Closed before farewell");
         check(!turn.acceptClose("wrong", 1, 1000, 31000, 2000), "Wrong close ID accepted");
         check(!turn.acceptClose(id, 2, 1000, 31000, 2000), "Wrong close sequence accepted");
         check(!turn.acceptClose(id, 1, 1001, 31000, 2000), "Changed close timestamp accepted");
@@ -84,6 +85,24 @@ public final class UiPolicyTest {
         check(turn.begin(id, 2, 2000, 32000, 3000), "Next turn rejected");
         check(!turn.acceptReply(id, 2, 2000, 32000, 30500), "Insufficient TTS margin accepted");
         check(turn.expiredBeforeStart(32000), "Missing TTS deadline not detected");
+        turn.clear();
+        check(turn.begin(id, 3, 40000, 70000, 41000), "Closing turn rejected");
+        check(!turn.acceptReply(id, 3, 40000, 70000, 41000, "arbitrary"), "Unknown close reason accepted");
+        check(turn.acceptReply(id, 3, 40000, 70000, 41000, "declined_more"), "Farewell rejected");
+        check(!turn.acceptClose(id, 3, 40000, 70000, 41000), "Closed before farewell completed");
+        check(!turn.finishSpeech(id, true), "Unstarted farewell reported spoken");
+        check(turn.acceptStart(id, 42000) && turn.finishSpeech(id, true), "Valid farewell completion rejected");
+        check(turn.awaitingClose() && "declined_more".equals(turn.closeReason()), "Microphone can resume during closing");
+        check(turn.acceptClose(id, 3, 40000, 70000, 72000), "Timely close after spoken farewell rejected");
+        check(!turn.acceptClose(id, 3, 40000, 70000, 90001), "Unbounded closing wait accepted");
+        check(!turn.acceptClose("wrong", 3, 40000, 70000, 72000), "Foreign completed close accepted");
+        check(!turn.finishSpeech(id, true), "Duplicate farewell completion accepted");
+        turn.clear();
+        check(!turn.awaitingClose(), "Cancelled close still pending");
+        check(turn.begin(id, 4, 50000, 80000, 51000), "Next closing turn rejected");
+        check(turn.acceptReply(id, 4, 50000, 80000, 51000, "explicit_close") && turn.finishSpeech(id, false), "Failed farewell cannot close safely");
+        check(turn.awaitingClose() && !turn.speechStarted(id), "Failed farewell was invented as spoken");
+        check(!turn.acceptStart(id, 52000), "Failed farewell restarted");
         long now = 1760000000000L;
         WeatherData weather = new WeatherData(18, 3, now);
         check(weather.isFresh(now), "Fresh weather rejected");

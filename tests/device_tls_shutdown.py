@@ -37,17 +37,18 @@ def main():
             with context.wrap_socket(raw, server_side=True) as conn:
                 hello = read_hello(conn, now_ms() + 4000)
                 token = hello.get('token', '')
-                if (hello.get('protocol') != 4 or hello.get('mode') != 'conversation_only'
+                if (hello.get('protocol') != 5 or hello.get('mode') != 'conversation_only'
                         or hello.get('source') != 'synthetic_pcm' or not isinstance(token, str)
                         or not hmac.compare_digest(token.encode(), key.encode())):
                     raise ValueError('Invalid fixture authentication')
                 memory = ShortMemory(); context_id = memory.restore(hello.get('context'))
-                send_event(conn, {'type': 'ready', 'protocol': 4, 'conversation_only': True,
+                send_event(conn, {'type': 'ready', 'protocol': 5, 'conversation_only': True,
                     'wake_only': False, 'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': False,
                     'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': 90,
                     'response_start_ms': 30000, 'input_source': 'synthetic_pcm', 'test_fixture': True,
                     'context_id': context_id, 'context_version': 1, 'restored_turns': len(memory.pairs),
-                    'session_id': uuid.uuid4().hex, 'continuous_chat': True, 'listen_idle_ms': 50000})
+                    'session_id': uuid.uuid4().hex, 'continuous_chat': True, 'listen_idle_ms': 50000,
+                    'followup_offer': True, 'closing_farewell': True})
                 conn.settimeout(10)
                 if conn.recv(1) != b'': raise ValueError('Expected shutdown, not audio/control data')
                 print(json.dumps({'event': 'tls_shutdown_peer_closed', 'passed': True,

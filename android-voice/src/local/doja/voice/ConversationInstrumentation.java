@@ -128,7 +128,7 @@ public final class ConversationInstrumentation extends Instrumentation {
         Bundle result = new Bundle(); File output = null;
         Context context = getTargetContext(); Map<String, ?> timersBefore = new HashMap<>(TimerStore.prefs(context).getAll());
         try {
-            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks").contains(mode), "Invalid synthetic mode");
+            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks", "decline", "yes").contains(mode), "Invalid synthetic mode");
             check(!VoiceService.active && !RingService.ringing, "A real session/alarm is active");
             initializeVoice();
             activity = (MainActivity)startActivitySync(new Intent(context, MainActivity.class).putExtra("offline_preview", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -144,10 +144,13 @@ public final class ConversationInstrumentation extends Instrumentation {
             channel = new ConversationChannel(memory, lease, connection.ready);
             connection.socket.setSoTimeout(35000);
             JSONArray rows = new JSONArray();
-            boolean closingMode = "close".equals(mode) || "thanks".equals(mode);
+            boolean closingMode = Arrays.asList("close", "thanks", "decline", "yes").contains(mode);
+            String closingReason = Arrays.asList("decline", "yes").contains(mode) ? "declined_more" : "explicit_close";
             int wakeActivations = 0, followupRearms = 0;
             String[] fixtures = "normal".equals(mode) ? new String[]{"ai_chat", "dialogue_intro", "dialogue_followup"}
-                : closingMode ? new String[]{"ai_chat", "close".equals(mode) ? "dialogue_close" : "dialogue_thanks"} : new String[]{"ai_chat"};
+                : "yes".equals(mode) ? new String[]{"ai_chat", "dialogue_yes", "dialogue_no"}
+                : closingMode ? new String[]{"ai_chat", "close".equals(mode) ? "dialogue_close" : "thanks".equals(mode) ? "dialogue_thanks" : "dialogue_no"}
+                : new String[]{"ai_chat"};
             for (String fixture : fixtures) {
                 sendFixture(fixture); JSONObject thinking = null;
                 while (true) {
@@ -168,10 +171,14 @@ public final class ConversationInstrumentation extends Instrumentation {
                             break;
                         }
                     } else if ("say".equals(type)) {
-                        check(!fixture.equals("dialogue_close") && !fixture.equals("dialogue_thanks"), "Closing control was sent to LFM instead of closing");
                         check(thinking != null && event.getInt("actions_executed") == 0, "Reply without a turn");
+                        String reason = event.optString("close_reason");
+                        boolean farewell = !reason.isEmpty();
+                        boolean closingFixture = Arrays.asList("dialogue_close", "dialogue_thanks", "dialogue_no").contains(fixture);
+                        check(farewell == closingFixture && (!farewell || reason.equals(closingReason)), "Wrong farewell/offer scope");
+                        check(event.optBoolean("offered_more") != farewell, "Missing follow-up offer or offer on farewell");
                         String id = event.getString("turn_id"); long end = event.getLong("speech_end_ms"), deadline = event.getLong("deadline_ms");
-                        check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime()), "Late/duplicate reply");
+                        check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime(), reason), "Late/duplicate reply");
                         check(!turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime()), "Duplicate reply was accepted");
                         if ("late_start".equals(mode)) {
                             long rejected = SystemClock.elapsedRealtime(); control("tts_started", id, deadline + 1);
@@ -188,8 +195,10 @@ public final class ConversationInstrumentation extends Instrumentation {
                             .put("waveform_end_to_first_synthetic_pcm_ms", firstPcm.get() - waveformEnd)
                             .put("asr_end_estimate_minus_waveform_end_ms", end - waveformEnd));
                         check(channel.answer(id, event.getString("text"), SystemClock.elapsedRealtime()), "Completed synthetic response not retained");
-                        control("tts_done", id, SystemClock.elapsedRealtime()); turns.clear(); speechId = "";
+                        check(turns.finishSpeech(id, true), "Speech completion rejected");
+                        control("tts_done", id, SystemClock.elapsedRealtime()); speechId = "";
                         check(output.delete(), "Synthetic TTS output cleanup failed"); output = null;
+                        if (farewell) { result.putBoolean("farewell_synthesized", true); continue; }
                         while (true) {
                             JSONObject reset = VoiceConnection.readEvent(connection.input);
                             channel.verify(reset);
@@ -201,13 +210,14 @@ public final class ConversationInstrumentation extends Instrumentation {
                         SystemClock.sleep(700);
                         present(FaceState.READY, "Turno sintético completado"); break;
                     } else if ("conversation_closed".equals(type)) {
-                        check(closingMode && thinking != null && "explicit_close".equals(event.optString("reason")), "Unexpected chat close");
+                        check(closingMode && thinking != null && closingReason.equals(event.optString("reason"))
+                            && closingReason.equals(turns.closeReason()), "Unexpected chat close");
                         String id = event.getString("turn_id");
                         check(turns.acceptClose(id, event.getLong("turn_seq"), event.getLong("speech_end_ms"),
                             event.getLong("deadline_ms"), SystemClock.elapsedRealtime()), "Foreign or late chat close");
                         check(channel.end(id, SystemClock.elapsedRealtime()), "Closed chat was not retained"); turns.clear();
                         ConversationMemory.Info info = memory.list(SystemClock.elapsedRealtime()).get(0);
-                        check(info.closed && !info.current && info.turns == 2, "Closing did not release selected chat");
+                        check(info.closed && !info.current && info.turns == fixtures.length, "Closing did not release selected chat");
                         String closedId = lease.conversationId;
                         long stopped = SystemClock.elapsedRealtime(); connection.close();
                         result.putLong("close_to_inference_down_ms", waitInferenceDown(stopped));
@@ -217,7 +227,8 @@ public final class ConversationInstrumentation extends Instrumentation {
                         check(memory.select(closedId, SystemClock.elapsedRealtime()), "Closed chat cannot be resumed");
                         lease = memory.acquire(SystemClock.elapsedRealtime());
                         ConversationMemory.Snapshot resumed = memory.snapshot(lease, SystemClock.elapsedRealtime());
-                        check(resumed.turns.size() == 2 && resumed.turns.get(0).assistant != null && resumed.turns.get(1).assistant == null,
+                        check(resumed.turns.size() == fixtures.length && resumed.turns.get(0).assistant != null
+                            && resumed.turns.get(resumed.turns.size() - 1).assistant != null,
                             "Closed chat lost spoken history or fabricated a closing reply");
                         result.putBoolean("chat_closed", true); result.putBoolean("new_chat_isolated", true);
                         result.putBoolean("closed_chat_resumable", true);
@@ -242,7 +253,7 @@ public final class ConversationInstrumentation extends Instrumentation {
             result.putBoolean("audio_played", false); result.putBoolean("real_voice_acceptance", false);
             result.putBoolean("real_service_started", false);
             if ("normal".equals(mode) || closingMode)
-                check(wakeActivations == 1 && followupRearms == rows.length(), "Extra wake activation or missing follow-up ASR");
+                check(wakeActivations == 1 && followupRearms == rows.length() - (closingMode ? 1 : 0), "Extra wake activation or missing follow-up ASR");
             result.putInt("wake_activations", wakeActivations); result.putInt("followup_rearms", followupRearms);
             result.putBoolean("one_wake_only", "normal".equals(mode) || closingMode);
             result.putInt("actions_executed", 0); finish(Activity.RESULT_OK, result);

@@ -10,7 +10,7 @@ final class VoiceSessionPolicy {
     }
     static boolean isConversationReady(int protocol, boolean conversation, boolean wakeOnly,
             boolean wakeEnabled, boolean aiEnabled, boolean actionsEnabled) {
-        return protocol == 4 && conversation && !wakeOnly && wakeEnabled && aiEnabled && !actionsEnabled;
+        return protocol == 5 && conversation && !wakeOnly && wakeEnabled && aiEnabled && !actionsEnabled;
     }
     static boolean conversationEventAllowed(String type) {
         return "state".equals(type) || "transcript".equals(type) || "thinking".equals(type)

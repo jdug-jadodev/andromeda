@@ -1,6 +1,6 @@
 # Contexto 0.5 · RAM de Android, independiente del modelo
 
-**Entrega vigente posterior: 0.6 instalada, protocolo 4.** `FLUJO-CHARLAS-ANDROMEDA.md` define una charla de varios turnos, cierre retomable y búsqueda futura por tema. La actualización fue autorizada tras advertir pérdida de las charlas de prueba RAM; no borró los datos persistentes. Continuidad y presupuesto variable hasta 24 turnos, con el mismo techo de texto y ventana LFM. Lo que sigue conserva la evidencia histórica de 0.5/protocolo 3; no confundirla con los ensayos nuevos.
+**Entrega vigente posterior: 0.6.1 instalada, protocolo 5.** `FLUJO-CHARLAS-ANDROMEDA.md` define una charla de varios turnos, oferta de más ayuda, despedida/cierre retomable y búsqueda futura por tema. Actualizaciones autorizadas, sin borrar los datos persistentes. Continuidad y presupuesto variable hasta 24 turnos, con el mismo techo de texto y ventana LFM. Lo que sigue conserva la evidencia histórica de 0.5/protocolo 3; no confundirla con los ensayos nuevos.
 
 ## Entrega
 
