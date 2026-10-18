@@ -47,9 +47,12 @@ def main():
         profile = next((r for r in records if r.get('event') == 'inference_route_profile'), None)
         if not profile: continue
         summary = next((r for r in records if r.get('event') == 'inference_route_summary'), None)
+        complete = bool(summary and summary['completed'] == summary['planned'])
         print(json.dumps({'event': 'report_summary', 'file': path.name,
-                          'model': profile['model'], 'control': profile['runtime_control'], 'summary': summary}), flush=True)
+                          'model': profile['model'], 'control': profile['runtime_control'],
+                          'complete': complete, 'summary': summary}), flush=True)
         results = [r for r in records if r.get('event') == 'inference_route_result']
+        if not complete: continue
         all_results.extend(results)
         for a in results:
             if a['route'] != 'chat': continue
@@ -60,8 +63,15 @@ def main():
         if a['runtime_control'] != 'baseline' or a['route'] != 'raw': continue
         for b in all_results:
             if b['model'] != a['model'] or b['case'] != a['case'] or b['runtime_control'] == 'baseline' or b['route'] != 'raw': continue
+            if b['runtime_control'] == 'stable_history':
+                if a['messages_sha256'] != b['messages_sha256']: raise ValueError('Changed historical message texts')
+                print(json.dumps({'event': 'serialization_comparison', 'model': a['model'], 'case': a['case'],
+                                  'same_messages_verified': True,
+                                  'prompt_tokens_changed': a['prompt_tokens_sha256'] != b['prompt_tokens_sha256'],
+                                  'text_equal': a['text'] == b['text'], 'semantic_review_required': True}), flush=True)
+                continue
             print(json.dumps(dict(event='runtime_comparison', model=a['model'], case=a['case'],
-                                  control=b['runtime_control'], **compare(a, b))), flush=True)
+                                  control=b['runtime_control'], kv_type=b.get('kv_type', 'f16'), **compare(a, b))), flush=True)
 
 
 if __name__ == '__main__': main()

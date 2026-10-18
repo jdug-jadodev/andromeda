@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
             if (VoiceService.active && VoiceService.expiresAt > 0) {
                 long remaining = Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000);
                 wakeHint.setText((VoiceService.wakeListening ? "Activación por voz en prueba" : "Prueba manual / en pausa")
-                    + (VoiceService.wakeTestActive ? " · sin ejecutar órdenes" : "")
+                    + (VoiceService.conversationTestActive ? " · LFM sin acciones" : VoiceService.wakeTestActive ? " · sin ejecutar órdenes" : "")
                     + " · quedan " + remaining + " s · doble toque para opciones");
             } else wakeHint.setText("Activación por voz apagada · doble toque para opciones");
             updateMicrophoneStop();
@@ -275,8 +275,15 @@ public class MainActivity extends Activity {
                     else stopService(new Intent(this, VoiceService.class));
                 }).setNegativeButton("Volver", null).create()); return;
         }
-        showDialog(new AlertDialog.Builder(this).setTitle("Micrófono · prueba de activación")
-            .setMessage("Di Andrómeda: aparece la cara y escucha durante 8 segundos; después vuelve al reloj. Muestra lo reconocido, sin ejecutar órdenes, hablar ni cargar la IA.\n\nEl detector local debe estar preparado. La sesión termina sola; puedes silenciar o salir de la app.")
+        showDialog(new AlertDialog.Builder(this).setTitle("Micrófono · pruebas limitadas")
+            .setItems(new String[]{"Conversación LFM · sin acciones", "Solo activación y transcripción (0.3)"},
+                (dialog, which) -> explainVoiceTrial(which == 0)).setNegativeButton("Volver", null).create());
+    }
+    private void explainVoiceTrial(boolean conversation) {
+        showDialog(new AlertDialog.Builder(this).setTitle(conversation ? "Conversación local · experimental" : "Micrófono · prueba de activación")
+            .setMessage(conversation
+                ? "Di Andrómeda, espera la cara y habla brevemente. LFM responde con voz española offline y memoria corta. Vuelve a decir el nombre para otro turno. Puede equivocarse. No ejecuta órdenes ni consulta Internet.\n\nDurante el cálculo y la respuesta pausa el micrófono. Descarta respuestas tardías; 30 s todavía no están certificados con voz humana. El backend debe estar preparado. Silenciar o salir cierra la sesión."
+                : "Di Andrómeda: aparece la cara y escucha durante 8 segundos; después vuelve al reloj. Muestra lo reconocido, sin ejecutar órdenes, hablar ni cargar la IA.\n\nEl detector local debe estar preparado. La sesión termina sola; puedes silenciar o salir de la app.")
             .setNegativeButton("Volver", null).setPositiveButton("Elegir prueba limitada", (dialog, which) ->
                 showDialog(new AlertDialog.Builder(this).setTitle("Micrófono local · duración máxima")
                     .setItems(new String[]{"90 segundos", "5 minutos"}, (selection, index) -> {
@@ -284,7 +291,8 @@ public class MainActivity extends Activity {
                         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
                             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
                         else { stopPreview(); startForegroundService(new Intent(this, VoiceService.class).setAction("START")
-                            .putExtra("wake_only", true).putExtra("seconds", index == 1 ? 300 : 90)); }
+                            .putExtra("wake_only", !conversation).putExtra("conversation_only", conversation)
+                            .putExtra("seconds", index == 1 ? 300 : 90)); }
                     }).setNegativeButton("Volver", null).create())).create());
     }
     void present(FaceState value, String text) {

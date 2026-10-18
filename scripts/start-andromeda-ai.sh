@@ -56,6 +56,14 @@ case "$PROFILE" in
   route_qwen35_batch1) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; RUNTIME_CONTROL=batch1 ;;
   route_qwen17_greedy) CONTEXT=2048; MODEL_ID=qwen17; CACHE_POLICY=tokenwise; SAMPLING=qwen_non_thinking; RUNTIME_CONTROL=greedy ;;
   route_qwen35_greedy) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; RUNTIME_CONTROL=greedy ;;
+  route_qwen35_fp32) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; KV_TYPE=f32; RUNTIME_CONTROL=kv_f32 ;;
+  route_qwen35_fp32_no_flash) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; KV_TYPE=f32; RUNTIME_CONTROL=no_flash ;;
+  route_qwen17_stable_history) CONTEXT=2048; MODEL_ID=qwen17; CACHE_POLICY=tokenwise; SAMPLING=qwen_non_thinking; RUNTIME_CONTROL=stable_history ;;
+  route_qwen35_stable_history) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; RUNTIME_CONTROL=stable_history ;;
+  route_qwen17_language) CONTEXT=2048; MODEL_ID=qwen17; CACHE_POLICY=tokenwise; SAMPLING=qwen_non_thinking; RUNTIME_CONTROL=language ;;
+  route_qwen35_language) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; RUNTIME_CONTROL=language ;;
+  route_qwen17_generic) CONTEXT=2048; MODEL_ID=qwen17; CACHE_POLICY=tokenwise; SAMPLING=qwen_non_thinking; RUNTIME_CONTROL=generic ;;
+  route_qwen35_generic) CONTEXT=2048; MODEL_ID=qwen35; CACHE_POLICY=hybrid; SAMPLING=qwen35_no_penalty; RUNTIME_CONTROL=generic ;;
   *) exit 2 ;;
 esac
 case "$PROFILE" in route_*) LOG_MODE=audit ;; esac

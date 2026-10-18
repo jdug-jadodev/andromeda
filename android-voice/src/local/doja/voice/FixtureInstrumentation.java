@@ -52,6 +52,8 @@ public class FixtureInstrumentation extends Instrumentation {
                 {"ai_cancel", "Andrómeda, quita todas las cuentas regresivas."},
                 {"ai_confirm", "Andrómeda, sí."},
                 {"ai_chat", "Andrómeda, cómo te llamas."},
+                {"conversation_intro", "Andrómeda, me llamo Luis y mi gata se llama Menta."},
+                {"conversation_followup", "Andrómeda, cómo se llama mi gata."},
                 {"cancel", "Andrómeda, cancela el temporizador."},
                 {"delete", "Andrómeda, elimina el temporizador."},
                 {"negated", "Andrómeda, no pongas un temporizador de diez segundos."},

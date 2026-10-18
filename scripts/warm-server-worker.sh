@@ -3,7 +3,7 @@
 set -u
 WORK=$1
 LIMIT=${2:-100}
-case "$LIMIT" in 100|420) ;; *) exit 2 ;; esac
+case "$LIMIT" in 100|420|660) ;; *) exit 2 ;; esac
 CONTEXT=${3:-1024}
 case "$CONTEXT" in 1024|2048) ;; *) exit 2 ;; esac
 if [ "$CONTEXT" = 2048 ]; then
@@ -55,6 +55,9 @@ case "$RUNTIME_CONTROL" in
   batch16) [ "$MODEL_ID" = qwen17 ] || exit 2; MICROBATCH=16 ;;
   batch1) [ "$MODEL_ID" = qwen35 ] || exit 2; MICROBATCH=1 ;;
   greedy) ;; # Request sampling control only; no runtime/kernel changes.
+  kv_f32|stable_history|language) ;; # Controls are selected by coordinator/client.
+  generic) BIN=/data/local/doha-inference/llama-reference-generic; set -- --no-warmup ;;
+  voice) [ "$MODEL_ID" = lfm ] && [ "$LIMIT" = 660 ] || exit 2; set -- --log-disable ;;
   *) exit 2 ;;
 esac
 case "$LOG_MODE" in

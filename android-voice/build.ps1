@@ -9,8 +9,11 @@ $settings = Get-Content (Join-Path (Split-Path $root -Parent) 'config\assistant.
 $nameLiteral = ConvertTo-Json -InputObject ([string]$settings.name) -Compress
 $wakeLiteral = ConvertTo-Json -InputObject ([string]$settings.wake_word) -Compress
 $wakeEnabled = ([bool]$settings.wake_enabled).ToString().ToLowerInvariant()
+$conversation = Get-Content (Join-Path (Split-Path $root -Parent) 'config\conversation_voice.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$certificatePin = [string]$conversation.tls_certificate_sha256
+if ($certificatePin -notmatch '^[0-9a-f]{64}$') { throw 'Missing conversation TLS certificate pin' }
 $generated = Join-Path $output 'AssistantConfig.java'
-$generatedSource = "package local.doja.voice; public final class AssistantConfig { public static final String NAME = $nameLiteral; public static final String WAKE_WORD = $wakeLiteral; public static final boolean WAKE_ENABLED = $wakeEnabled; }"
+$generatedSource = "package local.doja.voice; public final class AssistantConfig { public static final String NAME = $nameLiteral; public static final String WAKE_WORD = $wakeLiteral; public static final boolean WAKE_ENABLED = $wakeEnabled; public static final String CONVERSATION_CERT_SHA256 = `"$certificatePin`"; }"
 [System.IO.File]::WriteAllText($generated, $generatedSource, (New-Object System.Text.UTF8Encoding($false)))
 $sources = @(Get-ChildItem "$root\src" -Recurse -Filter *.java | ForEach-Object FullName)
 $sources += $generated

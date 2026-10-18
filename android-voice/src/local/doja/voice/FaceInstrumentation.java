@@ -27,6 +27,9 @@ public final class FaceInstrumentation extends Instrumentation {
                 VoiceService guarded = new VoiceService(); guarded.running = true; guarded.wakeOnly = true;
                 try { guarded.apply(forbidden); check(guarded.tts == null, "Wake-only initialized TTS"); }
                 finally { guarded.running = false; guarded.controls.shutdownNow(); }
+                VoiceService conversation = new VoiceService(); conversation.running = true; conversation.conversationOnly = true;
+                try { conversation.apply(forbidden); check(conversation.tts == null, "Conversation-only accepted an executor event"); }
+                finally { conversation.running = false; conversation.controls.shutdownNow(); }
             });
             check(FaceState.parse(null) == FaceState.ERROR, "Missing state is not safe");
             check(FaceState.parse("unknown") == FaceState.ERROR, "Unknown state is not safe");

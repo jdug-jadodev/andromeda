@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "hypothesis": "Determine whether the same identity/ownership errors persist when question and system languages are crossed independently. No translation service or extra model.",
+  "systems": {
+    "es": "Eres Andrómeda, una asistente conversacional. Responde en español en una o dos frases breves, manteniendo el hilo. Esta sesión no tiene herramientas, acceso a Internet ni control de dispositivos. No afirmes que has ejecutado acciones ni que consultaste datos actuales.",
+    "en": "You are Andrómeda, a conversational assistant. Reply in English in one or two brief sentences, keeping track of the conversation. This session has no tools, Internet access or control of devices. Do not claim that you performed actions or checked current information."
+  },
+  "cases": [
+    {
+      "id": "name_nickname_pet",
+      "questions": {
+        "es": "Me llamo Nora, prefiero que me digas Nori y mi gato se llama Tilo. ¿Cuál es mi nombre, qué apodo prefiero y de quién es el gato?",
+        "en": "My name is Nora, I prefer you to call me Nori, and my cat is called Tilo. What is my name, which nickname do I prefer, and whose cat is it?"
+      },
+      "semantic_review_facts": ["human_name_Nora", "human_preferred_name_Nori", "cat_belongs_to_human_not_assistant"]
+    },
+    {
+      "id": "gift_and_person",
+      "questions": {
+        "es": "Soy Martín. Mi vecina Eva me regaló una taza. ¿La taza es tuya o mía? ¿Quién es Eva?",
+        "en": "I am Martín. My neighbor Eva gave me a mug as a gift. Is the mug yours or mine? Who is Eva?"
+      },
+      "semantic_review_facts": ["gift_now_belongs_to_human", "Eva_is_humans_neighbor_not_assistants_neighbor"]
+    }
+  ]
+}

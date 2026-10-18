@@ -99,6 +99,8 @@ En las cuatro series, mínimo MemAvailable observado 1500072 KiB (~1.43 GiB), m�
 
 Investigación documental posterior, sin nuevos cambios del Moto: `INVESTIGACION-LLAMA-QWEN.md`. Hay reportes de plantillas multivuelta y fallos CPU/Android, pero ninguna reproducción exacta de este caso. Priorizar auditoría del turno completo y comparación de rutas antes de descargar otro modelo; algunos arreglos citados ya están presentes o no aplican a nuestra configuración.
 
+**Esa auditoría se ejecutó después:** `EVALUACION-MOTOR-IDIOMA.md`. Prompts y tokens coinciden con referencias oficiales; chat/raw reproducen las mismas respuestas. Se contrastaron optimizaciones, KV F32, muestreo, representación de historial, idioma y backend genérico real en el Moto. Los errores persisten también íntegramente en inglés y en el backend genérico. No aprobado; 122 pruebas de soporte pasan, sin reemplazar app/motor original ni habilitar voz.
+
 - La app y micrófono continúan en 0.3, separados del candidato. No hay nueva conversación de voz habilitada.
 - **106 pruebas Python** de soporte pasan; no aprobar el modelo por ellas.
 - Modelo apagado; sin servicios de voz/alarma, listeners 11435/11436 ni temporales del worker. Batería posterior 29.3 °C, MemAvailable 1752848 KiB (~1.67 GiB), muestra de reposo.

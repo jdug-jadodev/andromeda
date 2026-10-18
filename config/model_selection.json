@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "status": "user_selected_for_incremental_personal_conversation",
+  "model_id": "lfm",
+  "model_name": "LFM2.5-1.2B-Instruct",
+  "model_file": "LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf",
+  "selection_reason": "User prioritizes short casual conversations, latency and resource efficiency, and accepts the observed conversational errors while evaluating personal use over time.",
+  "known_limitations": [
+    "User/assistant identity and ownership confusion remain in recorded evaluations.",
+    "Model output is not guaranteed factual or reliable for action selection.",
+    "Combined ASR, LLM, TTS and UI latency/resources are not yet validated."
+  ],
+  "next_scope": "Bounded conversation-only integration, with manual activation and no action executor, after technical deadline/cancellation and resource checks.",
+  "proposed_context_limit_tokens": 2048,
+  "runtime_activation_changed": false,
+  "permanent_microphone_authorized": false,
+  "autonomous_actions_authorized": false,
+  "voice_latency_limit_seconds": 30,
+  "reopen_model_comparisons_by_default": false,
+  "note": "Records the user decision only; not a runtime profile or a claim that semantic acceptance tests passed."
+}

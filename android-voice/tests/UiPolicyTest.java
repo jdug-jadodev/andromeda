@@ -41,6 +41,36 @@ public final class UiPolicyTest {
         check(VoiceSessionPolicy.wakeOnlyEventAllowed("transcript"), "Transcript event rejected");
         for (String type : new String[]{null, "timer", "cancel_timer", "list_timers", "stop_alarm", "say", "thinking"})
             check(!VoiceSessionPolicy.wakeOnlyEventAllowed(type), "Restricted mode accepted " + type);
+        check(VoiceSessionPolicy.isConversationReady(2, true, false, true, true, false), "Conversation peer rejected");
+        check(!VoiceSessionPolicy.isConversationReady(1, true, false, true, true, false), "Old protocol accepted");
+        check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, true, true), "Actions accepted");
+        check(!VoiceSessionPolicy.isConversationReady(2, true, true, true, true, false), "Wake-only overlap accepted");
+        check(!VoiceSessionPolicy.isConversationReady(2, true, false, true, false, false), "Missing AI accepted");
+        for (String type : new String[]{"timer", "cancel_timer", "list_timers", "stop_alarm", "tool_result"})
+            check(!VoiceSessionPolicy.conversationEventAllowed(type), "Conversation accepted " + type);
+        ConversationTurnPolicy turn = new ConversationTurnPolicy();
+        String id = "0123456789abcdef0123456789abcdef";
+        check(!turn.begin(id, 1, 1000, 31001, 2000), "Changed deadline accepted");
+        check(!turn.begin(id, 1, 3000, 33000, 2000), "Future audio accepted");
+        check(!turn.begin(id, 1, 1000, 31000, 31000), "Expired turn accepted");
+        check(turn.begin(id, 1, 1000, 31000, 2000), "Turn rejected");
+        check(!turn.begin(id, 2, 1000, 31000, 2000), "Concurrent turn accepted");
+        check(!turn.acceptStart(id, 2000), "Unscheduled TTS accepted");
+        check(!turn.acceptReply("wrong", 1, 1000, 31000, 2000), "Wrong turn reply accepted");
+        check(!turn.acceptReply(id, 2, 1000, 31000, 2000), "Wrong sequence accepted");
+        check(!turn.acceptReply(id, 1, 1001, 31000, 2000), "Rebased deadline accepted");
+        check(turn.acceptReply(id, 1, 1000, 31000, 2000), "Reply rejected");
+        check(!turn.acceptReply(id, 1, 1000, 31000, 2000), "Duplicate TTS scheduled");
+        check(!turn.acceptStart(id, 31001), "Late TTS started");
+        check(turn.acceptStart(id, 30000), "In-time TTS rejected");
+        check(!turn.acceptStart(id, 30000), "Duplicate TTS start accepted");
+        check(!turn.expiredBeforeStart(32000), "Already-started TTS expired");
+        turn.clear();
+        check(!turn.acceptReply(id, 1, 1000, 31000, 2000), "Cancelled response accepted");
+        check(!turn.begin(id, 1, 2000, 32000, 3000), "Replayed sequence accepted");
+        check(turn.begin(id, 2, 2000, 32000, 3000), "Next turn rejected");
+        check(!turn.acceptReply(id, 2, 2000, 32000, 30500), "Insufficient TTS margin accepted");
+        check(turn.expiredBeforeStart(32000), "Missing TTS deadline not detected");
         long now = 1760000000000L;
         WeatherData weather = new WeatherData(18, 3, now);
         check(weather.isFresh(now), "Fresh weather rejected");

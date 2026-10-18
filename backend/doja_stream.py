@@ -335,11 +335,21 @@ def main():
     parser.add_argument("--wake-only", action="store_true", help="Wake and transcript only; no actions, LLM or speech output")
     parser.add_argument("--ai-key", help="Enable local LLM interpretation; mutations require confirmation")
     parser.add_argument("--chat", action="store_true", help="Conversational tool loop with bounded recent memory")
+    parser.add_argument("--conversation-only", action="store_true", help="TLS conversation trial; no tool registry/executor")
+    parser.add_argument("--tls-cert")
+    parser.add_argument("--tls-key")
+    parser.add_argument("--synthetic-input", action="store_true", help="Accept only authenticated synthetic PCM, never a microphone client")
     args = parser.parse_args()
     if args.wake_only and (not args.test_wake or args.ai_key or args.chat or args.calibrate or args.smoke):
         raise ValueError("Wake-only requires --test-wake and forbids AI/legacy modes")
+    if args.conversation_only:
+        if (not args.test_wake or not args.ai_key or not args.tls_cert or not args.tls_key
+                or args.wake_only or args.chat or args.calibrate or args.smoke or args.seconds not in (90, 300)):
+            raise ValueError("Conversation-only requires TLS, AI and bounded Spanish wake; legacy/tool modes forbidden")
+    elif args.synthetic_input or args.tls_cert or args.tls_key:
+        raise ValueError("TLS/synthetic settings require conversation-only mode")
     ai_turns = None
-    if args.ai_key:
+    if args.ai_key and not args.conversation_only:
         if args.chat:
             from conversation_agent import ConversationAgent, ChatModel
             ai_turns = ConversationAgent(ChatModel(args.ai_key))
@@ -361,6 +371,15 @@ def main():
         spotter = SpanishWakeDetector(SETTINGS["wake_word"], MODEL_DIR / "vosk-model-small-es-0.42")
     else:
         spotter = make_spotter() if args.smoke else None
+    if args.conversation_only:
+        from conversation_voice import serve
+        serve(args.key, args.ai_key, spotter, args.seconds, args.tls_cert, args.tls_key,
+              'synthetic_pcm' if args.synthetic_input else 'microphone', resource_ok)
+        stats = resource.getrusage(resource.RUSAGE_SELF)
+        print(json.dumps({'event': 'conversation_stopped', 'peak_rss_kib': stats.ru_maxrss,
+                          'cpu_seconds': round(stats.ru_utime + stats.ru_stime, 2),
+                          'microphone_opened_by_backend': False, 'actions_executed': 0}), flush=True)
+        return
     engines = None
     if args.calibrate and not args.smoke:
         engines = [(name, make_spotter(score, threshold)) for name, score, threshold in

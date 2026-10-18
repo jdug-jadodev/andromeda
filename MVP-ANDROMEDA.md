@@ -4,6 +4,18 @@
 
 Asistente local en el Moto, inspirado en las funciones cotidianas de Alexa, sin integrar todavía TV, luces o electrodomésticos. No se promete paridad con Alexa en esta primera versión. Diseño y requisitos: `DISENO-ANDROMEDA.md`.
 
+### Decisión vigente del usuario: continuar con LFM
+
+El usuario acepta **LFM2.5 1.2B Instruct QAD Q4_0** como base provisional para conversación casual corta, con los errores de identidad/perspectiva ya conocidos, y prefiere observar su funcionamiento y mejorarlo con el tiempo. **Cerrar por ahora la comparación de modelos y no mantener esos errores conversacionales como bloqueo absoluto de una prueba personal acotada.** La elección no cambia los resultados históricos ni demuestra que el modelo haya pasado las pruebas semánticas.
+
+Decisión registrada en `config/model_selection.json` (registro de intención, no perfil de ejecución). Registrar la elección no activó capacidades; después el usuario pidió iniciar la integración. Siguen vigentes el máximo de 30 s, las confirmaciones basadas en resultados reales y las barreras para acciones.
+
+## Entrega vigente 0.4 — conversación LFM sin acciones
+
+**0.4.0-conversation-trial / código 4 instalada**, con respaldo de 0.3 y sin borrar datos/cambiar HOME. Menú Micrófono separa conversación LFM y prueba original solo activación. Sesiones manuales 90 s/5 min, Vosk + memoria corta tokenizada + LFM + voz española offline, sin catálogo/ejecutor. Canal TLS fijado + token de cliente independiente, turno con plazo compartido, cancelación del servidor dedicado y rechazo de TTS tardío/duplicado. No abre micrófono al preparar ni al abrir la app.
+
+**145 tests Python y 78 aserciones JVM pasan**; UI y dos series de tres turnos sintéticos completos ejecutados en Moto, sin captura/reproducción ni cambios de timers. Fin de WAV → primer PCM sintetizado **5.343–6.409 s**; no es inicio audible útil ni certifica 30 s. LFM aún confunde Menta/Luna; error aceptado para ensayo personal, no declarado corregido. Cancelar durante cálculo cerró inferencia en 31 ms y una confirmación TTS tardía se rechazó; pulsación humana de Silenciar/driver de captura y voz real aún pendientes. Recursos, seguridad, reproducción y preparación: **`CONVERSACION-ANDROMEDA.md`**. Sin acciones, escucha permanente, daemon ni cambios de carga/swap.
+
 ## Avance posterior 0.3 — micrófono/activación aislados
 
 Por petición explícita del usuario, avanzar en micrófono → nombre → cara mientras se evalúa la comprensión del modelo. **0.3 instalada**, botón Micrófono ofrece prueba limitada de 90 s/5 min contra backend wake-only: muestra cara de escucha 8 s y transcripción, sin LLM, TTS ni acciones. Botón visible de silenciar/cuenta atrás, parada al salir. Pasan 88 pruebas Python, 48 aserciones JVM, instrumentación UI y nueve casos sintéticos con Vosk real; pendiente confirmación humana de este flujo en la UI nueva. Preparación del detector no inicia captura; ver `MICROFONO-ANDROMEDA.md`. No se habilitó escucha permanente ni se aprobó el modelo por habilitar este ensayo.
@@ -15,6 +27,8 @@ Por petición explícita del usuario, avanzar en micrófono → nombre → cara 
 **Prioridad posterior explícita: eficiencia y contexto, no modelos mayores.** Se comparó el Qwen Q4 existente con dos reglas globales breves de separación usuario/asistente, regresión y ocho controles nuevos base/variante. La identidad sigue fallando y la variante no mejora eficiencia. Dos prompts idénticos con/sin caché dan iguales errores; recomputar solo añade tiempo. No se descargó otro modelo ni se activó conversación por voz. Ver `EVALUACION-IDENTIDAD.md`; 100 pruebas de soporte pasan. Mantener la app 0.3 y su activación ya confirmada.
 
 **Candidato alternativo autorizado después:** Qwen3.5 2B Q4 descargado/verificado e instalado solo para pruebas. Motor carga; misma suite de 15 turnos y ocho controles con muestreo oficial y un control de penalización de presencia. RAM del servidor ~1.39 GiB PSS, pero persisten identidad/perspectiva/consejos incorrectos; no se conecta a voz. No hubo nueva instalación de app ni micrófono activo. Evidencias y correcciones de evaluación/transporte en `EVALUACION-QWEN35.md`; 106 pruebas de soporte pasan. No declarar éxito por cero fallos mecánicos del control.
+
+**Investigación posterior de motor/idioma:** 80 generaciones completas y 66 prompts/tokens únicos auditados contra referencias oficiales; chat/raw coinciden y los errores persisten con controles de CPU, representación y también en inglés. Backend genérico compilado aparte y ejecutado en Moto: 118–129 s, todavía con errores; no reemplaza el original. Ninguna configuración aprobada, app 0.3 intacta, todo apagado y 122 tests de soporte. Detalle en `EVALUACION-MOTOR-IDIOMA.md`.
 
 ## Correcciones 0.2 — instaladas y probadas en el Moto
 
@@ -64,12 +78,12 @@ Pendiente: inspección completa de transiciones/perímetro en ambos sentidos hor
 
 ## Lo que falta para el MVP funcional
 
-1. **Comprensión fiable:** Qwen3 1.7B Q4_K_M sigue como candidato, apagado. Negaciones/identidad fallan en conversación completa; ver `EVALUACION-CONVERSACIONAL.md`. No usar la nueva cara para dar apariencia de aprobación a ese núcleo.
-2. Presupuesto global de turno, cancelación real/rechazo de efectos tardíos y transporte autenticado mutuamente. Silenciar hoy detiene captura, **no garantiza cancelar una acción ya enviada al backend experimental**.
-3. Conversación/memoria y temporizador real de extremo a extremo, después voz sintética y finalmente pruebas humanas acotadas. Máximo 30 s desde fin de voz a respuesta útil.
+1. **Conversación personal incremental con LFM:** modelo base elegido por el usuario, apagado; observar los fallos conversacionales aceptados sin volver a abrir comparaciones por defecto. Los errores de intención/negación siguen bloqueando acciones autónomas. Las evaluaciones históricas no se convierten en aprobadas por esta decisión.
+2. Validar con captura humana plazo/cancelación y Silenciar de la ruta 0.4. Las garantías del backend **histórico con herramientas** no se heredan de la ruta nueva sin ejecutor; acciones continúan bloqueadas.
+3. Primer ensayo personal de conversación 0.4 con voz real tras sintéticos; después abordar herramientas por separado. Máximo 30 s desde fin de voz a respuesta audible útil todavía sin certificar.
 4. Alarmas programadas, recordatorios, cálculos e información con fuentes: objetivos de la entrega funcional, **no capacidades ya integradas por esta UI**. Clima en reposo validado en el Moto con 0.2; pendiente integrarlo a conversación. Música/proveedores y otras funciones amplias requieren concretar alcance.
 5. Completar inspección de entrada/borde y espera física de opciones en 0.2; reloj y clima ya verificados. El usuario aclaró el significado del loader; no extenderlo a batería.
-6. Medir LLM + ASR + TTS + UI simultáneos y validar protección de carga antes de operación 24/7. No se modificaron batería, swap, servicios Android ni arranque automático.
+6. Ampliar medición breve conjunta 0.4 a uso sostenido y validar protección de carga antes de operación 24/7. No se modificaron batería, swap, servicios Android ni arranque automático.
 
 ## Reproducir la prueba visual (APK ya instalado)
 

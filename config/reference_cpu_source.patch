@@ -1,0 +1,17 @@
+diff --git a/ggml/src/ggml-cpu/CMakeLists.txt b/ggml/src/ggml-cpu/CMakeLists.txt
+--- a/ggml/src/ggml-cpu/CMakeLists.txt
++++ b/ggml/src/ggml-cpu/CMakeLists.txt
+@@ -99,6 +99,13 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
+         target_link_libraries(${GGML_CPU_NAME} PUBLIC memkind)
+     endif()
+ 
++    if (ANDROMEDA_REFERENCE_GENERIC)
++        set(GGML_SYSTEM_ARCH "UNKNOWN")
++        set(REFERENCE_FLAGS -U__ARM_NEON -U__ARM_FEATURE_FMA -fno-vectorize -fno-slp-vectorize -ffp-contract=off)
++        target_compile_options(${GGML_CPU_NAME} PRIVATE ${REFERENCE_FLAGS})
++        target_compile_options(ggml-base PRIVATE ${REFERENCE_FLAGS})
++    endif()
++
+     if (GGML_SYSTEM_ARCH STREQUAL "ARM")
+         message(STATUS "ARM detected")
+         list(APPEND GGML_CPU_SOURCES

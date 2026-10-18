@@ -104,7 +104,19 @@ def download(directory, repo, revision, filename):
     return target
 
 
-def prepare(model, destination):
+def language_histories(suite):
+    result = []
+    for system_language, system in suite['systems'].items():
+        for user_language in ['es', 'en']:
+            for case in suite['cases']:
+                result.append({'id': 'language/' + system_language + '/' + user_language + '/' + case['id'],
+                               'messages': [{'role': 'system', 'content': system},
+                                            {'role': 'user', 'content': case['questions'][user_language]}],
+                               'expected': {'semantic_review_facts': case['semantic_review_facts']}})
+    return result
+
+
+def prepare(model, destination, language=False):
     from jinja2.sandbox import ImmutableSandboxedEnvironment
     from tokenizers import Tokenizer
     repo, revision, filename, regression, holdout = REFERENCES[model]
@@ -140,6 +152,10 @@ def prepare(model, destination):
     ]:
         records.append({'id': key, 'messages': [{'role': 'system', 'content': suite['system']},
                         {'role': 'user', 'content': text}], 'expected': {'semantic_review_required': True}})
+    if language:
+        raw_language = (ROOT / 'tests' / 'language_control_cases.json').read_bytes()
+        records = language_histories(json.loads(raw_language))
+        sources = [{'file': 'tests/language_control_cases.json', 'sha256': digest(raw_language)}]
     for row in records:
         parameters = dict(messages=row['messages'], add_generation_prompt=True, enable_thinking=False,
                           bos_token=config.get('bos_token') or '', eos_token=config.get('eos_token') or '')
@@ -148,6 +164,7 @@ def prepare(model, destination):
         row['official_tokens'] = tokenizer.encode(row['official_prompt'], add_special_tokens=False).ids
         row['embedded_reference_tokens'] = tokenizer.encode(row['embedded_prompt'], add_special_tokens=False).ids
     selected = ['regression/natalia/perspective', 'holdout/camila/name_and_nickname', 'fresh/pet', 'fresh/gift']
+    if language: selected = [row['id'] for row in records]
     artifact = {'version': 1, 'model': model, 'repository': repo, 'revision': revision,
                 'sources': sources, 'gguf_metadata': metadata,
                 'official_template_sha256': digest(official.encode()),
@@ -155,7 +172,7 @@ def prepare(model, destination):
                 'tokenizer_json_sha256': digest(tokenizer_path.read_bytes()),
                 'generation_cases': selected, 'audits': records,
                 'inference_on_workstation': False, 'production_approved': False}
-    output = directory / 'inference_route_cases.json'
+    output = directory / ('language_route_cases.json' if language else 'inference_route_cases.json')
     output.write_text(json.dumps(artifact, ensure_ascii=True, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'model': model, 'file': str(output), 'sha256': digest(output.read_bytes()),
                       'audits': len(records), 'generation_cases': selected,
@@ -164,8 +181,9 @@ def prepare(model, destination):
 
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--language', action='store_true')
     args = parser.parse_args()
-    for model in REFERENCES: prepare(model, args.output)
+    for model in REFERENCES: prepare(model, args.output, args.language)
 
 
 if __name__ == '__main__': main()

@@ -6,6 +6,8 @@ Consulta: 17 de octubre de 2026. Investigación documental; **no se ejecutó nue
 
 Hay reportes parecidos y correcciones reales de integración. **No se encontró una reproducción externa exacta de nuestros errores de perspectiva/propiedad en el Moto G8 Plus con b11669, F16 de KV y estos GGUF.** No prometer que una receta de foro los resuelva, ni atribuirlos exclusivamente al tamaño del modelo.
 
+**Pruebas posteriores autorizadas y ejecutadas:** `EVALUACION-MOTOR-IDIOMA.md`. Se compararon prompts/tokens oficiales, rutas chat/raw, controles de CPU/caché/representación/idioma y un binario genérico compilado aparte y ejecutado en el Moto. 80 generaciones completas, sin arreglo aprobado; el problema también aparece en inglés y sin kernels ARM especializados. No confundir la investigación documental de este archivo con esos ensayos posteriores.
+
 ## Fuentes primarias y aplicabilidad
 
 ### 1. Qwen3 1.7B: plantilla multivuelta sin thinking

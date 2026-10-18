@@ -28,6 +28,22 @@ def first_difference(left, right):
     return min(len(left), len(right)) if len(left) != len(right) else None
 
 
+def stable_history_prompt(prompt):
+    """Forum control: preserve empty thinking blocks in prior assistant turns.
+
+    Only public, audited plain-text fixtures are supported. No answers/facts
+    are added or replaced; the final generation prefix must stay unchanged.
+    """
+    header = '<|im_start|>assistant\n'
+    empty = '<think>\n\n</think>\n\n'
+    parts = prompt.split(header)
+    if len(parts) < 2 or not parts[-1].startswith(empty):
+        raise ValueError('Unexpected non-thinking generation prefix')
+    if any(part.startswith('<think>') for part in parts[1:-1]):
+        raise ValueError('Historical thinking block already present')
+    return parts[0] + ''.join(header + empty + part for part in parts[1:-1]) + header + parts[-1]
+
+
 def sampling(model, control='baseline'):
     result = dict(chat.SAMPLING['qwen35_no_penalty' if model == 'qwen35' else 'qwen_non_thinking'])
     if control == 'greedy': result['temperature'] = 0.0
@@ -40,7 +56,7 @@ def generation_payload(row, model, route, control='baseline'):
         return dict(common, messages=copy.deepcopy(row['messages']), max_tokens=96,
                     chat_template_kwargs={'enable_thinking': False}, logprobs=True, top_logprobs=8)
     if route != 'raw': raise ValueError('Unknown generation route')
-    return dict(common, prompt=list(row['actual_tokens']), n_predict=96, n_probs=8)
+    return dict(common, prompt=list(row['actual_tokens']), n_predict=32 if control == 'generic' else 96, n_probs=8)
 
 
 def audit_prompt(row, request):
@@ -96,14 +112,16 @@ def main():
     model = os.environ['ANDROMEDA_MODEL']
     control = os.environ.get('ANDROMEDA_RUNTIME_CONTROL', 'baseline')
     if model not in {'qwen17', 'qwen35'}: raise ValueError('Unsupported diagnostic model')
-    path = HERE / ('inference_route_cases_' + model + '.json')
-    if not path.exists(): path = HERE.parent / 'artifacts' / 'evaluations' / 'inference-reference' / model / 'inference_route_cases.json'
+    fixture_name = 'language_route_cases' if control == 'language' else 'inference_route_cases'
+    path = HERE / (fixture_name + '_' + model + '.json')
+    if not path.exists(): path = HERE.parent / 'artifacts' / 'evaluations' / 'inference-reference' / model / (fixture_name + '.json')
     data = path.read_bytes(); artifact = json.loads(data)
     if artifact['model'] != model: raise ValueError('Reference/model mismatch')
     key_path = Path(args.key_path); key = key_path.read_text().strip()
     if len(key) < 32: raise ValueError('Missing credential')
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    def request(endpoint, body=None, timeout=90):
+    def request(endpoint, body=None, timeout=None):
+        if timeout is None: timeout = 180 if control == 'generic' else 90
         query = urllib.request.Request('http://127.0.0.1:11435' + endpoint,
             data=json.dumps(body, ensure_ascii=True).encode() if body is not None else None,
             headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
@@ -117,16 +135,17 @@ def main():
             if time.monotonic() >= ready: raise
             time.sleep(.25)
     emit({'event': 'inference_route_profile', 'model': model, 'runtime_control': control,
+          'kv_type': os.environ.get('ANDROMEDA_KV_TYPE'),
           'cache_policy': os.environ.get('ANDROMEDA_CACHE_POLICY'), 'fixture_sha256': sha(data),
           'official_revision': artifact['revision'], 'sampling': sampling(model, control),
-          'full_recomputation_for_route_comparison': True, 'max_output_tokens': 96,
+          'full_recomputation_for_route_comparison': True, 'max_output_tokens': 32 if control == 'generic' else 96,
           'microphone_opened': False, 'executor_present': False, 'external_network': False,
-          'diagnostic_request_timeout_s': 90, 'compute_acceptance_budget_s': 22})
+          'diagnostic_request_timeout_s': 180 if control == 'generic' else 90, 'compute_acceptance_budget_s': 22})
     props = request('/props')
     emit({'event': 'server_props', 'default_generation_settings': props.get('default_generation_settings'),
           'chat_template_sha256': sha(str(props.get('chat_template', '')).encode())})
     for line in key_path.with_name('server.log').read_text(errors='replace').splitlines():
-        if re.search(r'system_info:|load_backend:|flash_attn|n_ubatch|repack|general.architecture|CPU.*buffer', line):
+        if re.search(r'system_info:|common_param: build|load_backend:|flash_attn|n_ubatch|repack|general.architecture|CPU.*buffer', line):
             emit({'event': 'runtime_evidence', 'line': line.replace(key, '[REDACTED]')})
     audited, outcomes = [], []
     for row in artifact['audits']:
@@ -135,18 +154,29 @@ def main():
     # No answer, ideal or generated, from this experiment is fed to another
     # scored prompt. Every route/control uses the pre-frozen real histories.
     routes = ['chat', 'raw'] if control == 'baseline' else ['raw']
+    selected_cases = ['fresh/pet', 'fresh/gift'] if control == 'generic' else artifact['generation_cases']
     for row in artifact['audits']:
-        if row['id'] not in artifact['generation_cases']: continue
+        if row['id'] not in selected_cases: continue
         emit({'event': 'frozen_generation_input', 'case': row['id'], 'messages': row['messages'],
               'messages_sha256': sha(row['messages']), 'tokens_sha256': sha(row['actual_tokens'])})
+        if control == 'stable_history':
+            modified = stable_history_prompt(row['embedded_prompt'])
+            original_tokens = row['actual_tokens']
+            row['actual_tokens'] = request('/tokenize', {'content': modified, 'add_special': True, 'parse_special': True})['tokens']
+            emit({'event': 'serialization_control', 'case': row['id'],
+                  'only_change': 'empty_thinking_blocks_on_historical_assistant_turns',
+                  'prompt_changed': modified != row['embedded_prompt'],
+                  'original_tokens': len(original_tokens), 'modified_tokens': len(row['actual_tokens']),
+                  'human_messages_unchanged': True, 'assistant_reply_texts_unchanged': True})
         for route in routes:
-            if time.monotonic() - began > 325:
+            if time.monotonic() - began > (220 if control == 'generic' else 325):
                 emit({'event': 'diagnostic_global_reserve', 'completed': len(outcomes)}); break
             started = time.monotonic()
             body = generation_payload(row, model, route, control)
             result = request('/v1/chat/completions' if route == 'chat' else '/completion', body)
             record = dict(event='inference_route_result', case=row['id'], route=route,
                           model=model, runtime_control=control,
+                          kv_type=os.environ.get('ANDROMEDA_KV_TYPE'),
                           messages_sha256=sha(row['messages']), prompt_tokens_sha256=sha(row['actual_tokens']),
                           seconds=round(time.monotonic() - started, 3), **summarize_response(result, route))
             record['within_22s_compute_budget'] = record['seconds'] <= 22
@@ -155,13 +185,14 @@ def main():
     emit({'event': 'inference_route_summary', 'audit_count': len(audited),
           'official_prompt_mismatches': [r['case'] for r in audited if not r['official_prompt_equal']],
           'official_tokenizer_mismatches': [r['case'] for r in audited if not r['official_tokenizer_equal']],
-          'completed': len(outcomes), 'planned': len(routes) * len(artifact['generation_cases']),
+          'completed': len(outcomes), 'planned': len(routes) * len(selected_cases),
           'production_approved': False, 'voice_acceptance': False})
     # Libraries may buffer early startup logs when stderr is redirected. Read
     # the narrowly selected evidence again at the end, without dumping headers.
     for line in key_path.with_name('server.log').read_text(errors='replace').splitlines():
         if re.search(r'system_info|CPU :|flash_attn|n_ubatch|repack|general.architecture|CPU.*buffer', line):
             emit({'event': 'runtime_evidence_final', 'line': line.replace(key, '[REDACTED]')})
+    return 0 if len(outcomes) == len(routes) * len(selected_cases) else 1
 
 
-if __name__ == '__main__': main()
+if __name__ == '__main__': raise SystemExit(main())

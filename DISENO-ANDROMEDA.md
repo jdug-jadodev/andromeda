@@ -13,6 +13,14 @@
 
 Esta revisión no abre micrófono, no habilita inicio automático y no modifica carga, swap ni servicios Android.
 
+### Decisión posterior del usuario sobre el modelo
+
+**LFM2.5 1.2B Instruct QAD Q4_0 queda elegido como base provisional para conversación casual corta.** El usuario acepta los errores conversacionales observados y prefiere continuar con un MVP incremental y revisarlos con el uso, en lugar de seguir comparando modelos hasta eliminar todos los fallos. Registro en `config/model_selection.json`; no es una configuración de arranque.
+
+Esta tolerancia de calidad permite preparar una prueba personal de conversación sin acciones; **no equivale a aprobar seguridad de herramientas, negaciones, duraciones o confirmaciones falsas de ejecución**. Conserva plazo de 30 s, parada/cancelación, control de recursos y permisos explícitos de micrófono. No activar escucha permanente, inferencia desatendida ni herramientas como consecuencia implícita. No reabrir comparativas/descargas por defecto ni atribuir aprobación semántica a resultados históricos fallidos.
+
+**Entrega posterior autorizada con «iniciemos»: 0.4 instalada**, conversación LFM sin ejecutor, manual/acotada; mantiene la prueba wake-only anterior. Plazo global basado en fin de palabra estimado, controles no bloqueados por la inferencia, terminación de servidor dedicado, contexto contado por tokens y TLS con pin + token independiente. Tres turnos sintéticos ASR/LLM/TTS/UI en Moto: 5.357–6.409 s hasta primer PCM sintetizado, todavía error de perspectiva/recuerdo. No certifica voz humana ni inicio audible útil <=30 s. Evidencia y límites en `CONVERSACION-ANDROMEDA.md`; las observaciones del piloto histórico con herramientas que siguen abajo no describen garantías de la ruta nueva, ni quedan corregidas para herramientas por ella.
+
 ## 2. Qué significa el límite de 30 segundos
 
 Se mide desde el **último audio hablado**, no desde que Vosk termina ni desde el primer token del modelo. Fin: inicio audible de contenido útil. «Estoy pensando», un tono, la cara animada o una negativa incorrecta NO satisfacen el requisito.
@@ -31,7 +39,7 @@ Presupuesto inicial (objetivos, no tiempos ya medidos):
 | Puente y margen | 4 s |
 | **Total** | **30 s** |
 
-Contrato legible por máquina: `config/acceptance.json`. Evaluador de evidencias: `backend/acceptance.py`, CLI `scripts/evaluate-acceptance.py`. **Es una puerta de pruebas, no enforcement en el servicio actual.** Solo evidencia de voz real puede certificar voz; pruebas sintéticas y dobles no la sustituyen. Las anotaciones de corrección requieren revisión, no se deducen de que el LLM haya generado texto.
+Contrato legible por máquina: `config/acceptance.json`. Evaluador de evidencias: `backend/acceptance.py`, CLI `scripts/evaluate-acceptance.py`. **El evaluador es una puerta de pruebas, no un controlador del servicio.** El piloto histórico no aplica ese presupuesto; 0.4 sí aplica vencimientos de turno basados en alineación ASR estimada, sin convertirlos en certificación de voz. Solo evidencia de voz real puede certificar voz; pruebas sintéticas y dobles no la sustituyen. Las anotaciones de corrección requieren revisión, no se deducen de que el LLM haya generado texto.
 
 Usar un reloj monotónico común del mismo kernel: Android `SystemClock.elapsedRealtime` y, tras verificar equivalencia, Debian `CLOCK_BOOTTIME`. No restar reloj de pared ni mezclar `CLOCK_MONOTONIC` con elapsedRealtime durante suspensiones. Instrumentar fin de voz y comienzo real de reproducción, no simplemente la llamada a `tts.speak`.
 
@@ -111,7 +119,7 @@ Cada conversación tiene su última actividad humana y caduca individualmente a 
 
 ### Seguridad y privacidad
 
-Revisar un protocolo con desafío/respuesta mutuos HMAC y nonces, versiones, IDs y protección contra repetición; no enviar la clave reutilizable al primer proceso que escuche el puerto. Sigue pendiente, no afirmar que ya existe.
+Para el protocolo histórico, revisar desafío/respuesta mutuos HMAC y nonces, versiones, IDs y protección contra repetición; sigue pendiente. La ruta **0.4 conversation_only** usa otra solución: TLS con certificado fijado verifica el servidor **antes** de enviar una credencial de cliente independiente, más IDs/secuencias de turnos y fuente de audio autenticada. No afirmar que se implementó el HMAC propuesto ni extender esta protección al piloto histórico o al control doméstico.
 
 Datos domésticos e inferencia locales. Internet público envía solo consulta necesaria, no historial/inventario/credenciales; dominios permitidos y resultados tratados como datos no confiables. Consultas que revelarían información privada requieren autorización específica. Ningún endpoint público de control ni cambio automático a nube.
 
@@ -152,6 +160,8 @@ La cara deja de ser solo un retoque final: puede desarrollarse como parte de est
 **Prioridad posterior del usuario: eficiencia con el modelo existente.** Antes de aumentar tamaño o descargar alternativas, controlar representación de contexto/identidad. Contraste breve ya realizado con Qwen Q4, sin cambios de muestreo ni pesos: reglas generales explícitas no corrigen consistentemente nombre/propiedad/capacidades en regresión y controles nuevos. También se verificó mismo historial/cache parcial/recomputación completa: salidas idénticas erróneas, más latencia sin caché. No adoptar esa variante ni afirmar pérdida de mensajes como causa demostrada; no concluir tampoco que otro tamaño sea obligatorio. Evidencias en `EVALUACION-IDENTIDAD.md`; 100 pruebas de soporte pasan. La UI/micrófono 0.3 permanece separada, sin nuevas activaciones.
 
 **Alternativa autorizada y evaluada posteriormente:** Qwen3.5 2B Q4, archivo ~1.19 GiB verificado en Moto/PC, caché híbrida acotada a cuatro checkpoints, contexto 2048 y thinking apagado. Misma regresión/controles, muestreo oficial de texto y control aislado de presencia 2→0. Se mide ~1.39 GiB PSS del modelo, con memoria disponible >1.4 GiB en las series, pero ambas configuraciones siguen fallando semántica; no aprobado ni conectado a micrófono. Se corrigieron coincidencias parciales de nombres y archivo de Unicode por consola, sin cambiar respuestas del modelo. Ver `EVALUACION-QWEN35.md`; 106 pruebas de soporte pasan. Conservar app 0.3; no inferir aprobación de carga/latencia por poder cargar GGUF.
+
+**Auditoría posterior motor/idioma:** referencias oficiales de plantilla/tokenizador coinciden exactamente en 66 prompts únicos. Ocho pares chat/raw dan los mismos textos; controles de optimización, precisión, muestreo e historial no aportan fiabilidad suficiente. La hipótesis de idioma se contrastó con sistema/pregunta es/en: el idioma influye, pero los errores persisten íntegramente en inglés. Backend CPU genérico separado, ejecutado en el Moto, también conserva errores y tarda 118–129 s; no usarlo para voz ni ampliar el techo de 30 s. Ver `EVALUACION-MOTOR-IDIOMA.md`: 80 generaciones completas, 122 tests de soporte, ninguna configuración aprobada. No atribuir universalmente el fallo a tamaño de modelo ni declarar validado todo el motor por estos controles.
 
 El usuario quiere empezar con un MVP e irlo mejorando, incluyendo automatización del hogar, sin esperar a completar todas las funciones previstas. Esto reduce alcance, no rebaja las puertas de comprensión, ejecución segura o latencia.
 

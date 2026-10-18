@@ -1,5 +1,7 @@
 # Micrófono y carita: prueba aislada 0.3
 
+**Actualización vigente:** instalada 0.4, que conserva esta prueba como «Solo activación y transcripción (0.3)» y añade **otra ruta** de conversación LFM sin acciones. Este documento conserva la evidencia de activación; preparación/guardas/ensayos de conversación en `CONVERSACION-ANDROMEDA.md`. No se habilitó IA dentro del protocolo wake-only.
+
 ## Alcance autorizado
 
 El usuario pidió avanzar con el micrófono y comprobar «Andrómeda» → entrada de la cara, sin esperar a resolver toda la conversación del LLM. Se permite esta **prueba acotada de activación/ASR**, no escucha permanente ni control de dispositivos. No confundirla con la aprobación del núcleo conversacional.
@@ -44,4 +46,4 @@ Prueba sintética reproducible (requiere generar las fixtures primero, nunca cap
 
 ## Siguiente paso
 
-Despertar visual humano confirmado; regreso al reloj y silenciado aún no confirmados por el usuario. Avanzar en comprensión de Qwen y presupuestos/cancelación/autenticación antes de conversación con acciones. No abrir control doméstico ni habilitar 24/7 por un despertar visual correcto.
+Despertar visual humano confirmado; regreso al reloj y silenciado aún no confirmados por el usuario. El usuario eligió LFM aceptando sus limitaciones casuales y pidió iniciar conversación sin acciones. Ruta 0.4 separada con plazo/cancelación/TLS y pruebas sintéticas; siguiente ensayo humano acotado según `CONVERSACION-ANDROMEDA.md`. No reabrir comparaciones por defecto, abrir control doméstico ni habilitar 24/7.

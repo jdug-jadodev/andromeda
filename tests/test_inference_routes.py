@@ -103,5 +103,43 @@ class InferenceRouteTests(unittest.TestCase):
             a.pop('temperature'); b.pop('temperature')
             self.assertEqual(a, b)
 
+    def test_stable_history_adds_only_empty_blocks_to_prior_assistant_turns(self):
+        header = '<|im_start|>assistant\n'; empty = '<think>\n\n</think>\n\n'
+        prompt = '<|im_start|>user\nquestion<|im_end|>\n' + header + 'wrong reply<|im_end|>\n' + header + empty
+        changed = routes.stable_history_prompt(prompt)
+        self.assertEqual(changed, prompt.replace(header + 'wrong reply', header + empty + 'wrong reply'))
+        self.assertEqual(changed.count('wrong reply'), 1)
+        self.assertTrue(changed.endswith(header + empty))
+
+    def test_stable_history_is_identical_on_single_turn_controls(self):
+        prompt = '<|im_start|>user\nquestion<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n'
+        self.assertEqual(routes.stable_history_prompt(prompt), prompt)
+        with self.assertRaises(ValueError): routes.stable_history_prompt('no prefix')
+
+    def test_worker_captures_optional_arguments_before_resetting_positionals(self):
+        script = (ROOT / 'scripts' / 'warm-server-worker.sh').read_text()
+        self.assertLess(script.index('LOG_MODE=${9:'), script.index('set --'))
+
+    def test_language_factorial_independently_crosses_two_languages(self):
+        fixture = json.loads((ROOT / 'tests' / 'language_control_cases.json').read_bytes())
+        rows = prepare.language_histories(fixture)
+        self.assertEqual(len(rows), 8)
+        for row in rows:
+            _, system_language, user_language, case_id = row['id'].split('/')
+            self.assertEqual(row['messages'][0]['content'], fixture['systems'][system_language])
+            case = next(c for c in fixture['cases'] if c['id'] == case_id)
+            self.assertEqual(row['messages'][1]['content'], case['questions'][user_language])
+            self.assertEqual([m['role'] for m in row['messages']], ['system', 'user'])
+        original = json.loads((ROOT / 'tests' / 'conversation_only_cases.json').read_bytes())
+        self.assertEqual(fixture['systems']['es'], original['system'])
+
+    def test_generic_reference_caps_output_not_conditioning(self):
+        row = {'messages': [{'role': 'user', 'content': 'hi'}], 'actual_tokens': [1, 2]}
+        normal = routes.generation_payload(row, 'qwen35', 'raw')
+        generic = routes.generation_payload(row, 'qwen35', 'raw', 'generic')
+        self.assertEqual(generic.pop('n_predict'), 32)
+        self.assertEqual(normal.pop('n_predict'), 96)
+        self.assertEqual(normal, generic)
+
 
 if __name__ == '__main__': unittest.main()

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "diagnostic_only_not_enabled_for_voice",
+  "status": "evaluated_no_configuration_approved_for_voice",
   "engine": "llama.cpp b11669 / 620d2225cc436ab0b001e3200e590e3b286ef9ab",
   "scope": "Moto inference only. Workstation renders/tokenizes official reference metadata; no model inference outside the Moto.",
   "baseline": {"context": 2048, "threads": 4, "kv": "f16", "seed": 42, "max_output_tokens": 96},
@@ -27,6 +27,38 @@
     "name": "greedy",
     "only_change": "temperature to 0",
     "reason": "Inspect whether selecting the highest-probability token avoids observed low-probability pronoun choices. Diagnostic, not automatic adoption or a universal decoding recommendation."
+  },
+  "additional_representation_and_precision_controls": [
+    "Qwen3.5: KV f32 with auto Flash Attention and then with Flash Attention disabled; compare the two attention paths at higher cache precision.",
+    "Both models: add only empty thinking blocks to prior assistant headers in raw prompts, preserving every human/assistant text. Single-turn controls must remain byte-identical. Forum proposal, not adopted template."
+  ],
+  "language_control": {
+    "design": "2 system languages x 2 question languages x 2 cases x 2 models; actual outputs reviewed, no ideal replies in conditioning.",
+    "cases": "tests/language_control_cases.json",
+    "qwen17_fixture_sha256": "4614c96ee9829f18ff4aeb11f041618c79f0e3fdcfade69c21ae5c3646456dea",
+    "qwen35_fixture_sha256": "5f3afd91dc88514328b2285008e1c7e82ce9f995a2a5d15da482cdddf69240f2",
+    "result": "Language affects some cases; errors also reproduced entirely in English. Not an English-only model or translation-only explanation."
+  },
+  "generic_reference": {
+    "source_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+    "source_selection_patch": "config/reference_cpu_source.patch",
+    "compiler": "NDK 27.1.12297006 / Clang 18.0.2 / Android API 29",
+    "binary_sha256": "cce7658b7fba22b437993e87868ac534db9e9c5d43305aedd22365f9ac47316b",
+    "binary_bytes": 187581192,
+    "installed_path": "/data/local/doha-inference/llama-reference-generic/llama-server",
+    "scope": "Separate scalar/generic CPU diagnostic; does not replace installed engine. No inference outside Moto.",
+    "max_output_tokens": 32,
+    "request_timeout_seconds": 180,
+    "result": "Four actual on-Moto generations completed with EOS; identity/ownership errors persist. 118.301-129.422 seconds per call. Not a production option or proof of universal engine correctness."
+  },
+  "final_evidence": {
+    "complete_profiles": 17,
+    "complete_generations": 80,
+    "partial_profiles_kept_separate": 1,
+    "partial_generations_kept_separate": 3,
+    "unique_prompt_and_tokenizer_audits": 66,
+    "infrastructure_unit_tests": 122,
+    "report": "EVALUACION-MOTOR-IDIOMA.md"
   },
   "conditioning": "Four fixed cases per model: two histories reconstructed with actual previous model replies and two new single-turn controls. Twenty-five full-turn template/tokenizer audits per model.",
   "route_cache_policy": "Full recomputation on both routes for this diagnostic, not a proposed production fix.",
