@@ -1,0 +1,11 @@
+{
+  "source": "Moto real, public-text literal-contract probe 2026-10-18; actual duration_text arguments, not repaired",
+  "cases": [
+    {"request": "pon un temporizador de diez minutos", "duration_text": "10 minutos", "seconds": 600},
+    {"request": "Pon un temporizador de diez segundos.", "duration_text": "10 seconds", "rejected": "duration_mismatch"},
+    {"request": "Pon un temporizador de dos minutos.", "duration_text": "2 minutos", "seconds": 120},
+    {"request": "Crea un temporizador de una hora y dos minutos.", "duration_text": "1 hora y 2 minutos", "seconds": 3720},
+    {"request": "Ayer dije pon un temporizador de dos minutos.", "duration_text": "2 minutos", "rejected": "invalid_request"},
+    {"request": "Pon un temporizador.", "duration_text": "5 minutos", "rejected": "missing_duration"}
+  ]
+}

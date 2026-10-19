@@ -1,5 +1,9 @@
 # 0.7 · nueva charla por defecto; buscar solo al abrir con «recuerdas»
 
+**Estado posterior instalado: 0.11.1/código 18**, con respaldo y consentimiento informado de pérdida RAM. Conserva esta política de entrada y modos 6/8, añade agenda/web TLS 9. Hoy solo controles Android aislados sin captura/sonido/modelo; no prueba humana ni residencia. `AGENDA-Y-WEB-ANDROMEDA.md`. La descripción/versiones de 0.7 de abajo quedan históricas.
+
+**Actualización posterior 0.9 instalada:** conserva este flujo y el control sin acciones/protocolo 6. Timer manual/protocolo 8 autoriza por petición completa y cierra tras resultado Android, sin «confirmo temporizador»; «sí» de retomar/continuar no crea acciones. Estado: `PETICIONES-Y-CIERRE-ANDROMEDA.md`; historia 0.8: `TEMPORIZADOR-VOZ-ANDROMEDA.md`. Residencia/micro prolongados solo en planificación: `ENSAYO-PROLONGADO-ANDROMEDA.md`. Versiones/hashes siguientes describen la entrega histórica 0.7.
+
 ## Decisión vigente del usuario
 
 Sustituye la propuesta de elegir manualmente retomar/nueva antes de hablar:

@@ -31,6 +31,15 @@ final class VoiceConnection implements Closeable {
     }
     static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot,
             List<ConversationMemory.Snapshot> catalog) throws Exception {
+        return open(context, source, snapshot, catalog, false);
+    }
+    static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot,
+             List<ConversationMemory.Snapshot> catalog, boolean timerTrial) throws Exception {
+        return open(context, source, snapshot, catalog, timerTrial, false);
+    }
+    static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot,
+             List<ConversationMemory.Snapshot> catalog, boolean timerTrial, boolean assistantTools) throws Exception {
+        if (timerTrial && assistantTools) throw new IOException("Modos incompatibles");
         if (!"microphone".equals(source) && !"synthetic_pcm".equals(source)) throw new IOException("Fuente inválida");
         SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(null, new TrustManager[]{new X509TrustManager() {
@@ -56,7 +65,7 @@ final class VoiceConnection implements Closeable {
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-            JSONObject hello = new JSONObject().put("protocol", 6).put("mode", "conversation_only").put("source", source)
+            JSONObject hello = new JSONObject().put("protocol", assistantTools ? 9 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
             if (catalog != null) {
                 JSONArray chats = new JSONArray();
@@ -69,9 +78,19 @@ final class VoiceConnection implements Closeable {
             DataInputStream input = new DataInputStream(socket.getInputStream());
             JSONObject ready = readEvent(input);
             if ("context_expired".equals(ready.optString("reason"))) throw new IOException("El contexto caducó; vuelve a elegir la prueba");
-            if (!"ready".equals(ready.optString("type")) || !VoiceSessionPolicy.isConversationReady(
+            boolean validMode = assistantTools ? ready.optInt("protocol") == 9 && ready.optBoolean("assistant_tools") && ready.optBoolean("actions_enabled")
+                    && !ready.optBoolean("conversation_only", true) && !ready.optBoolean("wake_only") && ready.optBoolean("wake_enabled") && ready.optBoolean("ai_enabled")
+                : timerTrial ? VoiceSessionPolicy.isTimerReady(ready.optInt("protocol"), ready.optBoolean("timer_trial"),
+                    ready.optBoolean("conversation_only", true), ready.optBoolean("wake_only"), ready.optBoolean("wake_enabled"),
+                    ready.optBoolean("ai_enabled"), ready.optBoolean("actions_enabled"))
+                : VoiceSessionPolicy.isConversationReady(
                     ready.optInt("protocol"), ready.optBoolean("conversation_only"), ready.optBoolean("wake_only"),
-                    ready.optBoolean("wake_enabled"), ready.optBoolean("ai_enabled"), ready.optBoolean("actions_enabled", true))
+                    ready.optBoolean("wake_enabled"), ready.optBoolean("ai_enabled"), ready.optBoolean("actions_enabled", true));
+            if (!"ready".equals(ready.optString("type")) || !validMode
+                    || timerTrial && !"request_authorized_close".equals(ready.optString("timer_policy"))
+                    || timerTrial && (ready.optJSONArray("allowed_tools") == null || ready.getJSONArray("allowed_tools").length() != 1
+                         || !"create_timer".equals(ready.getJSONArray("allowed_tools").optString(0)))
+                    || assistantTools && !"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\"]".equals(String.valueOf(ready.optJSONArray("allowed_tools")))
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
                     || ready.optInt("response_start_ms") != 30000 || ready.optInt("context_version") != 1

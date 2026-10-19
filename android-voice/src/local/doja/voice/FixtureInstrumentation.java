@@ -48,6 +48,15 @@ public class FixtureInstrumentation extends Instrumentation {
             String[][] cases = {
                 {"positive", "Andrómeda."},
                 {"command", "Andrómeda, pon un temporizador de diez segundos."},
+                {"timer_create", "Andrómeda, pon un temporizador de diez minutos."},
+                {"timer_confirm", "Confirmo temporizador."},
+                {"timer_missing", "Andrómeda, pon un temporizador."},
+                {"alarm_relative", "Andrómeda, pon una alarma en dos minutos."},
+                {"dialogue_joke", "Andrómeda, cuéntame un chiste corto."},
+                {"silence_command", "Andrómeda, silencio."},
+                {"silence_bare", "Silencio."},
+                {"silence_negated", "Andrómeda, no guardes silencio."},
+                {"silence_reported", "Ayer dije Andrómeda, silencio."},
                 {"ai_create", "Andrómeda, avísame dentro de dos minutos."},
                 {"ai_cancel", "Andrómeda, quita todas las cuentas regresivas."},
                 {"ai_confirm", "Andrómeda, sí."},
@@ -85,6 +94,7 @@ public class FixtureInstrumentation extends Instrumentation {
             result.putString("voice", selected.getName());
             result.putInt("fixtures", cases.length);
             result.putBoolean("microphone_opened", false);
+            result.putBoolean("audio_played", false);
             finish(Activity.RESULT_OK, result);
         } catch (Exception error) {
             result.putString("error", error.getClass().getSimpleName() + ": " + error.getMessage());

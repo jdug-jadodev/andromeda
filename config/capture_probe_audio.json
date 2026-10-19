@@ -1,0 +1,10 @@
+{
+  "asset": "capture-probe-public.pcm",
+  "bytes": 89350,
+  "sha256": "c1013c5ab999b12561a7c461aa91063806207ec6c0cd510c170f21d63a5e826a",
+  "sample_rate": 16000,
+  "channels": 1,
+  "encoding": "PCM16_LE",
+  "public_text": "Vamos a preparar la comida y cerrar la puerta.",
+  "source": "Existing Android offline es-US-language voice, fixed ordinary fixture; no microphone or playback during synthesis"
+}

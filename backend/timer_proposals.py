@@ -1,46 +1,81 @@
-"""Inactive timer-trial building blocks. No executor, network, storage or startup.
+"""Timer-trial building blocks. No executor, network, storage or startup.
 
 The model selects create_timer. The literal guard is a subsequent safety check,
 not the conversational router. No legacy agent/tool catalog is activated here.
 """
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 import re
 import uuid
 
-from doja_intents import DURATION, ONES, TENS, normalized, number
+from doja_intents import DURATION, normalized, number
 
 
 TIMER_TOOL = {'type': 'function', 'function': {
-    'name': 'create_timer', 'description': 'Propose one countdown from an explicit duration in the current request. The runtime validates and obtains human confirmation; never claim execution.',
-    'parameters': {'type': 'object', 'properties': {'seconds': {'type': 'integer', 'minimum': 1, 'maximum': 86400}},
-                   'required': ['seconds'], 'additionalProperties': False}}}
+    'name': 'create_timer', 'description': 'Request one countdown. Copy the COMPLETE duration from the current human request into duration_text; do not convert units or infer missing values. Runtime validates the explicit request, executes once and reports the real Android result; never claim execution yourself.',
+    'parameters': {'type': 'object', 'properties': {'duration_text': {'type': 'string', 'minLength': 1, 'maxLength': 120}},
+                   'required': ['duration_text'], 'additionalProperties': False}}}
 CONFIRMATIONS = {'confirmo temporizador', 'confirmo el temporizador'}
 
 
-def literal_seconds(text):
-    if not isinstance(text, str) or not 0 < len(text) <= 250 or '<|' in text or re.search(r'["\'«»<>]|\d[.,]\d|-\s*\d', text):
-        raise ValueError('Invalid or ambiguous request')
+class TimerValidationError(ValueError):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def direct_timer_prefix(text):
+    """Post-model safety check, not a tool router or permission to execute."""
+    if not isinstance(text, str) or not 0 < len(text) <= 250: return False
     plain = normalized(text).strip(' .,!¡?¿')
     plain = re.sub(r'^andromeda[, ]+', '', plain)
     plain = re.sub(r'^por favor\s+', '', plain)
-    if not re.match(r'^(?:(?:pon|ponme|crea|inicia|programa)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
-        raise ValueError('An explicit current countdown request is required')
-    if not re.search(r'\b(?:temporizador|timer|cuenta atras)\b', plain): raise ValueError('Not a countdown')
+    return re.match(r'^(?:(?:pon|pone|ponme|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
+                    r'(?:temporizador|timer|cuenta atras)\b', plain) is not None
+
+
+def literal_duration(text):
+    if not isinstance(text, str) or not 0 < len(text) <= 250 or '<|' in text or re.search(r'["\'«»<>]|\d[.,]\d|-\s*\d', text):
+        raise TimerValidationError('invalid_request')
+    plain = normalized(text).strip(' .,!¡?¿')
+    if any(c.isdecimal() and c not in '0123456789' for c in plain): raise TimerValidationError('invalid_request')
+    plain = re.sub(r'^andromeda[, ]+', '', plain)
+    plain = re.sub(r'^por favor\s+', '', plain)
+    if not re.match(r'^(?:(?:pon|pone|ponme|crea|inicia|programa)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
+        raise TimerValidationError('invalid_request')
+    if not re.search(r'\b(?:temporizador|timer|cuenta atras)\b', plain): raise TimerValidationError('invalid_request')
     found = list(DURATION.finditer(plain)); seconds, seen = 0, set()
-    if not found: raise ValueError('Missing duration')
+    if not found: raise TimerValidationError('missing_duration')
+    # Match the entire structure, not a bag of harmless words: two separate
+    # commands or "one hour, in two minutes" must never become a summed timer.
+    duration = DURATION.pattern
+    if not re.fullmatch(r'(?:(?:pon|pone|ponme|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
+                        r'(?:temporizador|timer|cuenta atras)\s+(?:(?:de|en)\s+)?' + duration +
+                        r'(?:\s+(?:y\s+)?' + duration + r')*(?:\s+por favor)?(?:\s+ahora)?', plain):
+        raise TimerValidationError('invalid_request')
     for match in found:
         unit = match[2][0]
-        if unit in seen: raise ValueError('Repeated duration unit')
-        amount = number(match[1])
-        if amount <= 0: raise ValueError('Non-positive duration component')
+        if unit in seen: raise TimerValidationError('invalid_request')
+        try: amount = number(match[1])
+        except ValueError: raise TimerValidationError('invalid_request') from None
+        if amount <= 0: raise TimerValidationError('invalid_request')
         seen.add(unit); seconds += amount * {'s': 1, 'm': 60, 'h': 3600}[unit]
-    for match in reversed(found): plain = plain[:match.start()] + ' ' + plain[match.end():]
-    allowed = {'pon', 'ponme', 'crea', 'inicia', 'programa', 'un', 'una', 'el', 'la', 'temporizador',
-               'timer', 'cuenta', 'atras', 'de', 'en', 'y', 'por', 'favor', 'ahora'}
-    if any(word not in allowed for word in re.findall(r'\w+', plain)) or not 1 <= seconds <= 86400:
-        raise ValueError('Negated, reported, unsupported or ambiguous request')
-    return seconds
+    if not 1 <= seconds <= 86400:
+        raise TimerValidationError('out_of_range')
+    return plain[found[0].start():found[-1].end()], seconds
+
+
+def literal_seconds(text): return literal_duration(text)[1]
+
+
+def duration_components(text):
+    """Normalize notation only, never convert units, add, drop or infer parts."""
+    plain = normalized(text)
+    if any(c.isdecimal() and c not in '0123456789' for c in plain): raise ValueError('Unsupported numeral')
+    duration = DURATION.pattern
+    if not re.fullmatch(duration + r'(?:\s+(?:y\s+)?' + duration + r')*', plain):
+        raise ValueError('Expected complete Spanish duration')
+    return [(number(m[1]), m[2][0]) for m in DURATION.finditer(plain)]
 
 
 def selected_timer_seconds(message, finish_reason, request):
@@ -56,11 +91,20 @@ def selected_timer_seconds(message, finish_reason, request):
     args = function['arguments']
     if isinstance(args, str):
         if len(args) > 256: raise ValueError('Oversized arguments')
-        args = json.loads(args)
-    if not isinstance(args, dict) or set(args) != {'seconds'} or type(args['seconds']) is not int:
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result: raise ValueError('Duplicate tool argument')
+                result[key] = value
+            return result
+        args = json.loads(args, object_pairs_hook=unique)
+    if not isinstance(args, dict) or set(args) != {'duration_text'} or not isinstance(args['duration_text'], str) or not 0 < len(args['duration_text']) <= 120:
         raise ValueError('Invalid duration schema')
-    if args['seconds'] != literal_seconds(request): raise ValueError('Model duration does not match human request')
-    return args['seconds']
+    duration, seconds = literal_duration(request)
+    try: same = duration_components(args['duration_text']) == duration_components(duration)
+    except ValueError: same = False
+    if not same: raise TimerValidationError('duration_mismatch')
+    return seconds
 
 
 def _identity(value):
@@ -83,16 +127,36 @@ class TimerProposal:
 
 
 class TimerProposals:
-    """One spoken offer, one explicit authorization, monotonic deadlines."""
+    """Current-request permits plus historical confirmation checks; bounded RAM."""
     def __init__(self, clock):
         self.clock, self.pending, self.delivered, self.closed = clock, None, False, False
+        self.authorized_turns = set()
+
+    def authorize_request(self, seconds, request, session_id, context_id, turn_id, sequence, speech_end, session_end):
+        """A complete low-risk request is the authorization, not a second yes.
+
+        The old offer/confirmation helpers remain for historical unit regressions;
+        protocol 8 never exposes them. One request can authorize only one timer.
+        """
+        now = self.clock()
+        if not _identity(turn_id) or turn_id in self.authorized_turns or len(self.authorized_turns) >= 24:
+            raise ValueError('Timer request already consumed')
+        p = self.offer(seconds, request, session_id, context_id, turn_id, sequence, speech_end, session_end)
+        deadline = min(now + 4000, speech_end + 26500, session_end - 5000)
+        self.cancel()
+        if deadline - now < 500: raise ValueError('Insufficient timer execution budget')
+        p = replace(p, expires_ms=deadline)
+        self.authorized_turns.add(turn_id)
+        return {'kind': 'request_authorized', 'proposal': p.packet(), 'request_turn_id': turn_id,
+                'request_sequence': sequence, 'speech_end_ms': speech_end, 'execute_before_ms': deadline}
 
     def offer(self, seconds, request, session_id, context_id, turn_id, sequence, speech_end, session_end):
         now = self.clock()
         if (self.closed or self.pending is not None or not all(map(_identity, (session_id, context_id, turn_id)))
                 or type(sequence) is not int or sequence < 1 or type(seconds) is not int
                 or seconds != literal_seconds(request) or type(speech_end) is not int
-                or not 0 < speech_end <= now + 100 or now - speech_end >= 26500):
+                or not 0 < speech_end <= now + 100 or now - speech_end >= 26500
+                or type(session_end) is not int or not now < session_end <= now + 300000):
             raise ValueError('Invalid timer proposal state')
         expires = min(now + 45000, session_end - 1500)
         if expires <= now + 1500: raise ValueError('Session is ending')
@@ -114,8 +178,10 @@ class TimerProposals:
             self.cancel(); return {'kind': 'expired'}
         if (session_id != p.session_id or context_id != p.context_id or not _identity(turn_id)
                 or turn_id == p.origin_turn_id or type(sequence) is not int or sequence <= p.origin_sequence
-                or type(speech_end) is not int or not 0 < speech_end <= now + 100):
+                or type(speech_end) is not int or not 0 < speech_end <= now + 100
+                or type(session_end) is not int or not now < session_end <= now + 300000):
             raise ValueError('Confirmation belongs to another turn/session/chat')
+        if not isinstance(text, str) or not 0 < len(text) <= 250: raise ValueError('Invalid confirmation text')
         plain = normalized(text).strip(' .,!¡?¿')
         if plain in {'no', 'no gracias', 'no, gracias', 'gracias', 'cierra la conversacion'}:
             self.cancel(); return {'kind': 'cancelled'}

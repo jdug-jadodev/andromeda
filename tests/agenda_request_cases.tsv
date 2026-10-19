@@ -1,0 +1,40 @@
+kind	human	when_text	text	anchor_ms	due_ms	delay_ms
+ALARM	pon una alarma mañana a las ocho de la mañana	mañana a las ocho de la mañana		1792328400000	1792414800000	0
+ALARM	Andrómeda, programa una alarma para hoy a las trece	hoy a las trece		1792328400000	1792346400000	0
+ALARM	alarma 2026-10-20 a las 14:30	2026-10-20 a las 14:30		1792328400000	1792524600000	0
+ALARM	crea una alarma el veinte de octubre de 2026 a las dos y media de la tarde	el veinte de octubre de 2026 a las dos y media de la tarde		1792328400000	1792524600000	0
+ALARM	pon una alarma mañana a medianoche	mañana a medianoche		1792328400000	1792386000000	0
+ALARM	pon una alarma en dos minutos	en dos minutos		1792328400000	1792328520000	120000
+REMINDER	recuérdame beber agua en dos minutos	en dos minutos	beber agua	1792328400000	1792328520000	120000
+REMINDER	recuérdame en dos minutos que beba agua	en dos minutos	beba agua	1792328400000	1792328520000	120000
+REMINDER	crea un recordatorio mañana a las ocho de la mañana para beber agua	mañana a las ocho de la mañana	beber agua	1792328400000	1792414800000	0
+REMINDER	recuérdame no olvidar las llaves en dos minutos	en dos minutos	no olvidar las llaves	1792328400000	1792328520000	120000
+REMINDER	recuérdame beber agua en dos horas y cinco minutos	en dos horas y cinco minutos	beber agua	1792328400000	1792335900000	7500000
+REMINDER	recuérdame beber agua en dos minutos	en 2 minutos	beber agua	1792328400000	1792328520000	120000
+ALARM	pon una alarma mañana a las ocho de la mañana	mañana a las 8 de la mañana		1792328400000	1792414800000	0
+REMINDER	recuérdame comprar pan y leche en dos minutos	en dos minutos	comprar pan y leche	1792328400000	1792328520000	120000
+ALARM	no pongas una alarma mañana a las ocho de la mañana	mañana a las ocho de la mañana		1792328400000	INVALID	0
+ALARM	ayer dije pon una alarma mañana a las ocho de la mañana	mañana a las ocho de la mañana		1792328400000	INVALID	0
+ALARM	pon una alarma mañana a las ocho	mañana a las ocho		1792328400000	INVALID	0
+ALARM	pon una alarma hoy a las siete de la mañana	hoy a las siete de la mañana		1792328400000	INVALID	0
+ALARM	pon una alarma mañana a las ocho de la mañana y dime un chiste	mañana a las ocho de la mañana		1792328400000	INVALID	0
+ALARM	pon una alarma mañana a las ocho de la mañana	mañana a las nueve de la mañana		1792328400000	INVALID	0
+ALARM	pon una alarma el 31 de febrero de 2027 a las 14:30	el 31 de febrero de 2027 a las 14:30		1792328400000	INVALID	0
+ALARM	pon una alarma mañana a las 25:30	mañana a las 25:30		1792328400000	INVALID	0
+ALARM	pon una alarma mañana a las ocho de la mañana no lo hagas	mañana a las ocho de la mañana		1792328400000	INVALID	0
+REMINDER	recuérdame beber agua en dos minutos	en tres minutos	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua en dos minutos	en dos minutos	tomar medicina	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua en dos minutos y dime un chiste	en dos minutos	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua y crea un timer en dos minutos	en dos minutos	beber agua y crea un timer	1792328400000	INVALID	0
+REMINDER	no me recuerdes beber agua en dos minutos	en dos minutos	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua en dos minutos no lo hagas	en dos minutos	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua en dos horas y cinco minutos	en ciento veinticinco minutos	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua cada día a las ocho de la mañana	cada día a las ocho de la mañana	beber agua	1792328400000	INVALID	0
+REMINDER	recuérdame en dos minutos que beba agua; crea una alarma	en dos minutos	beba agua; crea una alarma	1792328400000	INVALID	0
+REMINDER	crea un recordatorio en dos minutos para beber agua	en dos minutos	beber agua	1792328400000	1792328520000	120000
+REMINDER	recuérdame beber agua y ponme un temporizador de dos minutos en tres minutos	en tres minutos	beber agua y ponme un temporizador de dos minutos	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua y recuérdame comer en dos minutos	en dos minutos	beber agua y recuérdame comer	1792328400000	INVALID	0
+REMINDER	recuérdame en dos minutos que beba agua y ponme una alarma mañana a las ocho de la mañana	en dos minutos	beba agua y ponme una alarma mañana a las ocho de la mañana	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua y por favor busca en Internet nebulosas en dos minutos	en dos minutos	beber agua y por favor busca en Internet nebulosas	1792328400000	INVALID	0
+REMINDER	recuérdame beber agua, Andrómeda, ponme una alarma mañana a las ocho de la mañana en dos minutos	en dos minutos	beber agua, Andrómeda, ponme una alarma mañana a las ocho de la mañana	1792328400000	INVALID	0
+REMINDER	recuérdame comprar pan, leche y huevos en dos minutos	en dos minutos	comprar pan, leche y huevos	1792328400000	1792328520000	120000

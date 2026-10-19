@@ -16,4 +16,12 @@ final class VoiceSessionPolicy {
         return "state".equals(type) || "transcript".equals(type) || "thinking".equals(type)
             || "say".equals(type) || "error".equals(type) || "conversation_closed".equals(type) || "context_selected".equals(type);
     }
+    static boolean timerEventAllowed(String type) {
+        return conversationEventAllowed(type) || "timer_execute".equals(type);
+    }
+    static boolean toolsEventAllowed(String type) { return timerEventAllowed(type) || "agenda_execute".equals(type); }
+    static boolean isTimerReady(int protocol, boolean timerTrial, boolean conversationOnly, boolean wakeOnly,
+            boolean wakeEnabled, boolean aiEnabled, boolean actionsEnabled) {
+        return protocol == 8 && timerTrial && !conversationOnly && !wakeOnly && wakeEnabled && aiEnabled && actionsEnabled;
+    }
 }

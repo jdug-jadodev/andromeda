@@ -6,6 +6,9 @@ MODE=${1:-pilot}
 case "$MODE" in pilot|test) ;; *) exit 2 ;; esac
 SECONDS_LIMIT=${2:-300}
 case "$SECONDS_LIMIT" in 90|300) ;; *) exit 2 ;; esac
+TRIAL=${3:-conversation}
+case "$TRIAL" in conversation) TIMER_FLAG='' ;; timer) TIMER_FLAG='--timer-trial' ;; tools) TIMER_FLAG='--assistant-tools' ;; *) exit 2 ;; esac
+[ "$#" -le 3 ] || exit 2
 ROOT=/data/local/linux/debian-final
 BASE=/data/local/doha-inference
 PRIVATE=/var/lib/andromeda-conversation
@@ -41,16 +44,22 @@ trap 'exit 143' TERM
 debian_user /opt/doha-voice/benchmark-warm-client.py init "$INNER"
 su -g 10218 -G 3003 10218 -c "'$BASE/warm-server-worker.sh' '$WORK' 660 2048 lfm f16 advanced 0 voice" &
 SUPERVISOR=$!
-debian_user /opt/doha-voice/pilot/prepare-conversation.py "$INNER/key"
-echo 'Conversacion LFM preparada, sin acciones. El microfono sigue apagado; elegir prueba en la app.'
+debian_user /opt/doha-voice/pilot/prepare-conversation.py "$INNER/key" $TIMER_FLAG
+if [ "$TRIAL" = tools ]; then
+  echo 'Canal TLS de agenda y consultas web explicitas preparado; el microfono sigue apagado.'
+elif [ "$TRIAL" = timer ]; then
+  echo 'Prueba TLS de timer preparada: peticion completa autoriza; resultado Android y cierre. El microfono sigue apagado.'
+else
+  echo 'Conversacion LFM preparada, sin acciones. El microfono sigue apagado; elegir prueba en la app.'
+fi
 if [ "$MODE" = test ]; then
   debian_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
     --seconds "$SECONDS_LIMIT" --test-wake --conversation-only --ai-key "$INNER/key" \
-    --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem" --synthetic-input
+    --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem" --synthetic-input $TIMER_FLAG
 else
   debian_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
     --seconds "$SECONDS_LIMIT" --test-wake --conversation-only --ai-key "$INNER/key" \
-    --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem"
+    --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem" $TIMER_FLAG
 fi
 touch "$WORK/DONE"
 wait "$SUPERVISOR"

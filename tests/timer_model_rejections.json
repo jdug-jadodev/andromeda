@@ -1,0 +1,34 @@
+{
+  "source": "Moto G8 Plus, LFM2.5-1.2B-Instruct-QAD-Q4_0; public text probe 2026-10-18; raw function arguments preserved, no executor",
+  "cases": [
+    {
+      "id": "combined",
+      "request": "Crea un temporizador de una hora y dos minutos.",
+      "message": {"tool_calls": [{"type": "function", "function": {"name": "create_timer", "arguments": "{\"seconds\":3600}"}}]},
+      "finish_reason": "tool_calls",
+      "expected_reason": "duration_mismatch"
+    },
+    {
+      "id": "reported",
+      "request": "Ayer dije pon un temporizador de dos minutos.",
+      "message": {"tool_calls": [{"type": "function", "function": {"name": "create_timer", "arguments": "{\"seconds\":120}"}}]},
+      "finish_reason": "tool_calls",
+      "expected_reason": "invalid_request"
+    },
+    {
+      "id": "missing",
+      "request": "Pon un temporizador.",
+      "message": {"tool_calls": [{"type": "function", "function": {"name": "create_timer", "arguments": "{\"seconds\":10}"}}]},
+      "finish_reason": "tool_calls",
+      "expected_reason": "missing_duration"
+    },
+    {
+      "id": "asr_missing_prose",
+      "source": "Observed fixed-audio synthetic reply, including runtime follow-up footer; not human speech",
+      "request": "pone un temporizador",
+      "message": {"role": "assistant", "content": "¡Claro! Estoy programando un temporizador con una duración de 30 minutos. ¿Necesitas algo más?"},
+      "finish_reason": "stop",
+      "expected_reason": "missing_duration"
+    }
+  ]
+}

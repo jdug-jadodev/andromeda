@@ -1,4 +1,8 @@
-"""Bounded conversation-only voice actor. Never registers or executes tools."""
+"""Bounded TLS conversation actor; default remains action-free.
+
+An explicitly negotiated timer trial can send one validated Android proposal.
+This process never executes tools, shell or Android actions itself.
+"""
 from collections import deque
 import copy
 import hmac
@@ -47,6 +51,7 @@ def conversational_reply(message, finish_reason):
     if parsed['kind'] != 'reply': raise ValueError('Non-conversational output')
     text = parsed['text']; plain = normalized(text)
     patterns = [
+        r'\b(?:estoy|estamos)\s+(?:(?:ya|ahora)\s+)?(?:creando|poniendo|programando|activando|iniciando|cancelando|apagando|encendiendo|buscando|consultando)\b',
         r'\b(?:he|hemos|ya|acabo de) (?:\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\b',
         r'\b(?:temporizador|alarma|recordatorio)\b.{0,45}\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|list[oa])\b',
         r'\b(?:te avisare|te recordare|sonara en|voy a (?:poner|crear|programar|activar|cancelar)|timer (?:set|started)|alarm (?:set|scheduled))\b',
@@ -264,6 +269,11 @@ class ConversationModel:
         self.post('/v1/chat/completions', self.payload([
             {'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1), deadline)
 
+    def interpret_result(self, message, finish_reason, request):
+        # The installed conversation path remains action-free. Experimental
+        # proposal-only subclasses can override parsing without owning an executor.
+        return conversational_reply(message, finish_reason)
+
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
@@ -295,7 +305,7 @@ class ConversationModel:
                 }
                 result = self.post('/v1/chat/completions', self.payload(messages), deadline)
                 choice = result['choices'][0]; message = choice['message']
-                answer = conversational_reply(message, choice.get('finish_reason'))
+                answer = self.interpret_result(message, choice.get('finish_reason'), text)
                 if not self.cancelled.is_set(): self.result = answer
             except Exception as error:
                 self.error = type(error).__name__  # Never log input/output/credentials.
@@ -316,7 +326,7 @@ class ConversationModel:
         if self.thread is not None: self.thread.join(timeout=.5)
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False):
     from vosk import KaldiRecognizer, SetLogLevel
     if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
@@ -333,6 +343,13 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     turn = None
     sequence = 0
     flow = ConversationFlow()
+    timers = None
+    if assistant_tools:
+        from assistant_tools_trial import AssistantToolsTrial
+        timers = AssistantToolsTrial(now_ms)
+    elif timer_trial:
+        from timer_trial import TimerTrial
+        timers = TimerTrial(now_ms)
 
     def reset(continue_chat=False):
         nonlocal state, recognizer, timeline, turn
@@ -342,6 +359,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             activate('followup', delay_ms=600)
         else:
             flow.reset()
+            if timers is not None: timers.cancel()
             if entry is not None: entry.cancel_pending()
             emit({'type': 'state', 'state': 'wake'})
 
@@ -364,21 +382,36 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         turn['offered_more'] = not bool(close_reason) if offered_more is None else offered_more
         emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
-            'deadline_ms': turn['deadline_ms'], 'actions_executed': 0,
-            'close_reason': close_reason, 'offered_more': turn['offered_more']})
+             'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
+              'timer_control': turn.get('timer_control', ''),
+              **({'sources': turn.get('sources', [])} if assistant_tools else {}),
+             'close_reason': close_reason, 'offered_more': turn['offered_more']})
+
+    def timer_response(response):
+        nonlocal state
+        if response.get('event'): emit(response['event'])
+        if response.get('executing'):
+            state = 'executing'; return
+        turn['timer_control'] = response.get('timer_control', '')
+        turn['sources'] = response.get('sources', [])
+        turn['actions_executed'] = response.get('actions_executed', 0)
+        say(response['text'], close_reason=response.get('close_reason', ''), offered_more=response.get('offered_more', False))
 
     def closed():
         emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
             'speech_end_ms': turn['speech_end'], 'deadline_ms': turn['deadline_ms'],
             'reason': turn['close_reason']})
 
-    emit({'type': 'ready', 'protocol': PROTOCOL, 'conversation_only': True, 'wake_only': False,
-                     'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': False,
+    emit({'type': 'ready', 'protocol': 9 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
+                      'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
+                      **({'assistant_tools': True} if assistant_tools else {}),
+                      'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web'] if assistant_tools else ['create_timer'] if timer_trial else [],
+                      'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                      'response_start_ms': 30000, 'input_source': source, 'context_version': 1,
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
                        'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
-                       'voice_entry': entry is not None})
+                       'voice_entry': entry is not None, 'speech_interrupt': True})
     try:
         while now_ms() < session_end:
             current = now_ms()
@@ -400,7 +433,13 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         reset()
                     elif current < turn['deadline_ms'] - 1500:
                         try:
-                            answer = flow.with_offer(model.result)
+                            if timers is not None:
+                                response = timers.model_result(model.result, turn, session_id, context_id, session_end)
+                                if response.get('timer_control') or response.get('executing'):
+                                    timer_response(response); continue
+                                result = response['text']
+                            else: result = model.result
+                            answer = flow.with_offer(result)
                             conversational_reply({'content': answer}, 'stop')
                         except ValueError:
                             model.memory.unanswered(turn['text'])
@@ -408,6 +447,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             reset(); continue
                         say(answer)
                     else: return
+                elif state == 'executing':
+                    response = timers.timed_out()
+                    if response is not None:
+                        if current >= turn['deadline_ms'] - 1500: return
+                        timer_response(response)
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
                 elif state == 'speech' and current > turn['deadline_ms'] + 20000: return
@@ -417,8 +461,17 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if action == 'stop': return
                     if action == 'pause': return
                     if action == 'activate' and state == 'wake': activate('button')
-                    if action in {'tts_started', 'tts_done', 'tts_failed'}:
+                    if action in {'timer_result', 'agenda_result'} and timers is not None:
+                        if action == 'agenda_result' and not assistant_tools: raise ValueError('Agenda not enabled')
+                        if state == 'executing':
+                            response = timers.result(control, session_id, context_id)
+                            if response is not None:
+                                if now_ms() >= turn['deadline_ms'] - 1500: return
+                                timer_response(response)
+                        continue
+                    if action in {'tts_started', 'tts_done', 'tts_failed', 'tts_interrupted'}:
                         if turn is None or control.get('turn_id') != turn['id'] or state != 'speech': continue
+                        if action == 'tts_interrupted' and not turn.get('tts_started'): continue
                         if action == 'tts_started':
                             if turn.get('tts_started'): continue
                             at = control.get('at_ms')
@@ -427,9 +480,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             print(json.dumps({'event': 'conversation_tts_start', 'source': source,
                                 'turn_seq': turn['seq'], 'speech_end_to_callback_ms': at - turn['speech_end'],
                                 'speech_end_estimated': True, 'useful_audio_verified': False,
-                                'actions_executed': 0}), flush=True)
+                                    'actions_executed': turn.get('actions_executed', 0)}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
-                            if not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
+                            if turn.get('timer_control'):
+                                model.memory.unanswered(turn['text'])
+                            elif not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
                             flow.spoken(turn['answer'], offered_more=turn['offered_more'])
                             print(json.dumps({'event': 'conversation_entry_notice' if turn.get('administrative') else 'conversation_memory_commit', 'source': source,
                                 'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
@@ -437,15 +492,18 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if turn['close_reason']:
                                 closed(); return
                             reset(continue_chat=True)
-                        elif action == 'tts_failed':
+                        elif action in {'tts_failed', 'tts_interrupted'}:
                             if not turn.get('administrative'): model.memory.unanswered(turn['text'])
                             print(json.dumps({'event': 'conversation_memory_skipped', 'source': source,
-                                'turn_seq': turn['seq'], 'reason': 'tts_failed',
+                                'turn_seq': turn['seq'], 'reason': action,
                                 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             if turn['close_reason']:
                                 closed(); return
-                            reset()
+                            if action == 'tts_interrupted':
+                                flow.reset()  # An unheard offer never authorizes a later "no".
+                                if turn.get('administrative') and entry is not None: entry.cancel_pending()
+                            reset(continue_chat=action == 'tts_interrupted')
                     continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
                     raise ValueError('Expected timestamped PCM16')
@@ -461,7 +519,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if stamp < activation: continue  # Discard queued audio/TTS tail.
                     timeline.add(stamp, pcm)
                     if not recognizer.AcceptWaveform(pcm): continue
-                    result = json.loads(recognizer.Result()); text = result.get('text', '').strip()[:250]
+                    result = json.loads(recognizer.Result()); text = result.get('text', '').strip()
+                    if text_units(text) > 250:
+                        # Never trim off a trailing negation/qualification and
+                        # authorize a shorter request the human did not make.
+                        emit({'type': 'error', 'reason': 'request_too_long'}); return
                     if not text or words(text) == words(SETTINGS['wake_word']): continue
                     speech_end = timeline.speech_end(result)
                     head = text.split(maxsplit=1)
@@ -471,6 +533,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if sequence > 24: return
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
                              'deadline_ms': speech_end + 30000, 'text': text}
+                    if assistant_tools:
+                        turn.update(calendar_anchor_ms=int(time.time() * 1000), calendar_boot_ms=now_ms())
                     route = entry.route(text) if entry is not None else {'kind': 'model'}
                     if route['kind'] in {'new', 'resume'}:
                         old_id = context_id
@@ -482,8 +546,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             'selection': route['kind'], 'restored_turns': len(model.memory.pairs)}), flush=True)
                     turn['administrative'] = route['kind'] in {'notice', 'close'}
                     emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
-                          'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
-                          'administrative': turn['administrative']})
+                           'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
+                           **({key: turn[key] for key in ('calendar_anchor_ms', 'calendar_boot_ms')} if assistant_tools else {}),
+                           'administrative': turn['administrative']})
                     recognizer = timeline = None; preroll.clear()
                     if route['kind'] == 'notice':
                         say(route['text'], offered_more=False); continue
@@ -495,15 +560,18 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     closing = flow.closing_reason(text)
                     if route['kind'] == 'close': closing = route.get('reason', 'declined_more')
                     if closing:
+                        if timers is not None: timers.cancel()
                         model.memory.last_human = speech_end
                         say(ConversationFlow.FAREWELL, closing)
                         recognizer = timeline = None; preroll.clear()
                         continue  # Close only after farewell receipt/failure; never invoke LFM.
+                    if assistant_tools: model.anchor_wall, model.anchor_boot = turn['calendar_anchor_ms'], turn['calendar_boot_ms']
                     turn['compute_end'] = model.start(text, speech_end, session_end)
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:
         return
     finally:
+        if timers is not None: timers.close()
         model.cancel()
 
 
@@ -524,10 +592,17 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False):
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
-    model = ConversationModel(inference_key)
+    if assistant_tools:
+        if timer_trial: raise ValueError('Conflicting tool modes')
+        from assistant_tools_model import AssistantToolsModel
+        model = AssistantToolsModel(inference_key)
+    elif timer_trial:
+        from timer_trial_model import TimerTrialModel
+        model = TimerTrialModel(inference_key)
+    else: model = ConversationModel(inference_key)
     try:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -536,8 +611,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
             # Reuse TIME_WAIT only; bind/listener guards still refuse an active peer.
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(('127.0.0.1', 11436)); server.listen(1); server.settimeout(.5)
-            print(json.dumps({'event': 'conversation_ready', 'protocol': PROTOCOL, 'tls': True,
-                              'input_source': source, 'microphone_opened': False, 'actions_enabled': False}), flush=True)
+            print(json.dumps({'event': 'conversation_ready', 'protocol': 9 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
+                              'input_source': source, 'microphone_opened': False, 'actions_enabled': timer_trial or assistant_tools}), flush=True)
             deadline = now_ms() + 300000
             while now_ms() < deadline:
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation readiness guard')
@@ -550,7 +625,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                         with context.wrap_socket(raw, server_side=True) as conn:
                             hello = read_hello(conn, authentication_end)
                             supplied = hello.get('token', '')
-                            if (hello.get('protocol') != PROTOCOL or hello.get('mode') != 'conversation_only'
+                            if (hello.get('protocol') != (9 if assistant_tools else 8 if timer_trial else PROTOCOL)
+                                    or hello.get('mode') != ('assistant_tools' if assistant_tools else 'timer_trial' if timer_trial else 'conversation_only')
                                     or hello.get('source') != source or not isinstance(supplied, str)
                                     or not hmac.compare_digest(supplied.encode(), key.encode())):
                                 continue
@@ -569,7 +645,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
-                            session(conn, detector, model, limit, resource_check, source, context_id, entry)
+                            session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools)
                             return
                     except (OSError, EOFError, ValueError):
                         # No credentials, frames or speech text in diagnostics.

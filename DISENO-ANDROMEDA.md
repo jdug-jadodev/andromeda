@@ -1,10 +1,19 @@
 # Andrómeda: diseño revisado, Moto como único equipo
 
+**Entrega vigente: 0.11.1/código 18 de agenda/web instalada con consentimiento y respaldo.** Conserva modelo/límites/privacidad y añade TLS 9, menús y obligaciones separadas. Controles Android sin audio de SQLite/listas vacías/TLS con fixtures pasan; no certifican AlarmManager/entrega/latencia acústica reales. No escucha/modelo residente ni ventana humana activa. «Silencio» aplazado, no reparado por estas pruebas. `AGENDA-Y-WEB-ANDROMEDA.md`; los avisos de entregas anteriores siguientes son históricos.
+
+**Corrección vigente 0.10.1 instalada con consentimiento:** acepta «silencio» con/sin nombre durante salida y añade fuente AEC/diagnóstico numérico RAM. Pruebas sin captura/altavoz pasan, pero **el corte acústico aún debe validarse** tras el fallo humano 0.10. No habilita residencia ni otra ventana humana; `SILENCIO-ANDROMEDA.md`.
+
+**Ampliación 0.10 solicitada:** «Andrómeda, silencio» corta voz/tono actual sin cancelar eventos futuros. Listener local de interrupción exclusivamente durante reproducción, separado del LFM/captura conversacional y de la parada dura. Instalada con pruebas sin captura/altavoz; falta aceptación humana sobre audio real. Alarmas/recordatorios todavía no implementados, deberán usar el mismo mecanismo. No habilita escucha permanente ni residencia: `SILENCIO-ANDROMEDA.md`.
+
+**Decisión/implementación posterior 0.9:** conserva entrada 0.7 y control sin acciones; timer de bajo riesgo por petición completa, sin frase extra, y cierre tras resultado Android real. Consultas/aclaraciones continúan, mezclas se separan y no se habilitan acciones generales: `PETICIONES-Y-CIERRE-ANDROMEDA.md`. Usuario pide planear micrófono activo/modelo residente y ensayos largos, **todavía no activados**: `ENSAYO-PROLONGADO-ANDROMEDA.md`. Sintéticos no certifican plazo audible ni uso 24/7. Versiones anteriores quedan como historial.
+
 ## 1. Condiciones del usuario, no negociables sin volver a acordarlas
 
 - El Moto G8 Plus es el corazón del proyecto: reutilización y valor sentimental de su primer teléfono comprado. No sustituirlo ni exigir un PC/mini-PC.
 - Procesamiento de IA, voz, memoria e inventario del hogar locales. Sin inferencia en nube ni envío de datos domésticos por defecto.
 - Conversación natural corta con hilo y herramientas elegidas por la IA. No programar respuestas para cada pregunta ni exigir una frase exacta para cada acción.
+- **Uso cotidiano final 100 % por voz, aclarado explícitamente por el usuario:** decir «Andrómeda» y pedir un timer no debe requerir botón, menú, ADB/SSH ni preparación manual por interacción. Los controles actuales solo autorizan pilotos; conservar opciones/parada de emergencia no los convierte en pasos obligatorios del uso diario. Cerrar una charla en el futuro modo residente debe volver a espera del nombre, no apagar todo el asistente. Ese modo todavía no está implementado/activo; arranque automático y ensayos largos requieren su etapa propia.
 - **Máximo 30 segundos desde terminar de hablar hasta empezar una respuesta útil.** Objetivo preferido para uso rutinario: 5–10 s. Todavía NO está cumplido.
 - Reloj visible y cara durante interacción; no bloqueo automático. Mantener Android, teclado, cámaras, audio y conectividad.
 - Memoria por conversaciones separadas, cada una caduca tras una hora de su propia inactividad. Temporizadores/recordatorios persistentes separados.

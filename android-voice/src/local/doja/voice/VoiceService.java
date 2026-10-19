@@ -19,6 +19,8 @@ public class VoiceService extends Service {
     public static volatile boolean wakeListening = false;
     public static volatile boolean wakeTestActive = false;
     public static volatile boolean conversationTestActive = false;
+    public static volatile boolean timerTrialActive = false;
+    public static volatile boolean assistantToolsActive = false;
     public static volatile boolean microphoneRecording = false;
     public static volatile long expiresAt = 0;
     // Diagnostic text stays only in process memory, never in preferences/logs.
@@ -36,6 +38,12 @@ public class VoiceService extends Service {
     volatile boolean aiEnabled;
     volatile boolean wakeOnly;
     volatile boolean conversationOnly;
+    volatile boolean timerTrial;
+    volatile boolean assistantTools;
+    volatile AgendaActionChannel agendaChannel;
+    volatile String activeTimerControl = "";
+    volatile TimerActionChannel timerChannel;
+    final ExecutorService timerExecutor = Executors.newSingleThreadExecutor();
     final ConversationTurnPolicy conversationTurn = new ConversationTurnPolicy();
     ConversationMemory.Lease contextLease;
     ConversationChannel contextChannel;
@@ -44,6 +52,9 @@ public class VoiceService extends Service {
     volatile Socket socket;
     volatile DataOutputStream output;
     AudioRecord recorder;
+    final Object micOwner = new Object();
+    SilenceListener silenceListener;
+    volatile boolean speechInterrupted;
     TextToSpeech tts;
     final Handler main = new Handler(Looper.getMainLooper());
     public IBinder onBind(Intent intent) { return null; }
@@ -69,19 +80,24 @@ public class VoiceService extends Service {
         }, "com.google.android.tts");
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             public void onStart(String id) {
-                if (running && id.equals(activeSpeechId)) {
-                    if (conversationOnly) {
-                        long now = SystemClock.elapsedRealtime();
-                        if (!conversationTurn.acceptStart(id, now)) {
-                            main.post(() -> { if (tts != null) tts.stop(); lastError = "Respuesta tardía descartada"; stopSelf(); }); return;
+                main.post(() -> {
+                    if (running && id.equals(activeSpeechId)) {
+                        if (conversationOnly) {
+                            long now = SystemClock.elapsedRealtime();
+                            if (!conversationTurn.acceptStart(id, now)) {
+                                if (tts != null) tts.stop(); lastError = "Respuesta tardía descartada"; stopSelf(); return;
+                            }
+                            controlTurn("tts_started", id, now);
                         }
-                        controlTurn("tts_started", id, now);
+                        state(activeSpeechText + (conversationOnly && !timerTrial && !assistantTools ? " · sin acciones" : ""), FaceState.SPEAKING, null);
+                        if (silenceListener != null) silenceListener.begin(id,
+                            Math.min(expiresAt, SystemClock.elapsedRealtime() + 20000),
+                            () -> running && speaking && id.equals(activeSpeechId), () -> interruptSpeech(id));
                     }
-                    state(activeSpeechText + (conversationOnly ? " · sin acciones" : ""), FaceState.SPEAKING, null);
-                }
+                });
             }
-            public void onDone(String id) { if (id.equals(activeSpeechId)) finishSpeech(true); }
-            public void onError(String id) { if (running && id.equals(activeSpeechId)) { state("Error de síntesis; micrófono en pausa breve", FaceState.ERROR, null); finishSpeech(false); } }
+            public void onDone(String id) { main.post(() -> { if (running && id.equals(activeSpeechId)) finishSpeech(true); }); }
+            public void onError(String id) { main.post(() -> { if (running && id.equals(activeSpeechId)) { state("Error de síntesis; micrófono en pausa breve", FaceState.ERROR, null); finishSpeech(false); } }); }
         });
     }
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -89,13 +105,21 @@ public class VoiceService extends Service {
         if ("STOP".equals(action)) { stopSelf(); return START_NOT_STICKY; }
         if ("PUSH".equals(action)) { if (running) control("activate"); else stopSelf(); return START_NOT_STICKY; }
         if (running) return START_NOT_STICKY;
+        if (AgendaDeliveryService.active) { lastError = "Termina primero el aviso de agenda"; stopSelf(); return START_NOT_STICKY; }
+        if (CaptureProbeService.active) { lastError = "Termina primero el diagnóstico de captura"; stopSelf(); return START_NOT_STICKY; }
         if (sessionStarted) { lastError = "La sesión anterior se está cerrando; vuelve a elegir la prueba"; stopSelf(); return START_NOT_STICKY; }
         sessionStarted = true;
         wakeOnly = intent != null && intent.getBooleanExtra("wake_only", false);
         conversationOnly = intent != null && intent.getBooleanExtra("conversation_only", false);
+        timerTrial = intent != null && intent.getBooleanExtra("timer_trial", false);
+        assistantTools = intent != null && intent.getBooleanExtra("assistant_tools", false);
+        if (assistantTools && (!conversationOnly || timerTrial)) { lastError = "Modo de herramientas incompatible"; stopSelf(); return START_NOT_STICKY; }
+        if (timerTrial && !conversationOnly) { lastError = "Prueba de timer requiere el canal TLS conversacional"; stopSelf(); return START_NOT_STICKY; }
         if (wakeOnly && conversationOnly) { lastError = "Modo de sesión inválido"; stopSelf(); return START_NOT_STICKY; }
         wakeTestActive = wakeOnly;
         conversationTestActive = conversationOnly;
+        timerTrialActive = timerTrial;
+        assistantToolsActive = assistantTools;
         if (!wakeOnly && !conversationOnly) initializeTts();
         int requestedSeconds = intent == null ? 90 : intent.getIntExtra("seconds", 90);
         final int seconds = requestedSeconds == 300 ? 300 : 90;
@@ -104,10 +128,16 @@ public class VoiceService extends Service {
         PendingIntent stop = PendingIntent.getService(this, 0, new Intent(this, VoiceService.class).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE);
         Notification notification = new Notification.Builder(this, "microphone")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Preparando sesión · micrófono aún apagado")
-            .setContentText(conversationOnly ? "Conversación LFM sin acciones. Toca Detener." : wakeOnly ? "Solo activación y transcripción local; sin órdenes. Toca Detener." : "Audio local. Toca Detener para silenciar.").setOngoing(true)
+            .setContentText(assistantTools ? "Agenda y web explícita · experimental. Toca Detener." : timerTrial ? "Timer por petición validada; resultado y cierre. Toca Detener." : conversationOnly ? "Conversación LFM sin acciones. Toca Detener." : wakeOnly ? "Solo activación y transcripción local; sin órdenes. Toca Detener." : "Audio local. Toca Detener para silenciar.").setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop).build();
         startForeground(10, notification);
         running = active = true;
+        if (!wakeOnly) {
+            silenceListener = new SilenceListener(this, () -> {
+                if (running) { microphoneNotification(microphoneRecording); state(lastStatus, uiState, null); }
+            }, SilenceDiagnostics.Owner.SPEECH);
+            silenceListener.prepare();
+        }
         if (conversationOnly) ConversationContexts.scheduleExpiry();
         lastTranscript = "";
         expiresAt = SystemClock.elapsedRealtime() + seconds * 1000L;
@@ -147,28 +177,35 @@ public class VoiceService extends Service {
         NotificationManager manager = getSystemService(NotificationManager.class);
         PendingIntent stop = PendingIntent.getService(this, 0, new Intent(this, VoiceService.class).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE);
         manager.notify(10, new Notification.Builder(this, "microphone").setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(recording ? "MICRÓFONO ACTIVO · sesión limitada" : "Micrófono en pausa · sesión limitada")
-            .setContentText(conversationOnly ? "LFM local · sin acciones · Detener para silenciar" : "Audio local · Detener para silenciar")
+            .setContentTitle(SilenceListener.recording() ? "MICRÓFONO ACTIVO · solo interrupción"
+                : recording ? "MICRÓFONO ACTIVO · sesión limitada" : "Micrófono en pausa · sesión limitada")
+            .setContentText(SilenceListener.recording() ? "Di silencio o Andrómeda, silencio · no cancela eventos"
+                 : assistantTools ? "Agenda y consultas web explícitas · prototipo" : timerTrial ? "LFM local · timer por petición · Detener para silenciar" : conversationOnly ? "LFM local · sin acciones · Detener para silenciar" : "Audio local · Detener para silenciar")
             .setOngoing(true).addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop).build());
     }
     void captureConversation() {
         try {
             ConversationMemory.Snapshot fresh = ConversationMemory.emptySnapshot();
             List<ConversationMemory.Snapshot> catalog = ConversationContexts.MEMORY.catalog(SystemClock.elapsedRealtime());
-            VoiceConnection connection = VoiceConnection.open(this, "microphone", fresh, catalog);
+            VoiceConnection connection = VoiceConnection.open(this, "microphone", fresh, catalog, timerTrial, assistantTools);
             socket = connection.socket; output = connection.output;
             if (!running) throw new IOException("Sesión detenida");
+            if (!connection.ready.optBoolean("speech_interrupt")) throw new IOException("Falta soporte local de interrupción de voz");
             contextChannel = new ConversationChannel(ConversationContexts.MEMORY, fresh, catalog, connection.ready);
             if (!running) { contextChannel.close(); throw new IOException("Sesión detenida"); }
             wakeEnabled = aiEnabled = true;
             int seconds = connection.ready.optInt("seconds");
             if (seconds != 90 && seconds != 300) throw new IOException("Duración inválida");
             expiresAt = Math.min(expiresAt, SystemClock.elapsedRealtime() + seconds * 1000L);
+            if (timerTrial || assistantTools) timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
             main.postDelayed(() -> { pilotExpired = true; stopSelf(); }, Math.max(0, expiresAt - SystemClock.elapsedRealtime()));
             main.post(this::initializeTts);
             long ttsDeadline = Math.min(expiresAt, SystemClock.elapsedRealtime() + 12000);
             while (running && !ttsReady && lastError.isEmpty() && SystemClock.elapsedRealtime() < ttsDeadline) SystemClock.sleep(25);
             if (!ttsReady || !running) throw new IOException("No se preparó una voz española offline");
+            if (silenceListener == null || !silenceListener.awaitReady(ttsDeadline))
+                throw new IOException("No se preparó el reconocimiento offline de silencio");
             connection.socket.setSoTimeout(0);
             new Thread(() -> responses(connection.input), "doja-events").start();
             int minimum = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
@@ -181,16 +218,17 @@ public class VoiceService extends Service {
             boolean recording = false, clockReady = false;
             long readFrames = 0, clockDeadline = 0, lastHeartbeat = 0;
             while (running) {
-                if (RingService.ringing) { control("pause"); throw new IOException("Conversación detenida por alarma"); }
-                if (speaking || SystemClock.elapsedRealtime() < resumeAfter) {
+                if (RingService.ringing || AgendaDeliveryService.active) { control("pause"); throw new IOException("Conversación detenida por aviso"); }
+                if (speaking || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
                     if (recording) {
-                        recorder.stop(); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false);
-                        if (uiState == FaceState.THINKING) state("LFM pensando · micrófono apagado · sin acciones", FaceState.THINKING, null);
+                        recorder.stop(); AudioInputGate.release(micOwner); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false);
+                        if (uiState == FaceState.THINKING) state("LFM pensando · micrófono apagado" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, null);
                     }
                     if (SystemClock.elapsedRealtime() - lastHeartbeat >= 1000) { control("heartbeat"); lastHeartbeat = SystemClock.elapsedRealtime(); }
                     SystemClock.sleep(25); continue;
                 }
                 if (!recording) {
+                    if (!AudioInputGate.acquire(micOwner)) { SystemClock.sleep(10); continue; }
                     recorder.startRecording(); recording = microphoneRecording = true; wakeListening = false;
                     readFrames = 0; clockReady = false; clockDeadline = SystemClock.elapsedRealtime() + 1000;
                     microphoneNotification(true);
@@ -209,7 +247,7 @@ public class VoiceService extends Service {
                     clockReady = true; wakeListening = true;
                     if (!conversationTurn.hasActiveTurn()) state(dialogueListening
                         ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
-                        : "MICRÓFONO ACTIVO · LFM sin acciones · di " + AssistantConfig.NAME,
+                         : "MICRÓFONO ACTIVO · " + (assistantTools ? "agenda/web experimental" : timerTrial ? "timer experimental" : "LFM sin acciones") + " · di " + AssistantConfig.NAME,
                         dialogueListening ? FaceState.LISTENING : FaceState.READY, null);
                 }
                 if (running && !speaking) {
@@ -220,13 +258,56 @@ public class VoiceService extends Service {
             if (running) { lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
             running = active = wakeListening = microphoneRecording = false;
+            if (timerChannel != null) timerChannel.close();
+            if (agendaChannel != null) agendaChannel.close();
             if (contextChannel != null) contextChannel.close();
             if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
             ConversationContexts.scheduleExpiry();
             if (recorder != null) { try { recorder.stop(); } catch (Exception ignored) {} recorder.release(); recorder = null; }
+            AudioInputGate.release(micOwner);
             try { if (socket != null) socket.close(); } catch (IOException ignored) {}
             main.post(() -> stopSelf());
         }
+    }
+    void executeTimer(JSONObject event) throws Exception {
+        if (!running || !(timerTrial || assistantTools) || timerChannel == null) throw new IOException("Ejecutor de timer no habilitado");
+        if (assistantTools) agendaChannel.timerExecution();
+        TimerActionChannel channel = timerChannel;
+        TimerActionChannel.Execution execution = channel.execution(event, SystemClock.elapsedRealtime());
+        if (execution == null) return;
+        timerExecutor.execute(() -> {
+            if (!running) { channel.close(); return; }
+            TimerCreation.Receipt receipt = TimerStore.createAuthorized(this, execution.permit);
+            try {
+                JSONObject result = channel.result(execution, receipt);
+                if (!running || controls.isShutdown()) return;
+                controls.execute(() -> {
+                    try {
+                        byte[] data = result.toString().getBytes(StandardCharsets.UTF_8);
+                        frame(3, data, data.length);
+                    } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+                });
+            } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+        });
+    }
+    void executeAgenda(JSONObject event) throws Exception {
+        if (!running || !assistantTools || agendaChannel == null) throw new IOException("Agenda not enabled");
+        AgendaActionChannel channel = agendaChannel;
+        AgendaPermit permit = channel.execution(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
+        if (permit == null) return;
+        timerExecutor.execute(() -> {
+            if (!running) return;
+            AgendaStore.Status status;
+            try (AgendaStore store = new AgendaStore(this)) { status = store.create(permit); }
+            catch (Exception failure) { status = AgendaStore.Status.UNKNOWN; }
+            try {
+                JSONObject result = channel.result(permit, status);
+                if (running && !controls.isShutdown()) controls.execute(() -> {
+                    try { byte[] data = result.toString().getBytes(StandardCharsets.UTF_8); frame(3, data, data.length); }
+                    catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+                });
+            } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+        });
     }
     void toolResult(String id, boolean ok, String message) {
         if (!running || controls.isShutdown() || output == null) return;
@@ -283,8 +364,9 @@ public class VoiceService extends Service {
             byte[] data = new byte[640]; boolean recording = false, paused = false;
             long lastHeartbeat = 0;
             while (running) {
-                if (speaking || RingService.ringing || SystemClock.elapsedRealtime() < resumeAfter) {
-                    if (recording) { recorder.stop(); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false); }
+                if (speaking || RingService.ringing || SystemClock.elapsedRealtime() < resumeAfter
+                        || silenceListener != null && silenceListener.busy()) {
+                    if (recording) { recorder.stop(); AudioInputGate.release(micOwner); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false); }
                     if (!paused) { control("pause"); paused = true; }
                     if (SystemClock.elapsedRealtime() - lastHeartbeat >= 1000) {
                         control("heartbeat"); lastHeartbeat = SystemClock.elapsedRealtime();
@@ -292,7 +374,10 @@ public class VoiceService extends Service {
                     SystemClock.sleep(40); continue;
                 }
                 if (paused) { control("resume"); paused = false; }
-                if (!recording) { recorder.startRecording(); recording = microphoneRecording = true; wakeListening = wakeEnabled; microphoneNotification(true); }
+                if (!recording) {
+                    if (!AudioInputGate.acquire(micOwner)) { SystemClock.sleep(10); continue; }
+                    recorder.startRecording(); recording = microphoneRecording = true; wakeListening = wakeEnabled; microphoneNotification(true);
+                }
                 int count = recorder.read(data, 0, data.length);
                 if (count < 0) { if (running) throw new IOException("Error de captura PCM"); else break; }
                 if (count > 0 && !speaking && !RingService.ringing) frame(2, data, count);
@@ -302,6 +387,7 @@ public class VoiceService extends Service {
         } finally {
             running = active = wakeListening = microphoneRecording = false;
             if (recorder != null) { try { recorder.stop(); } catch (Exception ignored) {} recorder.release(); recorder = null; }
+            AudioInputGate.release(micOwner);
             try { if (socket != null) socket.close(); } catch (IOException ignored) {}
             main.post(() -> stopSelf());
         }
@@ -321,9 +407,16 @@ public class VoiceService extends Service {
                 if (wakeOnly && !VoiceSessionPolicy.wakeOnlyEventAllowed(type))
                     throw new IOException("Evento no permitido en prueba de activación");
                 if (conversationOnly) {
-                    if (!VoiceSessionPolicy.conversationEventAllowed(type) || event.has("tool_call_id")) throw new IOException("Evento de acción rechazado");
+                    if (!(assistantTools ? VoiceSessionPolicy.toolsEventAllowed(type) : timerTrial ? VoiceSessionPolicy.timerEventAllowed(type) : VoiceSessionPolicy.conversationEventAllowed(type))
+                            || event.has("tool_call_id")) throw new IOException("Evento de acción rechazado");
                     if ("context_selected".equals(type)) {
                         contextChannel.select(event, SystemClock.elapsedRealtime()); contextLease = contextChannel.lease;
+                        if (timerTrial || assistantTools) {
+                            if (timerChannel != null) timerChannel.close();
+                            timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+                            if (agendaChannel != null) agendaChannel.close();
+                            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+                        }
                         ConversationContexts.scheduleExpiry(); continue;
                     }
                     contextChannel.verify(event);
@@ -332,10 +425,12 @@ public class VoiceService extends Service {
                         if (!conversationTurn.begin(id, event.optLong("turn_seq"), event.optLong("speech_end_ms"), deadline, SystemClock.elapsedRealtime()))
                             throw new IOException("Turno duplicado o fuera de plazo");
                         contextChannel.human(event, SystemClock.elapsedRealtime());
+                        if (timerTrial || assistantTools) timerChannel.human(event);
+                        if (assistantTools) agendaChannel.human(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
                         ConversationContexts.scheduleExpiry();
                         speaking = true;
                         state(event.optBoolean("administrative") ? "Consultando charlas guardadas · micrófono en pausa"
-                            : "LFM pensando · pausando micrófono · sin acciones", FaceState.THINKING, "Escuché: " + event.optString("text"));
+                             : "LFM pensando · pausando micrófono" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, "Escuché: " + event.optString("text"));
                         main.postDelayed(() -> {
                             if (running && conversationTurn.matches(id) && conversationTurn.expiredBeforeStart(SystemClock.elapsedRealtime())) {
                                 lastError = "Se agotó el plazo; respuesta descartada"; stopSelf();
@@ -343,12 +438,17 @@ public class VoiceService extends Service {
                         }, Math.max(0, deadline - SystemClock.elapsedRealtime()));
                     } else if ("say".equals(type)) {
                         speaking = true; main.post(() -> apply(event));
+                    } else if ("timer_execute".equals(type) && (timerTrial || assistantTools)) {
+                        executeTimer(event);
+                    } else if ("agenda_execute".equals(type) && assistantTools) {
+                        executeAgenda(event);
                     } else if ("error".equals(type)) {
                         conversationTurn.clear(); speaking = false;
-                        state("No se obtuvo una respuesta completa a tiempo · sin acciones", FaceState.ERROR, null);
+                        state(assistantTools ? "No hubo respuesta completa; revisa la agenda si había una acción pendiente" : timerTrial ? "No se obtuvo respuesta completa; revisa los timers si había una acción pendiente"
+                            : "No se obtuvo una respuesta completa a tiempo · sin acciones", FaceState.ERROR, null);
                     } else if ("conversation_closed".equals(type)) {
                         String reason = event.optString("reason");
-                        if (!("explicit_close".equals(reason) || "declined_more".equals(reason))
+                        if (!("explicit_close".equals(reason) || "declined_more".equals(reason) || (timerTrial || assistantTools) && "action_result".equals(reason))
                                 || !reason.equals(conversationTurn.closeReason())
                                 || !conversationTurn.acceptClose(event.optString("turn_id"), event.optLong("turn_seq"),
                                     event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime())
@@ -361,7 +461,7 @@ public class VoiceService extends Service {
                         dialogueListening = "command".equals(event.optString("state"));
                         if (dialogueListening) state(microphoneRecording ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
                             : "Reanudando micrófono · continúa sin repetir Andrómeda", FaceState.LISTENING, null);
-                        else if (!conversationTurn.hasActiveTurn()) state(microphoneRecording ? "MICRÓFONO ACTIVO · LFM · di " + AssistantConfig.NAME : "Reanudando micrófono · LFM sin acciones", FaceState.READY, null);
+                        else if (!conversationTurn.hasActiveTurn()) state(microphoneRecording ? "MICRÓFONO ACTIVO · LFM · di " + AssistantConfig.NAME : "Reanudando micrófono · LFM" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " sin acciones"), FaceState.READY, null);
                     }
                     continue;
                 }
@@ -390,12 +490,15 @@ public class VoiceService extends Service {
         boolean ok = true;
         try {
             if (conversationOnly) {
-                if (!"say".equals(event.optString("type")) || event.has("tool_call_id") || event.optInt("actions_executed", -1) != 0
+                if (!"say".equals(event.optString("type")) || event.has("tool_call_id") || !(timerTrial || assistantTools) && event.optInt("actions_executed", -1) != 0
                         || !conversationTurn.acceptReply(event.optString("turn_id"), event.optLong("turn_seq"),
                             event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime(),
-                            event.optString("close_reason"))) return;
+                             event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && "agenda_result".equals(event.optString("timer_control"))))) return;
                 message = event.getString("text");
                 if (message.isEmpty() || message.length() > 700) throw new IOException("Respuesta inválida");
+                if (assistantTools) { if (!agendaChannel.speech(event)) timerChannel.validateSpeech(event); }
+                else if (timerTrial) timerChannel.validateSpeech(event);
+                activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
             } else switch (event.optString("type")) {
                 case "timer":
                     message = TimerStore.create(this, event.getString("id"), event.getInt("seconds"));
@@ -421,7 +524,7 @@ public class VoiceService extends Service {
         if (!conversationOnly) control("tts_started"); state("Preparando voz · " + message, FaceState.PREPARING, null);
         Bundle params = new Bundle(); params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
         String id = conversationOnly ? event.optString("turn_id") : UUID.randomUUID().toString();
-        activeSpeechId = id; activeSpeechText = message; final int generation = ++speechGeneration;
+        activeSpeechId = id; activeSpeechText = message; speechInterrupted = false; final int generation = ++speechGeneration;
         if (tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.ERROR) {
             state(message + " (no se pudo iniciar la voz)", FaceState.ERROR, null); finishSpeech();
         }
@@ -432,16 +535,26 @@ public class VoiceService extends Service {
     void finishSpeech() {
         finishSpeech(false);
     }
-    void finishSpeech(boolean completed) {
+    synchronized void interruptSpeech(String id) {
+        if (!running || !speaking || !id.equals(activeSpeechId)) return;
+        speechInterrupted = true;
+        stopSpeechOutput();
+        finishSpeech(false);
+    }
+    void stopSpeechOutput() { if (tts != null) tts.stop(); }
+    synchronized void finishSpeech(boolean completed) {
+        if (silenceListener != null) silenceListener.end();
+        completed = completed && !speechInterrupted;
         if (conversationOnly && !activeSpeechId.isEmpty()) {
-            if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null)
-                contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
+            if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null) {
+                if (activeTimerControl.isEmpty()) contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
+            }
             if (!conversationTurn.finishSpeech(activeSpeechId, completed)) {
                 speaking = true; activeSpeechId = "";
                 lastError = "Finalización de voz inválida; sesión detenida";
                 main.post(() -> stopSelf()); return;
             }
-            controlTurn(completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
+            controlTurn(speechInterrupted ? "tts_interrupted" : completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
         }
         boolean closing = conversationOnly && conversationTurn.awaitingClose();
         if (closing) {
@@ -452,7 +565,7 @@ public class VoiceService extends Service {
             } }, 2000);
             return;
         }
-        resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = "";
+        resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = ""; activeTimerControl = "";
         if (running) {
             if (!conversationOnly) control("tts_done");
             if (uiState != FaceState.ERROR) state(conversationOnly ? "Reanudando micrófono · continúa sin repetir Andrómeda" : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
@@ -471,7 +584,12 @@ public class VoiceService extends Service {
         return VoiceSocketCleanup.closeAsync(connected);
     }
     public void onDestroy() {
-        running = active = wakeListening = wakeTestActive = conversationTestActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
+        running = active = wakeListening = wakeTestActive = conversationTestActive = timerTrialActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
+        assistantToolsActive = false;
+        if (silenceListener != null) silenceListener.close();
+        if (timerChannel != null) timerChannel.close();
+        if (agendaChannel != null) agendaChannel.close();
+        timerExecutor.shutdown(); // Accepted durable work is not a timer cancellation.
         conversationTurn.clear();
         if (contextChannel != null) contextChannel.close();
         if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);

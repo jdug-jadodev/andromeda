@@ -17,9 +17,13 @@ final class ConversationTurnPolicy {
         return acceptReply(value, seq, end, expires, now, "");
     }
     synchronized boolean acceptReply(String value, long seq, long end, long expires, long now, String reason) {
+        return acceptReply(value, seq, end, expires, now, reason, false);
+    }
+    synchronized boolean acceptReply(String value, long seq, long end, long expires, long now, String reason, boolean actionResult) {
         if (!matches(value) || seq != sequence || end != speechEnd || expires != deadline
                 || scheduled || now >= deadline - 1500 || reason == null
-                || !(reason.isEmpty() || "explicit_close".equals(reason) || "declined_more".equals(reason))) return false;
+                || !(reason.isEmpty() || "explicit_close".equals(reason) || "declined_more".equals(reason)
+                    || actionResult && "action_result".equals(reason))) return false;
         scheduled = true; closeReason = reason; return true;
     }
     synchronized boolean acceptStart(String value, long now) {

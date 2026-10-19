@@ -1,12 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="9" android:versionName="0.7.0-voice-entry-trial">
+    android:versionCode="19" android:versionName="0.11.2-alarm-asr-control">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application android:label="Andrómeda · prototipo" android:theme="@android:style/Theme.Material.NoActionBar"
-        android:allowBackup="false" android:debuggable="true" android:supportsRtl="true">
+        android:allowBackup="false" android:debuggable="true" android:supportsRtl="true" android:extractNativeLibs="true">
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="sensorLandscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -14,7 +15,10 @@
             </intent-filter>
         </activity>
         <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone" />
-        <service android:name=".RingService" android:exported="false" />
+        <service android:name=".RingService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".AgendaDeliveryService" android:exported="false" android:foregroundServiceType="microphone" />
+        <receiver android:name=".AgendaReceiver" android:exported="false" />
         <receiver android:name=".TimerReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">
             <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
@@ -24,6 +28,8 @@
         android:label="Pruebas sintéticas sin micrófono" android:functionalTest="true" />
     <instrumentation android:name=".TimerInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Pruebas aisladas de temporizadores" android:functionalTest="true" />
+    <instrumentation android:name=".TimerAuthorizationInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Autorización de timer en preferencias aisladas, sin sonido" android:functionalTest="true" />
     <instrumentation android:name=".PrepareCancelTimerInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Preparar timer real solo con consentimiento" android:functionalTest="true" />
     <instrumentation android:name=".FaceInstrumentation" android:targetPackage="local.doja.voice"
@@ -34,4 +40,16 @@
         android:label="Silenciar y cierre TLS sin micrófono ni modelo" android:functionalTest="true" />
     <instrumentation android:name=".ContextInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Contexto en RAM sin audio ni modelo" android:functionalTest="true" />
+    <instrumentation android:name=".SilenceInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="ASR Android con WAV públicos, sin micrófono ni altavoz" android:functionalTest="true" />
+    <instrumentation android:name=".CaptureProbeInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Control de captura con WAV públicos/UI, sin AudioRecord" android:functionalTest="true" />
+    <instrumentation android:name=".AgendaInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="SQLite de agenda aislada con planificador/acuse simulados, sin audio" android:functionalTest="true" />
+    <instrumentation android:name=".AgendaUiInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Listas vacías de agenda y caducidad de opciones, sin audio" android:functionalTest="true" />
+    <instrumentation android:name=".AgendaTransportInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="TLS y agenda aislada con fixtures explícitos, sin audio ni modelo" android:functionalTest="true" />
+    <instrumentation android:name=".AlarmAsrInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Vosk y LFM reales con alarma pública aislada, sin micrófono ni sonido" android:functionalTest="true" />
 </manifest>

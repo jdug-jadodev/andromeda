@@ -16,6 +16,7 @@ import org.json.*;
 /** Real ASR + LFM + offline TTS using only fixed public WAVs. Never records or plays audio. */
 public final class ConversationInstrumentation extends Instrumentation {
     private String mode;
+    private boolean interruptFirst;
     private TextToSpeech tts;
     private VoiceConnection connection;
     private MainActivity activity;
@@ -30,7 +31,14 @@ public final class ConversationInstrumentation extends Instrumentation {
     private final ConversationMemory memory = new ConversationMemory();
     private ConversationMemory.Lease lease;
     private ConversationChannel channel;
-    public void onCreate(Bundle arguments) { super.onCreate(arguments); mode = arguments == null ? "normal" : arguments.getString("mode", "normal"); start(); }
+    private TimerActionChannel timers;
+    private Context timerStorage;
+    private final Set<String> timerIds = new HashSet<>();
+    private SilenceListener interruptionAsr;
+    public void onCreate(Bundle arguments) {
+        super.onCreate(arguments); mode = arguments == null ? "normal" : arguments.getString("mode", "normal");
+        interruptFirst = arguments != null && "true".equals(arguments.getString("interrupt_first")); start();
+    }
     private static void check(boolean value, String message) { if (!value) throw new IllegalStateException(message); }
     private void control(String action, String id, long at) throws Exception {
         VoiceConnection.writeFrame(connection.output, 3, new JSONObject().put("action", action)
@@ -68,7 +76,7 @@ public final class ConversationInstrumentation extends Instrumentation {
             public void onError(String id) { failure.set("Offline synthesis failed"); if (synthesized.get() != null) synthesized.get().countDown(); }
         });
     }
-    private static byte[] readPcm(File file) throws Exception {
+    static byte[] readPcm(File file) throws Exception {
         byte[] wav = Files.readAllBytes(file.toPath()); ByteBuffer bytes = ByteBuffer.wrap(wav).order(ByteOrder.LITTLE_ENDIAN);
         check(wav.length > 44 && bytes.getInt(0) == 0x46464952 && bytes.getInt(8) == 0x45564157, "Invalid fixed WAV");
         int rate = 0, offset = 0, length = 0;
@@ -127,41 +135,66 @@ public final class ConversationInstrumentation extends Instrumentation {
     public void onStart() {
         Bundle result = new Bundle(); File output = null;
         Context context = getTargetContext(); Map<String, ?> timersBefore = new HashMap<>(TimerStore.prefs(context).getAll());
+        Map<String, ?> receiptsBefore = new HashMap<>(TimerStore.actionReceipts(context).getAll());
+        String timerNamespace = "timer_conversation_" + UUID.randomUUID();
+        boolean timerMode = mode.startsWith("timer_");
+        JSONArray rows = new JSONArray();
+        timerStorage = new ContextWrapper(context) {
+            public SharedPreferences getSharedPreferences(String name, int mode) {
+                if (!"timers".equals(name) && !"timer_action_receipts".equals(name)) throw new IllegalArgumentException("Unexpected test storage");
+                return context.getSharedPreferences(timerNamespace + "_" + name, mode);
+            }
+        };
         try {
-            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks", "decline", "yes", "entry_new", "entry_resume", "entry_missing").contains(mode), "Invalid synthetic mode");
+            check(Arrays.asList("normal", "cancel_inference", "late_start", "close", "thanks", "decline", "yes", "entry_new", "entry_resume", "entry_missing", "timer_create", "timer_yes", "timer_missing", "timer_query").contains(mode), "Invalid synthetic mode");
             check(!VoiceService.active && !RingService.ringing, "A real session/alarm is active");
+            if (interruptFirst) {
+                interruptionAsr = new SilenceListener(context, () -> {});
+                check(interruptionAsr.awaitReady(SystemClock.elapsedRealtime() + 12000), "Local interrupt ASR failed while LFM was loaded");
+                result.putBoolean("interrupt_asr_loaded_with_lfm", true);
+            }
             initializeVoice();
             activity = (MainActivity)startActivitySync(new Intent(context, MainActivity.class).putExtra("offline_preview", true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             // A synthetic backend must refuse the normal microphone handshake,
             // before any caller would construct AudioRecord.
             boolean wrongSourceRejected = false;
-            try (VoiceConnection wrong = VoiceConnection.open(context, "microphone")) {}
+            try (VoiceConnection wrong = VoiceConnection.open(context, "microphone", ConversationMemory.emptySnapshot(),
+                    Collections.emptyList(), timerMode)) {}
             catch (IOException expected) { wrongSourceRejected = true; }
             check(wrongSourceRejected, "Synthetic backend accepted microphone source");
             result.putBoolean("wrong_source_rejected", true);
-            boolean voiceEntry = mode.startsWith("entry_");
+            boolean voiceEntry = mode.startsWith("entry_") || timerMode;
             String seededId = "";
             if (voiceEntry) {
-                long at = SystemClock.elapsedRealtime(); ConversationMemory.Lease seed = memory.acquire(at - 2000);
-                seededId = seed.conversationId;
-                String turn = UUID.randomUUID().toString().replace("-", "");
-                check(memory.human(seed, turn, "Las luces del patio son azules.", at - 1900, at - 1800), "Public seed failed");
-                check(memory.answer(seed, turn, "Hablamos de las luces del patio.", at - 1700) && memory.end(seed, turn, at - 1600), "Public seed close failed");
+                long at = SystemClock.elapsedRealtime();
+                if (!timerMode) {
+                    ConversationMemory.Lease seed = memory.acquire(at - 2000); seededId = seed.conversationId;
+                    String turn = UUID.randomUUID().toString().replace("-", "");
+                    check(memory.human(seed, turn, "Las luces del patio son azules.", at - 1900, at - 1800), "Public seed failed");
+                    check(memory.answer(seed, turn, "Hablamos de las luces del patio.", at - 1700) && memory.end(seed, turn, at - 1600), "Public seed close failed");
+                }
                 ConversationMemory.Snapshot fresh = ConversationMemory.emptySnapshot();
                 List<ConversationMemory.Snapshot> catalog = memory.catalog(at);
-                connection = VoiceConnection.open(context, "synthetic_pcm", fresh, catalog);
+                connection = VoiceConnection.open(context, "synthetic_pcm", fresh, catalog, timerMode);
                 channel = new ConversationChannel(memory, fresh, catalog, connection.ready);
             } else {
                 lease = memory.acquire(SystemClock.elapsedRealtime());
                 connection = VoiceConnection.open(context, "synthetic_pcm", memory.snapshot(lease, SystemClock.elapsedRealtime()));
                 channel = new ConversationChannel(memory, lease, connection.ready);
             }
+            if (interruptFirst) check(connection.ready.optBoolean("speech_interrupt"), "Backend has no interruption support");
+            if (timerMode) timers = new TimerActionChannel(channel.sessionId, channel.contextId,
+                connection.ready.getLong("server_time_ms") + connection.ready.getInt("seconds") * 1000L);
             connection.socket.setSoTimeout(35000);
-            JSONArray rows = new JSONArray();
             boolean closingMode = voiceEntry || Arrays.asList("close", "thanks", "decline", "yes").contains(mode);
-            String closingReason = voiceEntry || Arrays.asList("decline", "yes").contains(mode) ? "declined_more" : "explicit_close";
+            String closingReason = "timer_create".equals(mode) ? "action_result"
+                : !timerMode && (voiceEntry || Arrays.asList("decline", "yes").contains(mode)) ? "declined_more" : "explicit_close";
             int wakeActivations = 0, followupRearms = 0;
-            String[] fixtures = "normal".equals(mode) ? new String[]{"ai_chat", "dialogue_intro", "dialogue_followup"}
+            String[] fixtures = "timer_create".equals(mode) ? new String[]{"timer_create"}
+                : "timer_yes".equals(mode) ? new String[]{"ai_chat", "entry_yes", "dialogue_close"}
+                : "timer_missing".equals(mode) ? new String[]{"timer_missing", "dialogue_close"}
+                : "timer_query".equals(mode) ? new String[]{"dialogue_joke", "dialogue_close"}
+                : "normal".equals(mode) ? new String[]{"ai_chat", "dialogue_intro", "dialogue_followup"}
                 : "entry_resume".equals(mode) ? new String[]{"entry_search", "entry_yes", "entry_followup", "dialogue_no"}
                 : "entry_missing".equals(mode) ? new String[]{"entry_missing", "dialogue_no"}
                 : "entry_new".equals(mode) ? new String[]{"ai_chat", "dialogue_no"}
@@ -172,10 +205,15 @@ public final class ConversationInstrumentation extends Instrumentation {
                 sendFixture(fixture); JSONObject thinking = null;
                 while (true) {
                     JSONObject event = VoiceConnection.readEvent(connection.input); String type = event.optString("type");
-                    check(VoiceSessionPolicy.conversationEventAllowed(type) && !event.has("tool_call_id"), "Unexpected executor event");
+                    check((timerMode ? VoiceSessionPolicy.timerEventAllowed(type) : VoiceSessionPolicy.conversationEventAllowed(type))
+                        && !event.has("tool_call_id"), "Unexpected executor event");
                     if ("context_selected".equals(type)) {
                         check(voiceEntry, "Unexpected selection in direct context test");
-                        channel.select(event, SystemClock.elapsedRealtime()); lease = channel.lease;
+                         channel.select(event, SystemClock.elapsedRealtime()); lease = channel.lease;
+                        if (timerMode) {
+                            timers.close(); timers = new TimerActionChannel(channel.sessionId, channel.contextId,
+                                connection.ready.getLong("server_time_ms") + connection.ready.getInt("seconds") * 1000L);
+                        }
                         boolean resumed = "entry_resume".equals(mode);
                         check(event.getString("selection").equals(resumed ? "resume" : "new")
                             && event.getInt("restored_turns") == (resumed ? 1 : 0)
@@ -190,22 +228,40 @@ public final class ConversationInstrumentation extends Instrumentation {
                         stopSender(); thinking = event;
                         check(turns.begin(event.getString("turn_id"), event.getLong("turn_seq"), event.getLong("speech_end_ms"), event.getLong("deadline_ms"), SystemClock.elapsedRealtime()), "Invalid global turn deadline");
                         channel.human(event, SystemClock.elapsedRealtime());
-                        present(FaceState.THINKING, "LFM real · sin acciones");
+                        if (timerMode) timers.human(event);
+                        present(FaceState.THINKING, timerMode ? "LFM real · timer solo si petición válida" : "LFM real · sin acciones");
                         if ("cancel_inference".equals(mode)) {
                             long stopped = SystemClock.elapsedRealtime(); connection.close();
                             result.putLong("cancel_to_inference_down_ms", waitInferenceDown(stopped));
                             break;
                         }
+                    } else if ("timer_execute".equals(type) && timerMode) {
+                        check("timer_create".equals(mode), "A generic yes/missing duration authorized an action");
+                        TimerActionChannel.Execution execution = timers.execution(event, SystemClock.elapsedRealtime());
+                        check(execution != null, "Execution duplicated");
+                        check(!timersBefore.containsKey(execution.grant.proposal.timerId), "Isolated ID overlaps a real timer");
+                        timerIds.add(execution.grant.proposal.timerId);
+                        TimerCreation.Receipt receipt = TimerStore.createAuthorized(timerStorage, execution.permit);
+                        check(receipt.status == TimerCreation.Status.CREATED, "Android rejected the isolated timer");
+                        check(timers.execution(event, SystemClock.elapsedRealtime()) == null, "Duplicate execution accepted");
+                        JSONObject packet = timers.result(execution, receipt);
+                        VoiceConnection.writeFrame(connection.output, 3, packet.toString().getBytes("UTF-8"));
+                        result.putBoolean("android_creation_acknowledged", true);
                     } else if ("say".equals(type)) {
-                        check(thinking != null && event.getInt("actions_executed") == 0, "Reply without a turn");
+                        check(thinking != null && (timerMode || event.getInt("actions_executed") == 0), "Reply without a turn");
+                        if (timerMode) timers.validateSpeech(event);
+                        if (fixture.equals("timer_missing")) check("rejected".equals(event.optString("timer_control"))
+                            && event.getString("text").contains("¿De cuánto tiempo"), "Missing duration was not clarified safely");
                         String reason = event.optString("close_reason");
                         boolean farewell = !reason.isEmpty();
-                        boolean closingFixture = Arrays.asList("dialogue_close", "dialogue_thanks", "dialogue_no").contains(fixture);
+                        boolean closingFixture = timerMode ? fixture.equals("dialogue_close") || "timer_create".equals(mode)
+                            : Arrays.asList("dialogue_close", "dialogue_thanks", "dialogue_no").contains(fixture);
                         check(farewell == closingFixture && (!farewell || reason.equals(closingReason)), "Wrong farewell/offer scope");
-                        boolean notice = thinking.optBoolean("administrative") || fixture.equals("entry_yes");
+                        boolean notice = thinking.optBoolean("administrative") || fixture.equals("entry_yes") || !event.optString("timer_control").isEmpty();
                         check(notice || event.optBoolean("offered_more") != farewell, "Missing follow-up offer or offer on farewell");
                         String id = event.getString("turn_id"); long end = event.getLong("speech_end_ms"), deadline = event.getLong("deadline_ms");
-                        check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime(), reason), "Late/duplicate reply");
+                        check(turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime(), reason,
+                            timerMode && "result".equals(event.optString("timer_control"))), "Late/duplicate reply");
                         check(!turns.acceptReply(id, event.getLong("turn_seq"), end, deadline, SystemClock.elapsedRealtime()), "Duplicate reply was accepted");
                         if ("late_start".equals(mode)) {
                             long rejected = SystemClock.elapsedRealtime(); control("tts_started", id, deadline + 1);
@@ -217,15 +273,24 @@ public final class ConversationInstrumentation extends Instrumentation {
                         output = new File(context.getCacheDir(), "conversation-synthetic.wav");
                         check(tts.synthesizeToFile(event.getString("text"), new Bundle(), output, id) != TextToSpeech.ERROR, "Synthesis rejected");
                         check(synthesized.get().await(20, TimeUnit.SECONDS) && failure.get() == null && firstPcm.get() > 0 && firstPcm.get() <= deadline, "Synthesis/deadline failed: " + failure.get());
+                        boolean interrupted = interruptFirst && rows.length() == 0;
                         rows.put(new JSONObject().put("fixture", fixture).put("transcript", thinking.getString("text"))
                             .put("reply", event.getString("text")).put("estimated_end_to_first_synthetic_pcm_ms", firstPcm.get() - end)
                             .put("waveform_end_to_first_synthetic_pcm_ms", firstPcm.get() - waveformEnd)
-                            .put("asr_end_estimate_minus_waveform_end_ms", end - waveformEnd));
-                        check(channel.answer(id, event.getString("text"), SystemClock.elapsedRealtime()), "Completed synthetic response not retained");
-                        check(turns.finishSpeech(id, true), "Speech completion rejected");
-                        control("tts_done", id, SystemClock.elapsedRealtime()); speechId = "";
+                            .put("asr_end_estimate_minus_waveform_end_ms", end - waveformEnd).put("interrupted_control_simulated", interrupted));
+                        if (!interrupted && event.optString("timer_control").isEmpty())
+                            check(channel.answer(id, event.getString("text"), SystemClock.elapsedRealtime()), "Completed synthetic response not retained");
+                        check(turns.finishSpeech(id, !interrupted), "Speech completion rejected");
+                        control(interrupted ? "tts_interrupted" : "tts_done", id, SystemClock.elapsedRealtime()); speechId = "";
+                        if (interrupted) {
+                            check(memory.snapshot(lease, SystemClock.elapsedRealtime()).turns.get(0).assistant == null, "Unheard answer entered Android RAM");
+                            result.putBoolean("first_speech_interrupted", true); result.putBoolean("unheard_answer_not_retained", true);
+                        }
                         check(output.delete(), "Synthetic TTS output cleanup failed"); output = null;
-                        if (farewell) { result.putBoolean("farewell_synthesized", true); continue; }
+                        if (farewell) {
+                            result.putBoolean("action_result".equals(reason) ? "action_result_synthesized" : "farewell_synthesized", true);
+                            continue;
+                        }
                         while (true) {
                             JSONObject reset = VoiceConnection.readEvent(connection.input);
                             channel.verify(reset);
@@ -262,8 +327,10 @@ public final class ConversationInstrumentation extends Instrumentation {
                         check(memory.select(closedId, SystemClock.elapsedRealtime()), "Closed chat cannot be resumed");
                         lease = memory.acquire(SystemClock.elapsedRealtime());
                         ConversationMemory.Snapshot resumed = memory.snapshot(lease, SystemClock.elapsedRealtime());
-                        check(resumed.turns.size() == fixtures.length && resumed.turns.get(0).assistant != null
-                            && resumed.turns.get(resumed.turns.size() - 1).assistant != null,
+                          boolean administrativeFirst = interruptFirst || "timer_create".equals(mode) || "timer_missing".equals(mode);
+                         check(resumed.turns.size() == fixtures.length && (administrativeFirst ? resumed.turns.get(0).assistant == null : resumed.turns.get(0).assistant != null)
+                             && ("timer_create".equals(mode) ? resumed.turns.get(resumed.turns.size() - 1).assistant == null
+                                 : resumed.turns.get(resumed.turns.size() - 1).assistant != null),
                             "Closed chat lost spoken history or fabricated a closing reply");
                         result.putBoolean("chat_closed", true); result.putBoolean("new_chat_isolated", true);
                         result.putBoolean("closed_chat_resumable", true);
@@ -282,6 +349,18 @@ public final class ConversationInstrumentation extends Instrumentation {
             }
             check(!VoiceService.active && !VoiceService.microphoneRecording && !VoiceService.wakeListening, "Synthetic probe activated the real microphone");
             check(timersBefore.equals(TimerStore.prefs(context).getAll()), "Synthetic probe changed persistent timers");
+            check(receiptsBefore.equals(TimerStore.actionReceipts(context).getAll()), "Synthetic probe changed real action receipts");
+            if (timerMode) {
+                int expected = "timer_create".equals(mode) ? 1 : 0;
+                check(timerIds.size() == expected && TimerStore.prefs(timerStorage).getAll().size() == expected,
+                    "Wrong isolated timer count after conversation/model shutdown");
+                result.putInt("isolated_timers_created", expected); result.putBoolean("real_timers_unchanged", true);
+                result.putBoolean("isolated_timer_survived_model_shutdown", expected == 1);
+                if (expected == 1) {
+                    check(rows.length() == 1 && followupRearms == 0, "Standalone action required another turn or left conversation open");
+                    result.putBoolean("direct_request_closed", true);
+                }
+            }
             android.os.Debug.MemoryInfo memory = new android.os.Debug.MemoryInfo(); android.os.Debug.getMemoryInfo(memory);
             result.putInt("app_pss_kib_at_end", memory.getTotalPss()); result.putString("turns", rows.toString());
             result.putString("test", "synthetic_conversation_" + mode); result.putBoolean("microphone_opened", false);
@@ -291,16 +370,35 @@ public final class ConversationInstrumentation extends Instrumentation {
                 check(wakeActivations == 1 && followupRearms == rows.length() - (closingMode ? 1 : 0), "Extra wake activation or missing follow-up ASR");
             result.putInt("wake_activations", wakeActivations); result.putInt("followup_rearms", followupRearms);
             result.putBoolean("one_wake_only", "normal".equals(mode) || closingMode);
-            result.putInt("actions_executed", 0); finish(Activity.RESULT_OK, result);
+            result.putInt("actions_executed", timerIds.size()); result.putBoolean("passed", true);
         } catch (Exception error) {
-            result.putString("error", error.getClass().getSimpleName() + ": " + error.getMessage()); finish(Activity.RESULT_CANCELED, result);
+            result.putString("turns", rows.toString());
+            result.putBoolean("passed", false);
+            result.putString("error", error.getClass().getSimpleName() + ": " + error.getMessage());
         } finally {
             sending.set(false); if (connection != null) try { connection.close(); } catch (IOException ignored) {}
             if (channel != null) channel.close();
+            if (timers != null) timers.close();
+            for (String id : timerIds) try { TimerStore.cancelAlarm(timerStorage, id); }
+            catch (Exception cleanup) { result.putBoolean("passed", false); result.putString("error", "Isolated alarm cleanup failed"); }
+            if (timerMode) {
+                context.deleteSharedPreferences(timerNamespace + "_timers");
+                context.deleteSharedPreferences(timerNamespace + "_timer_action_receipts");
+                boolean cleaned = TimerStore.prefs(timerStorage).getAll().isEmpty() && TimerStore.actionReceipts(timerStorage).getAll().isEmpty();
+                result.putBoolean("isolated_storage_cleaned", cleaned);
+                if (!cleaned) { result.putBoolean("passed", false); result.putString("error", "Isolated storage cleanup failed"); }
+            }
             if (lease != null) memory.release(lease);
             if (tts != null) { tts.stop(); tts.shutdown(); }
             if (output != null) output.delete();
+            if (interruptionAsr != null) try {
+                interruptionAsr.close();
+                boolean released = interruptionAsr.awaitClosed(8000) && SilenceModels.activeUsers() == 0;
+                result.putBoolean("interrupt_asr_released", released);
+                if (!released) throw new IllegalStateException("Local interrupt ASR stayed loaded");
+            } catch (Exception cleanup) { result.putBoolean("passed", false); result.putString("error", "Local ASR cleanup failed"); }
             if (activity != null) runOnMainSync(() -> activity.finish());
         }
+        finish(result.getBoolean("passed") ? Activity.RESULT_OK : Activity.RESULT_CANCELED, result);
     }
 }

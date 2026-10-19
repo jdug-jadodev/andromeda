@@ -336,10 +336,16 @@ def main():
     parser.add_argument("--ai-key", help="Enable local LLM interpretation; mutations require confirmation")
     parser.add_argument("--chat", action="store_true", help="Conversational tool loop with bounded recent memory")
     parser.add_argument("--conversation-only", action="store_true", help="TLS conversation trial; no tool registry/executor")
+    parser.add_argument("--timer-trial", action="store_true", help="Explicit TLS-only create-timer trial; requires --conversation-only, never legacy actions")
+    parser.add_argument("--assistant-tools", action="store_true", help="TLS protocol 9: timer, calendar events and explicit web queries")
     parser.add_argument("--tls-cert")
     parser.add_argument("--tls-key")
     parser.add_argument("--synthetic-input", action="store_true", help="Accept only authenticated synthetic PCM, never a microphone client")
     args = parser.parse_args()
+    if args.timer_trial and not args.conversation_only:
+        raise ValueError("Timer trial requires the restricted TLS conversation transport")
+    if args.assistant_tools and (not args.conversation_only or args.timer_trial):
+        raise ValueError("Assistant tools require restricted TLS conversation and exclude timer-trial")
     if args.wake_only and (not args.test_wake or args.ai_key or args.chat or args.calibrate or args.smoke):
         raise ValueError("Wake-only requires --test-wake and forbids AI/legacy modes")
     if args.conversation_only:
@@ -374,11 +380,12 @@ def main():
     if args.conversation_only:
         from conversation_voice import serve
         serve(args.key, args.ai_key, spotter, args.seconds, args.tls_cert, args.tls_key,
-              'synthetic_pcm' if args.synthetic_input else 'microphone', resource_ok)
+              'synthetic_pcm' if args.synthetic_input else 'microphone', resource_ok, timer_trial=args.timer_trial, assistant_tools=args.assistant_tools)
         stats = resource.getrusage(resource.RUSAGE_SELF)
         print(json.dumps({'event': 'conversation_stopped', 'peak_rss_kib': stats.ru_maxrss,
                           'cpu_seconds': round(stats.ru_utime + stats.ru_stime, 2),
-                          'microphone_opened_by_backend': False, 'actions_executed': 0}), flush=True)
+                          'microphone_opened_by_backend': False, 'timer_trial': args.timer_trial,
+                          'actions_executed_by_backend': 0}), flush=True)
         return
     engines = None
     if args.calibrate and not args.smoke:

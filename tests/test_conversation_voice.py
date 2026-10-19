@@ -76,6 +76,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 ({'content': '{"name":"create_timer","arguments":{"seconds":10}}'}, 'stop'),
                 ({'content': '<|tool_call_start|>create_timer(seconds=10)<|tool_call_end|>'}, 'stop'),
                 ({'content': 'He creado un temporizador.'}, 'stop'),
+                ({'content': '¡Claro! Estoy programando un temporizador con una duración de 30 minutos.'}, 'stop'),
                 ({'content': 'Te avisaré en diez segundos.'}, 'stop'),
                 ({'content': 'La alarma está programada y lista.'}, 'stop')]:
             with self.subTest(message=message), self.assertRaises(ValueError): voice.conversational_reply(message, reason)
@@ -169,7 +170,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False):
         clock = [100000]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
@@ -193,8 +194,10 @@ class ConversationVoiceTests(unittest.TestCase):
             return frames(events) if callable(frames) else frames
         pump = Mock(); pump.poll.side_effect = poll
         with patch.dict(sys.modules, vosk=vosk), patch.object(voice, 'now_ms', side_effect=lambda: clock[0]), \
-                patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)):
-            voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None)
+                patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)), \
+                patch.object(voice.time, 'time', return_value=1792328400):
+            voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
+                          timer_trial=timer_trial, assistant_tools=assistant_tools)
         return events, model
 
     @staticmethod
@@ -299,6 +302,43 @@ class ConversationVoiceTests(unittest.TestCase):
                 self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': closing},
                                                       {'role': 'assistant', 'content': voice.ConversationFlow.FAREWELL}]])
                 model.start.assert_not_called(); model.cancel.assert_called_once()
+
+    def test_interruption_retains_only_human_and_continues_without_wake_or_offer(self):
+        def interrupt(events):
+            event = next(e for e in reversed(events) if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
+                    self.control('tts_interrupted', turn_id='wrong'),
+                    self.control('tts_interrupted', turn_id=event['turn_id']),
+                    self.control('tts_done', turn_id=event['turn_id']),
+                    self.control('tts_interrupted', turn_id=event['turn_id'])]
+        with patch.object(voice, 'print') as log:
+            events, model = self.run_session(self.utterance() + [(101000, interrupt), (103020, [self.pcm(103020)])],
+                                            transcripts=['hola', 'no'])
+        self.assertEqual(model.start.call_count, 2)
+        self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'hola'}]])
+        self.assertEqual([m['role'] for m in model.observed_contexts[-1]], ['system', 'user', 'user'])
+        self.assertNotIn('conversation_closed', [e['type'] for e in events])
+        self.assertEqual(len([e for e in events if e.get('trigger') == 'button']), 1)
+        self.assertTrue(any(e.get('trigger') == 'followup' for e in events))
+        records = [json.loads(call.args[0]) for call in log.call_args_list]
+        self.assertEqual([r['reason'] for r in records if r['event'] == 'conversation_memory_skipped'], ['tts_interrupted'])
+
+    def test_interruption_requires_started_current_speech(self):
+        def premature(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_interrupted', turn_id=event['turn_id'])]
+        events, model = self.run_session(self.utterance() + [(101000, premature)])
+        self.assertEqual(model.memory.pairs, [])
+        self.assertFalse(any(e.get('trigger') == 'followup' for e in events))
+
+    def test_interrupted_explicit_close_still_closes_without_inventing_goodbye(self):
+        def interrupted(events):
+            event = next(e for e in events if e['type'] == 'say')
+            return [self.control('tts_started', turn_id=event['turn_id'], at_ms=101000),
+                    self.control('tts_interrupted', turn_id=event['turn_id'])]
+        events, model = self.run_session(self.utterance() + [(101000, interrupted)], transcripts=['gracias'])
+        self.assertEqual(events[-1]['type'], 'conversation_closed')
+        self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'gracias'}]])
 
     def test_no_closes_only_after_a_completed_followup_offer(self):
         def ack(events):
