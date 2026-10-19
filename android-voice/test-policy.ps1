@@ -27,3 +27,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Manual agenda management tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Calendar guard compilation failed' }
 & java -cp $output local.doja.voice.AgendaGuardTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\agenda_request_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Calendar literal/permit checks failed' }
+& javac -encoding UTF-8 -d $output "$source\SpeechDiagnostics.java" "$PSScriptRoot\tests\SpeechDiagnosticsTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Speech diagnostic compilation failed' }
+& java -cp $output local.doja.voice.SpeechDiagnosticsTest
+if ($LASTEXITCODE -ne 0) { throw 'Speech completion/timing privacy tests failed' }

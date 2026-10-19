@@ -599,6 +599,11 @@ public class MainActivity extends Activity {
     }
     public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) immersive(); }
     public void dump(String prefix, FileDescriptor fd, PrintWriter writer, String[] args) {
+        if (args != null && args.length == 1 && "speech_metrics".equals(args[0])) {
+            try { writer.println("speech_metrics=" + new JSONObject().put("attempts", new org.json.JSONArray(SpeechDiagnostics.snapshot(SystemClock.elapsedRealtime())))); }
+            catch (org.json.JSONException failure) { writer.println("speech_metrics_unavailable"); }
+            return; // Fixed numeric/enumerated TTS state only; never views/transcripts/context.
+        }
         if (args != null && args.length == 1 && "agenda_counts".equals(args[0])) {
             try (AgendaStore store = new AgendaStore(this)) {
                 writer.println("agenda_counts=" + new JSONObject(store.counts()).put("delivery_active", AgendaDeliveryService.active));

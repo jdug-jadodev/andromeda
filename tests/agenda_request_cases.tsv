@@ -8,6 +8,8 @@ ALARM	pon una alarma en dos minutos	en dos minutos		1792328400000	1792328520000	
 REMINDER	recuérdame beber agua en dos minutos	en dos minutos	beber agua	1792328400000	1792328520000	120000
 REMINDER	recuérdame en dos minutos que beba agua	en dos minutos	beba agua	1792328400000	1792328520000	120000
 REMINDER	crea un recordatorio mañana a las ocho de la mañana para beber agua	mañana a las ocho de la mañana	beber agua	1792328400000	1792414800000	0
+REMINDER	recuérdame el veinticinco de octubre de 2026 a las tres de la tarde que tengo una cita	el veinticinco de octubre de 2026 a las tres de la tarde	tengo una cita	1792328400000	1792958400000	0
+REMINDER	crea un recordatorio para el veintiséis de octubre de 2026 a las 16:00 para renovar el seguro	el veintiséis de octubre de 2026 a las 16:00	renovar el seguro	1792328400000	1793048400000	0
 REMINDER	recuérdame no olvidar las llaves en dos minutos	en dos minutos	no olvidar las llaves	1792328400000	1792328520000	120000
 REMINDER	recuérdame beber agua en dos horas y cinco minutos	en dos horas y cinco minutos	beber agua	1792328400000	1792335900000	7500000
 REMINDER	recuérdame beber agua en dos minutos	en 2 minutos	beber agua	1792328400000	1792328520000	120000

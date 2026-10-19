@@ -10,8 +10,17 @@ import html
 import xml.etree.ElementTree as ET
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from agenda_requests import clean
+from agenda_requests import AgendaValidationError, clean
 from doja_intents import normalized
+
+
+WEB_QUERY_REASONS = frozenset({'invalid_request', 'explicit_request_required', 'invalid_query', 'query_mismatch', 'mixed_request'})
+
+
+class WebQueryValidationError(ValueError):
+    def __init__(self, reason):
+        self.reason = reason if reason in WEB_QUERY_REASONS else 'invalid_request'
+        super().__init__(self.reason)  # Fixed technical code only, never query/request text.
 
 
 def bounded(text, units):
@@ -34,14 +43,33 @@ def rss_results(raw):
     return rows
 
 
-def authorized_query(human, proposed):
-    raw = clean(human)
+def explicit_query(human):
+    """Read the whole current request; this helper does not select a tool."""
+    try: raw = clean(human)
+    except AgendaValidationError: raise WebQueryValidationError('invalid_request') from None
     match = re.fullmatch(r'(?:busca|investiga|consulta) (?:en (?:internet|la web)|por internet) (.+)', raw, re.I)
-    if (not match or not isinstance(proposed, str) or not 0 < len(match[1]) <= 160
-            or normalized(match[1]) != normalized(proposed)
-            or re.search(r'\b(?:y|ademas|tambien) (?:pon|crea|programa|dime|cuenta|cancela|no)\b', normalized(match[1]))):
-        raise ValueError('Explicit standalone current web query required')
-    return match[1]  # Only the necessary query, never history, audio or model additions.
+    if not match: raise WebQueryValidationError('explicit_request_required')
+    if not 0 < len(match[1]) <= 160: raise WebQueryValidationError('invalid_query')
+    return match[1]
+
+
+def standalone_query(query):
+    if re.search(r'\b(?:y|ademas|tambien) (?:pon|crea|programa|dime|cuenta|cancela|no)\b', normalized(query)):
+        raise WebQueryValidationError('mixed_request')
+    return query
+
+
+def current_query(human):
+    """Only AFTER exact native search_web(): no model fields to repair or invent."""
+    return standalone_query(explicit_query(human))
+
+
+def authorized_query(human, proposed):
+    # Retained for frozen old-schema controls; never used to repair model args.
+    query = explicit_query(human)
+    if not isinstance(proposed, str): raise WebQueryValidationError('invalid_query')
+    if normalized(query) != normalized(proposed): raise WebQueryValidationError('query_mismatch')
+    return standalone_query(query)
 
 
 def source_url(url):
@@ -101,8 +129,9 @@ def search(query, deadline, cancelled=None):
         connection.close()
     watchdog = threading.Timer(max(.01, end - time.monotonic()), abort); watchdog.daemon = True; watchdog.start()
     try:
-        connection.request('GET', '/search?' + urlencode({'q': query, 'format': 'rss', 'setlang': 'es'}), headers={
-            'User-Agent': 'AndromedaLocalPilot/0.11 (read-only personal assistant)', 'Accept': 'application/rss+xml, application/xml, text/xml', 'Accept-Encoding': 'identity'})
+        connection.request('GET', '/search?' + urlencode({'q': query, 'format': 'rss', 'setlang': 'es', 'mkt': 'es-CO'}), headers={
+            'User-Agent': 'AndromedaLocalPilot/0.11 (read-only personal assistant)', 'Accept': 'application/rss+xml, application/xml, text/xml',
+            'Accept-Encoding': 'identity', 'Accept-Language': 'es-CO,es;q=0.9'})
         response = connection.getresponse()
         if response.status != 200 or not any(value in response.getheader('Content-Type', '') for value in ('xml', 'rss')):
             raise ValueError('Search unavailable')  # No redirects, CAPTCHA solving or provider substitution.

@@ -52,14 +52,16 @@ public final class AlarmAsrInstrumentation extends Instrumentation {
                 && !SilenceListener.recording() && !AudioInputGate.occupied(), "Human audio/action service active");
             try (AgendaStore real = new AgendaStore(context)) { agendaBefore = new HashMap<>(real.counts()); }
             check(agendaBefore.get("ALARM") == 0 && agendaBefore.get("REMINDER") == 0, "Human agenda not empty");
-            check(!context.getDatabasePath("agenda-alarm-asr-test.db").exists(), "Prior isolated alarm database exists");
+            check(!context.getDatabasePath("agenda-isolated-test.db").exists(), "Prior isolated alarm database exists");
             File fixture = new File(context.getFilesDir(), "synthetic/andromeda_fixture_alarm_relative.wav");
             check(fixture.isFile() && fixture.length() > 44, "Public alarm fixture missing");
             AgendaStore.Scheduler fake = new AgendaStore.Scheduler() {
                 public void schedule(AgendaEntry entry) { schedules[0]++; }
                 public void cancel(String id) {}
             };
-            ownedDatabase = true; isolated = new AgendaStore(context, "agenda-alarm-asr-test.db", fake);
+            // Reuse the one isolated name allowed by AgendaStore. Do not widen
+            // its database/scheduler allowlist for this diagnostic.
+            ownedDatabase = true; isolated = new AgendaStore(context, "agenda-isolated-test.db", fake);
             lease = memory.acquire(SystemClock.elapsedRealtime());
             connection = VoiceConnection.open(context, "synthetic_pcm", memory.snapshot(lease, SystemClock.elapsedRealtime()), null, false, true);
             connection.socket.setSoTimeout(35000); channel = new ConversationChannel(memory, lease, connection.ready);
@@ -113,8 +115,8 @@ public final class AlarmAsrInstrumentation extends Instrumentation {
             if (actions != null) actions.close(); if (channel != null) channel.close();
             if (connection != null) try { connection.close(); } catch (IOException ignored) {}
             if (isolated != null) isolated.close(); if (lease != null) memory.release(lease);
-            boolean cleaned = !ownedDatabase || !context.getDatabasePath("agenda-alarm-asr-test.db").exists()
-                || context.deleteDatabase("agenda-alarm-asr-test.db");
+            boolean cleaned = !ownedDatabase || !context.getDatabasePath("agenda-isolated-test.db").exists()
+                || context.deleteDatabase("agenda-isolated-test.db");
             result.putBoolean("isolated_storage_cleaned", cleaned); if (!cleaned) result.putBoolean("passed", false);
         }
         result.putBoolean("microphone_opened", false); result.putBoolean("audio_played", false);

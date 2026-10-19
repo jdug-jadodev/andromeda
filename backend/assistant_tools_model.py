@@ -8,7 +8,8 @@ from agenda_requests import current_event, AgendaValidationError
 from conversation_voice import ConversationModel, conversational_reply
 from doja_intents import normalized
 from timer_proposals import selected_timer_seconds, TimerValidationError
-from web_search import authorized_query, search, speech
+from web_search import WEB_QUERY_REASONS, WebQueryValidationError, current_query, search
+from web_answers import answer as web_answer
 
 
 def tool(name, description, *arguments):
@@ -20,7 +21,7 @@ def tool(name, description, *arguments):
 TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('create_alarm', 'Programa la alarma Android solicitada.'),
          tool('create_reminder', 'Programa el recordatorio solicitado, también «recuérdame».'),
-         tool('search_web', 'Internet.', 'query')]
+         tool('search_web', 'Internet.')]
 SYSTEM = ('Andrómeda. Sí puedes programar con herramientas. Alarmas/recordatorios usan el pedido actual, sin argumentos. '
           'Copia literal en español; no citas/negaciones.')
 
@@ -67,26 +68,52 @@ class AssistantToolsModel(ConversationModel):
         return super().start(text, speech_end, session_end)
 
     def interpret_result(self, message, finish_reason, human):
+        selected, validation, web_attempted = 'none', 'invalid_native_call', False
+        def finish(result, reason):
+            metrics = getattr(self, 'context_metrics', None)
+            if isinstance(metrics, dict):
+                metrics.update(tools_model_choice='native' if message.get('tool_calls') else 'text',
+                    tools_selected_tool=selected, tools_model_kind=result['kind'],
+                    tools_validation=reason, tools_web_attempted=web_attempted)
+            return result  # Fixed enums/boolean only, as in TimerTrialModel; never log human/model text.
         if message.get('tool_calls'):
+            selected = 'unvalidated'
             try:
                 name, args = native_call(message, finish_reason)
-                if name == 'create_timer': return {'kind': 'timer_proposal', 'seconds': selected_timer_seconds(message, finish_reason, human)}
+                selected = name
+                if name == 'create_timer':
+                    validation = 'timer_request_rejected'
+                    return finish({'kind': 'timer_proposal', 'seconds': selected_timer_seconds(message, finish_reason, human)}, 'accepted')
                 if name in {'create_alarm', 'create_reminder'}:
                     # The strict zero-argument schema rejects (never repairs)
                     # any model-supplied date, duration, text or copied request.
+                    validation = 'agenda_request_rejected'
                     value = current_event('ALARM' if name == 'create_alarm' else 'REMINDER', human, self.anchor_wall)
-                    return dict(value, kind='agenda_proposal')
-                query = authorized_query(human, args['query'])
+                    return finish(dict(value, kind='agenda_proposal'), 'accepted')
+                validation = 'web_query_rejected'
+                # Like agenda calls, this schema accepts NO echoed human data.
+                # An added query argument is rejected by native_call(), never
+                # ignored/repaired. Only the exact native selection reaches here.
+                query = current_query(human)
                 try:
                     remaining = (self.work_deadline - self.clock()) / 1000
+                    web_attempted = True  # Search attempted, not proof that a provider received a request.
                     rows = search(query, time.monotonic() + max(0, remaining), self.cancelled)
-                    return {'kind': 'web_result', 'text': speech(rows), 'sources': rows}
+                    # Keep time for the actor to consume even a timeout/fallback
+                    # before the ORIGINAL compute deadline. Never renew a turn.
+                    response = web_answer(query, rows, self.post, self.clock, self.work_deadline - 1500, self.cancelled)
+                    self.context_metrics.update(web_answer_status=response['status'], web_answer_source_index=response['source_index'],
+                                                web_answer_input_tokens=response['input_tokens'])
+                    return finish({'kind': 'web_result', 'text': response['text'], 'sources': rows}, 'web_results' if rows else 'web_no_results')
                 except (OSError, ValueError, TimeoutError):
-                    return {'kind': 'web_result', 'text': 'La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos.', 'sources': []}
+                    return finish({'kind': 'web_result', 'text': 'La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos.', 'sources': []}, 'web_provider_unavailable')
+            except WebQueryValidationError as invalid:
+                reason = invalid.reason if invalid.reason in WEB_QUERY_REASONS else 'invalid_request'
+                return finish({'kind': 'tools_rejected'}, 'web_' + reason)
             except (ValueError, KeyError, TypeError, AgendaValidationError, TimerValidationError):
-                return {'kind': 'tools_rejected'}
+                return finish({'kind': 'tools_rejected'}, validation)
         plain = normalized(human)
         if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
-            return {'kind': 'tools_rejected'}
-        try: return {'kind': 'reply', 'text': conversational_reply(message, finish_reason)}
-        except ValueError: return {'kind': 'tools_rejected'} # Reject unsupported claims, including misleading negative prose, without execution.
+            return finish({'kind': 'tools_rejected'}, 'missing_native_call')
+        try: return finish({'kind': 'reply', 'text': conversational_reply(message, finish_reason)}, 'reply')
+        except ValueError: return finish({'kind': 'tools_rejected'}, 'unsupported_reply') # Reject unsupported claims, including misleading negative prose, without execution.

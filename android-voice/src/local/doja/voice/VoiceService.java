@@ -33,6 +33,7 @@ public class VoiceService extends Service {
     volatile String activeSpeechId = "";
     volatile String activeSpeechText = "";
     int speechGeneration;
+    SpeechDiagnostics.Window speechDiagnostic;
     volatile String lastError = "";
     volatile boolean wakeEnabled;
     volatile boolean aiEnabled;
@@ -82,9 +83,11 @@ public class VoiceService extends Service {
             public void onStart(String id) {
                 main.post(() -> {
                     if (running && id.equals(activeSpeechId)) {
+                        if (speechDiagnostic != null) speechDiagnostic.started(SystemClock.elapsedRealtime());
                         if (conversationOnly) {
                             long now = SystemClock.elapsedRealtime();
                             if (!conversationTurn.acceptStart(id, now)) {
+                                if (speechDiagnostic != null) speechDiagnostic.finish(SpeechDiagnostics.End.LATE_START, now);
                                 if (tts != null) tts.stop(); lastError = "Respuesta tardía descartada"; stopSelf(); return;
                             }
                             controlTurn("tts_started", id, now);
@@ -97,7 +100,7 @@ public class VoiceService extends Service {
                 });
             }
             public void onDone(String id) { main.post(() -> { if (running && id.equals(activeSpeechId)) finishSpeech(true); }); }
-            public void onError(String id) { main.post(() -> { if (running && id.equals(activeSpeechId)) { state("Error de síntesis; micrófono en pausa breve", FaceState.ERROR, null); finishSpeech(false); } }); }
+            public void onError(String id) { main.post(() -> { if (running && id.equals(activeSpeechId)) { state("Error de síntesis; micrófono en pausa breve", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.ENGINE_ERROR); } }); }
         });
     }
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -520,16 +523,17 @@ public class VoiceService extends Service {
             toolResult(event.optString("tool_call_id"), ok, message);
             return;
         }
-        if (!ttsReady) { state(message + " (voz no disponible)", FaceState.ERROR, null); finishSpeech(); return; }
+        speechDiagnostic = SpeechDiagnostics.begin(SystemClock.elapsedRealtime(), message.length());
+        if (!ttsReady) { state(message + " (voz no disponible)", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.NOT_READY); return; }
         if (!conversationOnly) control("tts_started"); state("Preparando voz · " + message, FaceState.PREPARING, null);
         Bundle params = new Bundle(); params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
         String id = conversationOnly ? event.optString("turn_id") : UUID.randomUUID().toString();
         activeSpeechId = id; activeSpeechText = message; speechInterrupted = false; final int generation = ++speechGeneration;
         if (tts.speak(message, TextToSpeech.QUEUE_FLUSH, params, id) == TextToSpeech.ERROR) {
-            state(message + " (no se pudo iniciar la voz)", FaceState.ERROR, null); finishSpeech();
+            state(message + " (no se pudo iniciar la voz)", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.START_REJECTED); return;
         }
-        main.postDelayed(() -> { if (speaking && speechGeneration == generation) {
-            tts.stop(); state("Voz detenida por límite de reproducción", FaceState.ERROR, null); finishSpeech();
+        main.postDelayed(() -> { if (SpeechDiagnostics.timeoutApplies(speaking, speechGeneration, generation, !id.isEmpty() && id.equals(activeSpeechId))) {
+            tts.stop(); state("Voz detenida por límite de reproducción", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.PLAYBACK_LIMIT);
         } }, conversationOnly ? 20000 : 12000);
     }
     void finishSpeech() {
@@ -539,12 +543,16 @@ public class VoiceService extends Service {
         if (!running || !speaking || !id.equals(activeSpeechId)) return;
         speechInterrupted = true;
         stopSpeechOutput();
-        finishSpeech(false);
+        finishSpeech(false, SpeechDiagnostics.End.INTERRUPTED);
     }
     void stopSpeechOutput() { if (tts != null) tts.stop(); }
     synchronized void finishSpeech(boolean completed) {
+        finishSpeech(completed, completed ? SpeechDiagnostics.End.DONE : SpeechDiagnostics.End.OTHER);
+    }
+    synchronized void finishSpeech(boolean completed, SpeechDiagnostics.End reason) {
         if (silenceListener != null) silenceListener.end();
         completed = completed && !speechInterrupted;
+        if (speechDiagnostic != null) speechDiagnostic.finish(speechInterrupted ? SpeechDiagnostics.End.INTERRUPTED : reason, SystemClock.elapsedRealtime());
         if (conversationOnly && !activeSpeechId.isEmpty()) {
             if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null) {
                 if (activeTimerControl.isEmpty()) contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
@@ -584,6 +592,7 @@ public class VoiceService extends Service {
         return VoiceSocketCleanup.closeAsync(connected);
     }
     public void onDestroy() {
+        if (speechDiagnostic != null) speechDiagnostic.finish(SpeechDiagnostics.End.SERVICE_STOP, SystemClock.elapsedRealtime());
         running = active = wakeListening = wakeTestActive = conversationTestActive = timerTrialActive = microphoneRecording = false; main.removeCallbacksAndMessages(null);
         assistantToolsActive = false;
         if (silenceListener != null) silenceListener.close();

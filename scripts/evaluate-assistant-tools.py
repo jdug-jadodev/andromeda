@@ -12,8 +12,14 @@ from agenda_requests import BOGOTA
 
 CASES = [('alarm', 'pon una alarma mañana a las ocho de la mañana', 'agenda_proposal'),
           ('alarm_relative', 'pon una alarma en dos minutos', 'agenda_proposal'),
+          ('alarm_relative_repeat_2', 'pon una alarma en dos minutos', 'agenda_proposal'),
+          ('alarm_relative_repeat_3', 'pon una alarma en dos minutos', 'agenda_proposal'),
          ('reminder', 'recuérdame beber agua en dos minutos', 'agenda_proposal'),
-         ('reminder_direct', 'crea un recordatorio en dos minutos para beber agua', 'agenda_proposal'),
+          ('reminder_direct', 'crea un recordatorio en dos minutos para beber agua', 'agenda_proposal'),
+          ('reminder_date', 'recuérdame el veinticinco de octubre de 2026 a las tres de la tarde que tengo una cita', 'agenda_proposal'),
+          ('reminder_date_repeat_2', 'recuérdame el veinticinco de octubre de 2026 a las tres de la tarde que tengo una cita', 'agenda_proposal'),
+          ('reminder_date_repeat_3', 'recuérdame el veinticinco de octubre de 2026 a las tres de la tarde que tengo una cita', 'agenda_proposal'),
+          ('reminder_date_alternate', 'crea un recordatorio para el veintiséis de octubre de 2026 a las 16:00 para renovar el seguro', 'agenda_proposal'),
          ('timer', 'pon un temporizador de dos minutos', 'timer_proposal'),
          ('web', 'busca en Internet qué es una nebulosa', 'web_result'),
          ('negated', 'no pongas una alarma mañana a las ocho de la mañana', 'no_action'),
@@ -32,9 +38,13 @@ def correct_fields(identity, result, anchor):
         day = datetime.fromtimestamp(anchor / 1000, BOGOTA).date() + timedelta(days=1)
         expected = dict(event_kind='ALARM', text='', delay_ms=0, zone='America/Bogota',
                         due_ms=int(datetime(day.year, day.month, day.day, 8, tzinfo=BOGOTA).timestamp() * 1000))
-    elif identity == 'alarm_relative':
+    elif identity.startswith('alarm_relative'):
         expected = dict(event_kind='ALARM', text='', delay_ms=120000,
                         zone='America/Bogota', due_ms=anchor + 120000)
+    elif identity.startswith('reminder_date'):
+        expected = dict(event_kind='REMINDER', delay_ms=0, zone='America/Bogota',
+                        **({'text': 'renovar el seguro', 'due_ms': 1793048400000} if identity == 'reminder_date_alternate'
+                           else {'text': 'tengo una cita', 'due_ms': 1792958400000}))
     elif identity in {'reminder', 'reminder_direct'}:
         expected = dict(event_kind='REMINDER', text='beber agua', delay_ms=120000,
                         zone='America/Bogota', due_ms=anchor + 120000)

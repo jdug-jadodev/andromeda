@@ -1,7 +1,7 @@
 param([string]$Serial = 'ZY227BCQ85')
 $ErrorActionPreference = 'Stop'
 $package = & adb -s $Serial shell dumpsys package local.doja.voice
-if ($LASTEXITCODE -ne 0 -or ($package -join "`n") -notmatch 'versionCode=19\b') { throw 'This control requires the known code-19 APK' }
+if ($LASTEXITCODE -ne 0 -or ($package -join "`n") -notmatch 'versionCode=20\b') { throw 'This control requires the known code-20 APK' }
 $services = & adb -s $Serial shell dumpsys activity services local.doja.voice
 if ($LASTEXITCODE -ne 0 -or ($services -join "`n") -match 'ServiceRecord') { throw 'Human service active; do not synthesize or instrument' }
 $launch = & adb -s $Serial shell am start -W -n local.doja.voice/.MainActivity --ez offline_preview true
@@ -10,7 +10,7 @@ $counts = & adb -s $Serial shell dumpsys activity local.doja.voice/.MainActivity
 if ($LASTEXITCODE -ne 0 -or ($counts -join "`n") -notmatch '(?m)^agenda_counts=\{"ALARM":0,"REMINDER":0,"delivery_active":false\}\s*$') { throw 'Human agenda not empty or unavailable' }
 $rawTimers = & adb -s $Serial shell run-as local.doja.voice cat shared_prefs/timers.xml
 if ($LASTEXITCODE -ne 0 -or (($rawTimers -join "`n") -split '<string ').Count -ne 1) { throw 'Human timers not empty' }
-$evidence = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\android-voice\alarm-relative-asr-device-code19.txt'
+$evidence = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\android-voice\alarm-relative-asr-device-code20.txt'
 if (Test-Path $evidence) { throw 'Existing alarm ASR evidence: inspect instead of rerunning automatically' }
 try {
     $fixture = & adb -s $Serial shell am instrument -w local.doja.voice/.FixtureInstrumentation
