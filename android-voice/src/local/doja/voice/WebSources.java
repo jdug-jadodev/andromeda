@@ -20,6 +20,7 @@ final class WebSources {
         JSONArray rows = event.getJSONArray("sources");
         if (rows.length() > 3) throw new IllegalArgumentException("Too many web sources");
         StringBuilder display = new StringBuilder(); String firstHost = "", firstExcerpt = "";
+        List<String> hosts = new ArrayList<>(), excerpts = new ArrayList<>();
         for (int i = 0; i < rows.length(); i++) {
             JSONObject row = rows.getJSONObject(i);
             String url = row.getString("url"), title = row.getString("title"), excerpt = row.getString("excerpt");
@@ -34,10 +35,19 @@ final class WebSources {
                 if (end > 0 && Character.isHighSurrogate(excerpt.charAt(end - 1))) end--;
                 firstExcerpt = excerpt.substring(0, end);
             }
+            hosts.add(host); excerpts.add(excerpt);
             display.append(i + 1).append(". ").append(title).append("\n").append(url).append("\n\n");
         }
         String answer = event.getString("text");
-        if (rows.length() == 0) {
+        if (event.has("web_answer")) {
+            JSONObject binding = event.getJSONObject("web_answer");
+            if (binding.length() != 5 || !(binding.get("version") instanceof Integer) || binding.getInt("version") != 1
+                    || !(binding.get("source_index") instanceof Integer) || !(binding.get("mode") instanceof String)
+                    || !(binding.get("evidence") instanceof String) || !(binding.get("answer_es") instanceof String))
+                throw new IllegalArgumentException("Invalid web answer binding");
+            WebAnswerPolicy.validate(binding.getString("mode"), binding.getInt("source_index"), binding.getString("evidence"),
+                binding.getString("answer_es"), hosts, excerpts, answer);
+        } else if (rows.length() == 0) {
             if (!(answer.equals("No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda. ¿Necesitas algo más?")
                     || answer.equals("La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos. ¿Necesitas algo más?")))
                 throw new IllegalArgumentException("Unsupported web success claim");

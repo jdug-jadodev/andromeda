@@ -2,3 +2,7 @@
 backups/
 artifacts/
 __pycache__/
+# Credenciales de servicios: solo se versionan plantillas sin secretos.
+.env
+.env.*
+!.env.example

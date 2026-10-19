@@ -20,6 +20,16 @@ SPANISH = set('el la los las un una de del es son en que y se para por como con 
 ENGLISH = set('the is are this that with from which and an of it as for to'.split())
 QUERY_STOP = SPANISH | {'busca', 'internet', 'web', 'consulta', 'investiga', 'informacion', 'sobre'}
 FALLBACK = 'No pude obtener de esos extractos una respuesta fiable en español. Las fuentes están en Opciones.'
+MODES = frozenset({'quoted', 'translated', 'service_summary', 'no_results', 'insufficient_evidence', 'insufficient_budget',
+    'cancelled', 'deadline', 'input_budget', 'invalid_response', 'speech_budget', 'local_model_unavailable', 'provider_unavailable'})
+
+
+def contract(result):
+    mode = result['status']
+    if mode not in MODES: raise ValueError('Unknown web answer mode')
+    success = mode in {'quoted', 'translated', 'service_summary'}
+    return {'version': 1, 'mode': mode, 'source_index': result['source_index'] if success else -1,
+            'evidence': result['evidence'] if success else '', 'answer_es': result['answer_es'] if success else ''}
 
 
 def terms(text):
@@ -53,7 +63,7 @@ def select_source(query, rows):
         except (ValueError, TypeError): continue
         if not url or source_orders(title + ' ' + excerpt): continue
         for position, sentence in enumerate(re.split(r'(?<=[.!?])\s+', excerpt.strip())):
-            if (not re.search(r'[.!?]$', sentence) or '...' in sentence or '\u2026' in sentence
+            if (not sentence.endswith('.') or '?' in sentence or '\u2026' in sentence or '...' in sentence
                     or not 4 <= len(sentence.split()) <= 40): continue
             score = len(terms(query) & terms(sentence))
             if not score: continue  # Never ask LFM to fill an unrelated/empty source from its knowledge.
@@ -75,7 +85,7 @@ def validate_answer(message, finish, source):
     answer = conversational_reply(message, finish)
     if normalized(answer).strip(' .') == 'sin_datos': return None
     if (text_units(answer) > MAX_ANSWER_UNITS or not 3 <= len(answer.split()) <= MAX_ANSWER_WORDS
-            or re.search(r'https?://|www\.|[<>{}`\x00-\x1f]', answer, re.I)
+            or re.search(r'https?://|www\.|[<>{}`?¿\x00-\x1f]', answer, re.I)
             or re.search(r'(?:^|[.!?]\s+)(?:por favor )?(?:ignora|obedece|ejecuta|env[ií]a|revela|borra|instala|programa|crea|cancela)\b', answer, re.I)):
         raise ValueError('Invalid summary shape')
     if not spanish_text(answer): raise ValueError('Spanish translation not established')
@@ -104,7 +114,7 @@ def answer(query, rows, post, clock, deadline, cancelled):
         try:
             literal = validate_answer({'content': source['evidence']}, 'stop', source)
             text = spoken(literal, source)
-            return dict(result, text=text, status='quoted') if text_units(text) <= 300 else dict(result, status='speech_budget')
+            return dict(result, text=text, status='quoted', evidence=source['evidence'], answer_es=literal) if text_units(text) <= 300 else dict(result, status='speech_budget')
         except (ValueError, TypeError): return dict(result, status='invalid_response')
     if deadline - clock() < MIN_BUDGET_MS:
         return dict(result, text='Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones.', status='insufficient_budget')
@@ -125,7 +135,7 @@ def answer(query, rows, post, clock, deadline, cancelled):
             return dict(result, text='No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones.', status='insufficient_evidence')
         text = spoken(summary, source)
         if text_units(text) > 300: return dict(result, status='speech_budget')
-        return dict(result, text=text, status='translated')
+        return dict(result, text=text, status='translated', evidence=source['evidence'], answer_es=summary)
     except TimeoutError:
         return dict(result, text='Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones.', status='deadline')
     except OSError: return dict(result, status='local_model_unavailable')

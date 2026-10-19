@@ -384,7 +384,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
              'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
               'timer_control': turn.get('timer_control', ''),
-              **({'sources': turn.get('sources', [])} if assistant_tools else {}),
+               **({'sources': turn.get('sources', [])} if assistant_tools else {}),
+              **({'web_answer': turn['web_answer']} if assistant_tools and turn.get('timer_control') == 'web'
+                 and turn.get('web_answer') is not None else {}),
              'close_reason': close_reason, 'offered_more': turn['offered_more']})
 
     def timer_response(response):
@@ -394,6 +396,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             state = 'executing'; return
         turn['timer_control'] = response.get('timer_control', '')
         turn['sources'] = response.get('sources', [])
+        turn['web_answer'] = response.get('web_answer')
         turn['actions_executed'] = response.get('actions_executed', 0)
         say(response['text'], close_reason=response.get('close_reason', ''), offered_more=response.get('offered_more', False))
 

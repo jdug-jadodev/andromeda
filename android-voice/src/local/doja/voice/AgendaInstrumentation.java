@@ -74,6 +74,31 @@ public final class AgendaInstrumentation extends Instrumentation {
             JSONObject web = new JSONObject().put("sources", new JSONArray().put(new JSONObject().put("url", "https://example.org/public").put("title", "Fuente pública").put("excerpt", "Extracto público.")))
                 .put("text", "Un extracto de example.org dice: Extracto público. Es un resultado de búsqueda, no una verificación completa de la página. ¿Necesitas algo más?");
             check(WebSources.validate("busca en Internet nebulosas", web).contains("https://example.org/public"), "Public source guard rejected fixture");
+            String evidence = "A nebula is a cloud of gas and dust in space.";
+            String translated = "Una nebulosa es una nube de gas y polvo en el espacio.";
+            JSONObject binding = new JSONObject().put("version", 1).put("mode", "translated").put("source_index", 0)
+                .put("evidence", evidence).put("answer_es", translated);
+            JSONObject qualified = new JSONObject().put("sources", new JSONArray().put(new JSONObject().put("url", "https://example.org/public")
+                .put("title", "Nebula").put("excerpt", evidence))).put("web_answer", binding)
+                .put("text", "Según el extracto de example.org: " + translated + " ¿Necesitas algo más?");
+            check(WebSources.validate("busca en Internet nebulosas", qualified).contains("https://example.org/public"), "Typed translated source rejected");
+            for (Object invalid : new Object[]{"1", true, 2}) {
+                JSONObject corrupt = new JSONObject(qualified.toString()); corrupt.getJSONObject("web_answer").put("version", invalid);
+                boolean rejected = false;
+                try { WebSources.validate("busca en Internet nebulosas", corrupt); } catch (Exception expected) { rejected = true; }
+                check(rejected, "Invalid typed version accepted");
+            }
+            for (String field : new String[]{"evidence", "answer_es"}) {
+                JSONObject corrupt = new JSONObject(qualified.toString()); corrupt.getJSONObject("web_answer").put(field, "Otro texto que no corresponde.");
+                boolean rejected = false;
+                try { WebSources.validate("busca en Internet nebulosas", corrupt); } catch (Exception expected) { rejected = true; }
+                check(rejected, "Altered source-bound payload accepted");
+            }
+            JSONObject extra = new JSONObject(qualified.toString()); extra.getJSONObject("web_answer").put("query", "invented");
+            boolean extraRejected = false;
+            try { WebSources.validate("busca en Internet nebulosas", extra); } catch (Exception expected) { extraRejected = true; }
+            check(extraRejected, "Extra source-binding field accepted");
+            result.putBoolean("typed_web_answer_guard", true);
             check(timers.equals(TimerStore.prefs(context).getAll()) && receipts.equals(TimerStore.actionReceipts(context).getAll()), "Real timer data changed");
             result.putBoolean("passed", true); result.putBoolean("android_sqlite", true); result.putBoolean("real_scheduler", false);
             result.putBoolean("microphone_opened", false); result.putBoolean("audio_played", false); result.putBoolean("llm_started", false);

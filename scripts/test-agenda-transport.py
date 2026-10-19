@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import signal
 import sys
+import threading
 import time
 import uuid
 
@@ -18,7 +19,7 @@ import assistant_tools_model as native
 from agenda_requests import current_event
 from assistant_tools_trial import AssistantToolsTrial
 from doja_stream import frame, resource_ok
-from web_search import speech
+from web_answers import answer as web_answer, contract as web_contract
 
 
 class FixtureModel:
@@ -35,10 +36,31 @@ CASES = [('alarm', 'ALARM', 'pon una alarma mañana a las ocho de la mañana'),
          ('reminder_direct', 'REMINDER', 'crea un recordatorio en dos minutos para beber agua'),
          ('web', '', 'busca en Internet nebulosas')]
 current = None
+_fixture_listener = None
+_socket_type = wire.socket.socket
+
+
+class FixtureSocket(_socket_type):
+    def listen(self, backlog):
+        global _fixture_listener
+        super().listen(backlog)
+        _fixture_listener = self
+
+
+def close_fixture_listener():
+    global _fixture_listener
+    if _fixture_listener is None: raise RuntimeError('Missing fixture listener')
+    _fixture_listener.close(); _fixture_listener = None
 
 
 def fixture_session(conn, detector, model, limit, check, source, context_id, entry, timer_trial, assistant_tools):
     assert source == 'synthetic_pcm' and assistant_tools and not timer_trial and entry is None
+    # Test-only sequencing barrier: once this synthetic client is authenticated,
+    # stop accepting TCP peers BEFORE it receives ready/finishes the case. The
+    # next case can otherwise queue a TLS handshake on the about-to-close old
+    # listener instead of seeing the already-supported connection-refused path.
+    # No production transport, pin, deadline or Android retry policy is changed.
+    close_fixture_listener()
     identity, kind, human = current
     session = uuid.uuid4().hex
     def emit(event): wire.send_event(conn, dict(event, session_id=session, context_id=context_id))
@@ -65,13 +87,17 @@ def fixture_session(conn, detector, model, limit, check, source, context_id, ent
             response = trial.result(json.loads(raw), session, context_id)
             assert response['actions_executed'] == 1 and response['close_reason'] == 'action_result'
         else:
-            sources = [dict(url='https://example.org/public',title='Fuente pública',excerpt='Extracto público.')]
-            response = trial.model_result(dict(kind='web_result', text=speech(sources), sources=sources),
+            sources = [dict(url='https://example.org/public',title='Nebulosas',excerpt='Una nebulosa es una nube de gas y polvo en el espacio.')]
+            def forbidden_inference(*args): raise AssertionError('Transport fixture cannot start inference')
+            rendered = web_answer('nebulosas', sources, forbidden_inference, wire.now_ms, now + 22000, threading.Event())
+            assert rendered['status'] == 'quoted'  # Actual installed renderer; literal Spanish requires no LFM.
+            response = trial.model_result(dict(kind='web_result', text=rendered['text'], sources=sources, web_answer=web_contract(rendered)),
                 turn,session,context_id,now+90000)
         emit(dict(type='say', turn_id=turn['id'], turn_seq=1, speech_end_ms=now, deadline_ms=now+30000,
                   text=response['text'], timer_control=response['timer_control'], sources=response.get('sources', []),
                   actions_executed=response.get('actions_executed',0), offered_more=response.get('offered_more',False),
-                  close_reason=response.get('close_reason','')))
+                  close_reason=response.get('close_reason',''),
+                  **({'web_answer': response['web_answer']} if 'web_answer' in response else {})))
         conn.settimeout(8)
         packet_kind, raw = frame(conn)
         assert packet_kind == 3 and json.loads(raw) == {'action':'fixture_validated'}  # NOT TTS completion.
@@ -85,6 +111,7 @@ def main():
     signal.alarm(100)
     print(json.dumps(dict(event='agenda_transport_fixture_started', pid=os.getpid())), flush=True)
     wire.session = fixture_session
+    wire.socket.socket = FixtureSocket
     native.AssistantToolsModel = FixtureModel
     private = Path('/var/lib/andromeda-conversation')
     global current

@@ -31,6 +31,15 @@ debian_user() {
     /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin ANDROMEDA_MODEL=lfm \
     /opt/doha-voice/bin/python "$@"
 }
+voice_user() {
+  if [ "$TRIAL" = tools ]; then
+    # Read the private .env INSIDE Debian after env -i, only for the tool backend.
+    # No sourcing shell code, secrets in argv, or credentials given to llama.cpp.
+    debian_user /opt/doha-voice/pilot/with_web_search_env.py "$@"
+  else
+    debian_user "$@"
+  fi
+}
 cleanup() {
   touch "$WORK/DONE"
   if [ -n "$SUPERVISOR" ]; then wait "$SUPERVISOR" 2>/dev/null || true; fi
@@ -53,11 +62,11 @@ else
   echo 'Conversacion LFM preparada, sin acciones. El microfono sigue apagado; elegir prueba en la app.'
 fi
 if [ "$MODE" = test ]; then
-  debian_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
+  voice_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
     --seconds "$SECONDS_LIMIT" --test-wake --conversation-only --ai-key "$INNER/key" \
     --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem" --synthetic-input $TIMER_FLAG
 else
-  debian_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
+  voice_user /opt/doha-voice/pilot/doja_stream.py --key "$PRIVATE/token" \
     --seconds "$SECONDS_LIMIT" --test-wake --conversation-only --ai-key "$INNER/key" \
     --tls-cert "$PRIVATE/server-cert.pem" --tls-key "$PRIVATE/server-key.pem" $TIMER_FLAG
 fi

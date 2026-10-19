@@ -31,3 +31,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Calendar literal/permit checks failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Speech diagnostic compilation failed' }
 & java -cp $output local.doja.voice.SpeechDiagnosticsTest
 if ($LASTEXITCODE -ne 0) { throw 'Speech completion/timing privacy tests failed' }
+& javac -encoding UTF-8 -d $output "$source\WebAnswerPolicy.java" "$PSScriptRoot\tests\WebAnswerPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Web answer contract compilation failed' }
+& java -cp $output local.doja.voice.WebAnswerPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Source-bound web answer contract tests failed' }

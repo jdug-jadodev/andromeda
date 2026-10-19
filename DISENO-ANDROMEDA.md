@@ -193,7 +193,7 @@ El usuario quiere empezar con un MVP e irlo mejorando, incluyendo automatizació
 
 #### Inventario doméstico inicial aportado por el usuario
 
-- TV LG con webOS; modelo/año y disponibilidad de control local pendientes.
+- TV LG **65UR7300PSA**, modelo identificado en la imagen aportada; ficha original de LG indica webOS 23. Versión instalada, red/IP, emparejamiento y controles locales efectivos aún pendientes. No registrar el número de serie de la imagen.
 - Lavadora LG WashTower (torre); modelo exacto y capacidades de integración pendientes. No asumir que permite iniciar ciclos remotamente ni habilitar acciones de riesgo.
 - Aspiradora identificada por el usuario como Xiaomi «Vacuum 5»; confirmar modelo exacto antes de seleccionar protocolo o integración.
 - Xbox Series X; capacidades de consulta/control y requisitos de autenticación pendientes.

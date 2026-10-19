@@ -32,7 +32,8 @@ class AssistantToolsTrial:
             return self.timer.model_result(result, turn, session, context, session_end)
         if result['kind'] == 'tools_rejected': return {'text': REJECTION, 'timer_control': 'rejected'}
         if result['kind'] == 'web_result':
-            return {'text': ConversationFlow.with_offer(result['text']), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True}
+            return {'text': ConversationFlow.with_offer(result['text']), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True,
+                    **({'web_answer': result['web_answer']} if 'web_answer' in result else {})}
         if result['kind'] != 'agenda_proposal' or self.inflight is not None or turn['id'] in self.consumed or len(self.consumed) >= 24:
             raise ValueError('Invalid agenda proposal state')
         if not all(isinstance(value, str) and re.fullmatch('[0-9a-f]{32}', value) for value in (turn['id'], session, context)):

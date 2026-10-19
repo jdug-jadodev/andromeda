@@ -8,8 +8,10 @@ from agenda_requests import current_event, AgendaValidationError
 from conversation_voice import ConversationModel, conversational_reply
 from doja_intents import normalized
 from timer_proposals import selected_timer_seconds, TimerValidationError
-from web_search import WEB_QUERY_REASONS, WebQueryValidationError, current_query, search
-from web_answers import answer as web_answer
+from web_search import WEB_QUERY_REASONS, WebQueryValidationError, current_query
+from web_answers import contract as web_contract
+from internet_search import buscar_en_internet, InternetSearchError
+from internet_answers import answer as internet_answer
 
 
 def tool(name, description, *arguments):
@@ -98,15 +100,19 @@ class AssistantToolsModel(ConversationModel):
                 try:
                     remaining = (self.work_deadline - self.clock()) / 1000
                     web_attempted = True  # Search attempted, not proof that a provider received a request.
-                    rows = search(query, time.monotonic() + max(0, remaining), self.cancelled)
+                    result = buscar_en_internet(query, time.monotonic() + max(0, remaining - 1.5), self.cancelled)
+                    rows = result['fuentes']
                     # Keep time for the actor to consume even a timeout/fallback
                     # before the ORIGINAL compute deadline. Never renew a turn.
-                    response = web_answer(query, rows, self.post, self.clock, self.work_deadline - 1500, self.cancelled)
+                    response = internet_answer(query, result, self.post, self.clock, self.work_deadline - 1500, self.cancelled)
                     self.context_metrics.update(web_answer_status=response['status'], web_answer_source_index=response['source_index'],
                                                 web_answer_input_tokens=response['input_tokens'])
-                    return finish({'kind': 'web_result', 'text': response['text'], 'sources': rows}, 'web_results' if rows else 'web_no_results')
-                except (OSError, ValueError, TimeoutError):
-                    return finish({'kind': 'web_result', 'text': 'La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos.', 'sources': []}, 'web_provider_unavailable')
+                    return finish({'kind': 'web_result', 'text': response['text'], 'sources': rows,
+                                   'web_answer': web_contract(response)}, 'web_results' if rows else 'web_no_results')
+                except (OSError, ValueError, TimeoutError) as error:
+                    if isinstance(error, InternetSearchError): self.context_metrics['web_provider_status'] = error.code
+                    return finish({'kind': 'web_result', 'text': 'La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos.', 'sources': [],
+                                   'web_answer': web_contract({'status': 'provider_unavailable'})}, 'web_provider_unavailable')
             except WebQueryValidationError as invalid:
                 reason = invalid.reason if invalid.reason in WEB_QUERY_REASONS else 'invalid_request'
                 return finish({'kind': 'tools_rejected'}, 'web_' + reason)
