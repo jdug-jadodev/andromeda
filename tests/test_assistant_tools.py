@@ -113,7 +113,7 @@ class AssistantToolsTests(unittest.TestCase):
         with self.assertRaises(ValueError): native_call(duplicate, 'tool_calls')
         payload = AssistantToolsModel.payload([{'role': 'system', 'content': 'old'}, {'role': 'user', 'content': 'Hola'}])
         self.assertEqual(payload['max_tokens'], 96); self.assertEqual(payload['tool_choice'], 'auto')
-        self.assertFalse(payload['parallel_tool_calls']); self.assertEqual(len(payload['tools']), 4)
+        self.assertFalse(payload['parallel_tool_calls']); self.assertEqual(len(payload['tools']), 5)
         self.assertTrue(all('required' in item['function']['parameters'] for item in TOOLS))
         self.assertTrue(all('required' not in item['function']['parameters'] for item in payload['tools']))
         self.assertEqual(next(item['function']['parameters']['properties'] for item in TOOLS if item['function']['name'] == 'search_web'), {})
@@ -347,8 +347,8 @@ class AssistantToolsTests(unittest.TestCase):
                     **{key: grant[key] for key in ('event_id', 'nonce', 'event_kind', 'due_ms', 'request_turn_id', 'request_sequence')})]
         events, model = harness.run_session(harness.utterance() + [(100100, ack), (101000, harness.ack_last)],
             transcripts=[turn['text']], answer=result, assistant_tools=True)
-        self.assertEqual(events[0]['protocol'], 9); self.assertTrue(events[0]['assistant_tools'])
-        self.assertEqual(events[0]['allowed_tools'], ['create_timer', 'create_alarm', 'create_reminder', 'search_web'])
+        self.assertEqual(events[0]['protocol'], 10); self.assertTrue(events[0]['assistant_tools'])
+        self.assertEqual(events[0]['allowed_tools'], ['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'])
         self.assertEqual(sum(event['type'] == 'agenda_execute' for event in events), 1)
         answer = next(event for event in events if event['type'] == 'say')
         self.assertEqual(answer['timer_control'], 'agenda_result'); self.assertEqual(answer['actions_executed'], 1)

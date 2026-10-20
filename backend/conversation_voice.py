@@ -61,6 +61,8 @@ def reject_unsupported_claims(text):
         r'\b(?:he|hemos|ya|acabo de) (?:\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\b',
         r'\b(?:temporizador|alarma|recordatorio)\b.{0,45}\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|list[oa])\b',
         r'\b(?:te avisare|te recordare|sonara en|voy a (?:poner|crear|programar|activar|cancelar)|timer (?:set|started)|alarm (?:set|scheduled))\b',
+        r'\b(?:he|hemos|ya|acabo de)\s+(?:(?:bajado|subido|ajustado|establecido)\b)',
+        r'\bvolumen\b.{0,35}\b(?:ajustado|establecido|puesto|al [0-9]+)\b',
     ]
     if any(re.search(pattern, plain) for pattern in patterns):
         raise ValueError('Unsupported action/current-data claim')
@@ -359,10 +361,11 @@ class ConversationModel:
         if self.thread is not None: self.thread.join(timeout=.5)
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False):
     from vosk import KaldiRecognizer, SetLogLevel
     if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
+    if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
     SetLogLevel(-1)
     response_start_ms = 60000 if assistant_tools else 30000
     pump = FramePump(conn)
@@ -380,7 +383,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     timers = None
     if assistant_tools:
         from assistant_tools_trial import AssistantToolsTrial
-        timers = AssistantToolsTrial(now_ms)
+        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda)
     elif timer_trial:
         from timer_trial import TimerTrial
         timers = TimerTrial(now_ms)
@@ -417,7 +420,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
              'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
-              'timer_control': turn.get('timer_control', ''),
+               'timer_control': turn.get('timer_control', ''),
+               **({'agenda_kind': turn['agenda_kind']} if turn.get('timer_control') == 'agenda_question' else {}),
                **({'sources': turn.get('sources', [])} if assistant_tools else {}),
               **({'web_answer': turn['web_answer']} if assistant_tools and turn.get('timer_control') == 'web'
                  and turn.get('web_answer') is not None else {}),
@@ -429,6 +433,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         if response.get('executing'):
             state = 'executing'; return
         turn['timer_control'] = response.get('timer_control', '')
+        turn['agenda_kind'] = response.get('agenda_kind', '')
         turn['sources'] = response.get('sources', [])
         turn['web_answer'] = response.get('web_answer')
         turn['actions_executed'] = response.get('actions_executed', 0)
@@ -439,14 +444,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             'speech_end_ms': turn['speech_end'], 'deadline_ms': turn['deadline_ms'],
             'reason': turn['close_reason']})
 
-    emit({'type': 'ready', 'protocol': 9 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
+    emit({'type': 'ready', 'protocol': 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
                       'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
                       **({'assistant_tools': True} if assistant_tools else {}),
-                      'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web'] if assistant_tools else ['create_timer'] if timer_trial else [],
+                      'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'] if assistant_tools else ['create_timer'] if timer_trial else [],
                       'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                       'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
-                       **({'web_response_mode': 'worker_first_v1'} if assistant_tools else {}),
+                       **({'web_response_mode': 'worker_first_v2_medium', 'phone_volume_policy': 'absolute_media_v1'} if assistant_tools else {}),
+                       **({'agenda_dialogue_policy': 'guided_agenda_v1', 'action_completion_policy': 'continue_v1'} if guided_agenda else {}),
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
                        'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
                        'voice_entry': entry is not None, 'speech_interrupt': True})
@@ -492,15 +498,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         timer_response(response)
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
-                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') == 'service_answer' else 20000): return
+                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_excerpt'} else 20000): return
             for kind, data in pump.poll():
                 if kind == 3:
                     control = json.loads(data); action = control.get('action')
                     if action == 'stop': return
                     if action == 'pause': return
                     if action == 'activate' and state == 'wake': activate('button')
-                    if action in {'timer_result', 'agenda_result'} and timers is not None:
-                        if action == 'agenda_result' and not assistant_tools: raise ValueError('Agenda not enabled')
+                    if action in {'timer_result', 'agenda_result', 'volume_result'} and timers is not None:
+                        if action in {'agenda_result', 'volume_result'} and not assistant_tools: raise ValueError('Tools not enabled')
                         if state == 'executing':
                             response = timers.result(control, session_id, context_id)
                             if response is not None:
@@ -520,8 +526,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'speech_end_estimated': True, 'useful_audio_verified': False,
                                     'actions_executed': turn.get('actions_executed', 0)}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
+                            if guided_agenda: timers.spoken(turn['id'], True)
                             if (turn.get('web_answer') or {}).get('mode') == 'service_answer':
                                 model.memory.commit_web(turn['text'], turn['web_answer']['answer_es'])
+                            elif (turn.get('web_answer') or {}).get('mode') == 'service_excerpt':
+                                model.memory.commit_web(turn['text'], turn['web_answer']['evidence'])
                             elif turn.get('timer_control') == 'web_followup':
                                 model.memory.commit_followup(turn['text'], turn['answer'])
                             elif turn.get('timer_control'):
@@ -535,6 +544,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 closed(); return
                             reset(continue_chat=True)
                         elif action in {'tts_failed', 'tts_interrupted'}:
+                            if guided_agenda: timers.spoken(turn['id'], False)
                             if not turn.get('administrative'): model.memory.unanswered(turn['text'])
                             print(json.dumps({'event': 'conversation_memory_skipped', 'source': source,
                                 'turn_seq': turn['seq'], 'reason': action,
@@ -608,6 +618,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         recognizer = timeline = None; preroll.clear()
                         continue  # Close only after farewell receipt/failure; never invoke LFM.
                     if assistant_tools: model.anchor_wall, model.anchor_boot = turn['calendar_anchor_ms'], turn['calendar_boot_ms']
+                    if guided_agenda:
+                        response = timers.human(turn, session_id, context_id, session_end)
+                        if response is not None:
+                            model.memory.messages(text, activity_ms=speech_end)
+                            timer_response(response); continue
                     turn['compute_end'] = model.start(text, speech_end, session_end)
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:
@@ -634,17 +649,27 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False):
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
+    if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
+    if resident is not None:
+        from resident_runtime import ResidentRuntime
+        if not isinstance(resident,ResidentRuntime) or timer_trial or not assistant_tools:
+            raise ValueError('Resident mode requires explicit tools supervisor')
     if assistant_tools:
         if timer_trial: raise ValueError('Conflicting tool modes')
         from assistant_tools_model import AssistantToolsModel
-        model = AssistantToolsModel(inference_key)
+        model_type = AssistantToolsModel
     elif timer_trial:
         from timer_trial_model import TimerTrialModel
-        model = TimerTrialModel(inference_key)
-    else: model = ConversationModel(inference_key)
+        model_type = TimerTrialModel
+    else: model_type = ConversationModel
+    def make_model():
+        value = model_type(inference_key,owned=resident.acquire()) if resident is not None else model_type(inference_key)
+        if guided_agenda: value.enable_agenda_dialogue()
+        return value
+    model = make_model()
     try:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -653,25 +678,34 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
             # Reuse TIME_WAIT only; bind/listener guards still refuse an active peer.
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(('127.0.0.1', 11436)); server.listen(1); server.settimeout(.5)
-            print(json.dumps({'event': 'conversation_ready', 'protocol': 9 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
+            print(json.dumps({'event': 'conversation_ready', 'protocol': 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
                               'input_source': source, 'microphone_opened': False, 'actions_enabled': timer_trial or assistant_tools}), flush=True)
-            deadline = now_ms() + 300000
-            while now_ms() < deadline:
+            deadline = resident.deadline if resident is not None else now_ms() + 300000
+            while deadline is None or now_ms() < deadline:
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation readiness guard')
                 try: raw, _ = server.accept()
                 except socket.timeout: continue
                 with raw:
-                    authentication_end = min(now_ms() + 4000, deadline)
+                    authentication_end = now_ms() + 4000
+                    if deadline is not None: authentication_end = min(authentication_end, deadline)
                     raw.settimeout(max(.001, (authentication_end - now_ms()) / 1000))
                     try:
                         with context.wrap_socket(raw, server_side=True) as conn:
                             hello = read_hello(conn, authentication_end)
-                            if assistant_tools and hello.get('web_response_mode') != 'worker_first_v1': continue
+                            if assistant_tools and hello.get('web_response_mode') != 'worker_first_v2_medium': continue
+                            if assistant_tools and hello.get('phone_volume_policy') != 'absolute_media_v1': continue
+                            if guided_agenda and (hello.get('agenda_dialogue_policy') != 'guided_agenda_v1' or hello.get('action_completion_policy') != 'continue_v1'): continue
                             supplied = hello.get('token', '')
-                            if (hello.get('protocol') != (9 if assistant_tools else 8 if timer_trial else PROTOCOL)
+                            if (hello.get('protocol') != (11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL)
                                     or hello.get('mode') != ('assistant_tools' if assistant_tools else 'timer_trial' if timer_trial else 'conversation_only')
                                     or hello.get('source') != source or not isinstance(supplied, str)
                                     or not hmac.compare_digest(supplied.encode(), key.encode())):
+                                continue
+                            if resident is not None and not resident.may_accept(limit):
+                                # Lifetime admission is NOT a TLS failure. Authenticate
+                                # first, reject before restoring any human context or
+                                # starting a session; never extend the original deadline.
+                                send_event(conn, {'type': 'error', 'reason': 'resident_window_ending'})
                                 continue
                             try: context_id = model.memory.restore(hello.get('context'))
                             except ContextExpired:
@@ -688,10 +722,24 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
-                            session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools)
-                            return
+                            session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
+                                **({'guided_agenda': True} if guided_agenda else {}))
+                            if resident is None: return
+                            # Session.cancel revokes only this lease. Drop all
+                            # process-side human state before accepting another.
+                            resident.release(model); model = None; entry = None
+                            detector.reset()
+                            if not resident.check(): return
+                            model = make_model()
                     except (OSError, EOFError, ValueError):
                         # No credentials, frames or speech text in diagnostics.
-                        if not model.owned.alive(): return
+                        if model is None or not model.owned.alive(): return
+                        if resident is not None:
+                            resident.release(model); model = None; entry = None
+                            detector.reset()
+                            if not resident.check(): return
+                            model = make_model()
     finally:
-        model.cancel()
+        if model is not None:
+            if resident is not None: resident.release(model)
+            else: model.cancel()

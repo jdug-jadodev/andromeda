@@ -66,6 +66,15 @@ public final class FaceInstrumentation extends Instrumentation {
                 check(!activity.border.isProcessing() && !activity.border.isAnimating(), "Idle must not animate a loader");
                 check(!activity.face.isAnimating(), "Hidden face still schedules frames");
                 check(!activity.policy.optionsVisible(), "Options started visible");
+                check(activity.assistantStart != null && UnifiedVoicePolicy.START.contentEquals(activity.assistantStart.getText()), "Missing single voice entry");
+                Intent voice = activity.unifiedVoiceIntent();
+                check(voice.getBooleanExtra("assistant_tools", false) && voice.getBooleanExtra("conversation_only", false)
+                    && voice.getIntExtra("seconds", 0) == 300 && !voice.getBooleanExtra("wake_only", false)
+                    && !voice.getBooleanExtra("timer_trial", false), "Normal entry does not include all native tools");
+                check(!containsButton(activity.optionsLayer, "Micrófono") && !containsButton(activity.optionsLayer, "Vista previa")
+                    && !containsButton(activity.optionsLayer, "Diagnóstico de captura · 20 s")
+                    && !containsButton(activity.optionsLayer, "Solo activación y transcripción (0.3)")
+                    && !containsButton(activity.optionsLayer, "Agenda y búsqueda web · experimental"), "Technical mode leaked into normal options");
                 long time = SystemClock.uptimeMillis();
                 tap(activity, time); check(!activity.policy.optionsVisible(), "Single tap opened options");
                 tap(activity, time + 120); check(activity.policy.optionsVisible(), "Double tap did not open options");
@@ -128,5 +137,13 @@ public final class FaceInstrumentation extends Instrumentation {
         android.view.MotionEvent up = android.view.MotionEvent.obtain(time, time + 30, android.view.MotionEvent.ACTION_UP, 100, 100, 0);
         try { activity.dispatchTouchEvent(down); activity.dispatchTouchEvent(up); }
         finally { down.recycle(); up.recycle(); }
+    }
+    private static boolean containsButton(View view, String label) {
+        if (view instanceof android.widget.Button && label.contentEquals(((android.widget.Button)view).getText())) return true;
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup)view;
+            for (int i = 0; i < group.getChildCount(); i++) if (containsButton(group.getChildAt(i), label)) return true;
+        }
+        return false;
     }
 }

@@ -118,6 +118,51 @@ public final class AgendaInstrumentation extends Instrumentation {
             try { WebSources.validate("busca en Internet nebulosas", forged); } catch (Exception expected) { forgedRejected = true; }
             check(forgedRejected, "Worker answer accepted as page quotation");
             result.putBoolean("worker_first_web_guard", true);
+            String fullService = String.join(" ", Collections.nCopies(12, translated));
+            String mediumService = String.join(" ", Collections.nCopies(3, translated));
+            JSONObject medium = new JSONObject(worker.toString());
+            medium.getJSONObject("web_answer").put("mode", "service_excerpt").put("evidence", fullService).put("answer_es", mediumService);
+            medium.put("text", "Un extracto del servicio web: " + mediumService + "… Fuentes en Opciones. ¿Necesitas algo más?");
+            check(WebSources.validate("busca en Internet nebulosas", medium).contains("https://example.org/public"), "Declared medium service excerpt rejected");
+            result.putBoolean("medium_worker_excerpt_guard", true);
+            stage = "volume_fake_media_wire";
+            String session = String.join("", Collections.nCopies(32, "a")), contextId = session.replace('a', 'b');
+            String turnId = session.replace('a', 'c'), nonce = session.replace('a', 'd');
+            long now = SystemClock.elapsedRealtime(), wall = System.currentTimeMillis();
+            PhoneVolumeChannel volume = new PhoneVolumeChannel(session, contextId, now + 90000);
+            AgendaActionChannel actions = new AgendaActionChannel(session, contextId, now + 90000);
+            JSONObject human = new JSONObject().put("turn_id", turnId).put("turn_seq", 1).put("speech_end_ms", now - 100)
+                .put("calendar_boot_ms", now).put("calendar_anchor_ms", wall).put("text", "baja el volumen a la mitad");
+            volume.human(human); actions.human(human, now, wall); actions.volumeExecution();
+            JSONObject grant = new JSONObject().put("session_id", session).put("context_id", contextId).put("nonce", nonce)
+                .put("request_turn_id", turnId).put("request_sequence", 1).put("speech_end_ms", now - 100)
+                .put("execute_before_ms", now + 4000).put("percent", 50).put("stream", "media");
+            for (Object bad : new Object[]{true, "50", -1, 101, 51}) {
+                JSONObject tampered = new JSONObject(grant.toString()).put("percent", bad);
+                boolean rejectedVolume = false;
+                try { volume.execution(tampered, now); } catch (Exception expected) { rejectedVolume = true; }
+                check(rejectedVolume, "Malformed/mismatched volume accepted");
+            }
+            PhoneVolumePolicy.Permit permit = volume.execution(grant, now);
+            final int[] fakeMedia = {12, 0};
+            PhoneVolumePolicy.Receipt receipt = PhoneVolumePolicy.execute(permit, new PhoneVolumePolicy.Media() {
+                public int minimum() { return 0; } public int maximum() { return 15; } public int current() { return fakeMedia[0]; }
+                public void set(int index) { fakeMedia[0] = index; fakeMedia[1]++; }
+            }, () -> now);
+            JSONObject volumeReceipt = volume.result(permit, receipt);
+            check(volumeReceipt.getInt("actual_percent") == 53 && fakeMedia[1] == 1, "Fake volume quantization failed");
+            JSONObject spoken = new JSONObject().put("turn_id", turnId).put("timer_control", "volume_result")
+                .put("actions_executed", 1).put("offered_more", false).put("close_reason", "action_result")
+                .put("text", PhoneVolumePolicy.resultText(receipt, 50));
+            check(volume.speech(spoken), "Typed volume receipt rejected");
+            spoken.put("text", "Volumen multimedia al 50 %.");
+            boolean forgedVolume = false, duplicateVolume = false, secondTool = false;
+            try { volume.speech(spoken); } catch (Exception expected) { forgedVolume = true; }
+            try { volume.execution(grant, now); } catch (Exception expected) { duplicateVolume = true; }
+            try { actions.timerExecution(); } catch (Exception expected) { secondTool = true; }
+            check(forgedVolume && duplicateVolume && secondTool, "Unverified/repeated/cross-tool volume action accepted");
+            volume.close(); actions.close();
+            result.putBoolean("phone_volume_fake_wire_guard", true); result.putBoolean("real_volume_changed", false);
             check(timers.equals(TimerStore.prefs(context).getAll()) && receipts.equals(TimerStore.actionReceipts(context).getAll()), "Real timer data changed");
             result.putBoolean("passed", true); result.putBoolean("android_sqlite", true); result.putBoolean("real_scheduler", false);
             result.putBoolean("microphone_opened", false); result.putBoolean("audio_played", false); result.putBoolean("llm_started", false);

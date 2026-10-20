@@ -26,7 +26,7 @@ public class MainActivity extends Activity {
     FrameLayout root, faceLayer, optionsLayer;
     LinearLayout idleLayer;
     TextView clock, date, weather, weatherDetail, wakeHint, state, transcript, previewBadge, optionsCountdown;
-    Button microphoneStop;
+    Button microphoneStop, assistantStart, assistantAction;
     final UiPolicy policy = new UiPolicy();
     final Handler handler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat clockFormat = new SimpleDateFormat("HH:mm", new Locale("es", "CO"));
@@ -59,11 +59,8 @@ public class MainActivity extends Activity {
             } else if (SilenceListener.recording()) wakeHint.setText("MICRÓFONO ACTIVO · silencio o Andrómeda, silencio · no abre otra charla");
             else if (VoiceService.active && VoiceService.expiresAt > 0) {
                 long remaining = Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000);
-                wakeHint.setText((VoiceService.wakeListening ? "Activación por voz en prueba" : "Prueba manual / en pausa")
-                     + (VoiceService.assistantToolsActive ? " · agenda y web" : VoiceService.timerTrialActive ? " · timer por petición" : VoiceService.conversationTestActive ? " · LFM sin acciones" : VoiceService.wakeTestActive ? " · sin ejecutar órdenes" : "")
-                    + " · quedan " + remaining + " s · doble toque para opciones");
-            } else wakeHint.setText(CaptureProbeService.status.isEmpty() ? "Activación por voz apagada · doble toque para opciones"
-                : CaptureProbeService.status + " · doble toque → Micrófono para resultados");
+                wakeHint.setText("Andrómeda activa · quedan " + remaining + " s · habla para pedir lo que necesites");
+            } else wakeHint.setText("Voz apagada · toca Activar Andrómeda");
             updateMicrophoneStop();
             renderWeather();
             if (policy.optionsVisible()) optionsCountdown.setText("Se ocultan en "
@@ -143,7 +140,10 @@ public class MainActivity extends Activity {
         weatherDetail = label(idleLayer, "Sin temperatura inventada · fuente: Open-Meteo", 12, Color.rgb(151, 166, 195));
         TextView cue = label(idleLayer, "Di " + AssistantConfig.NAME, 24, Color.rgb(191, 183, 255));
         cue.setPadding(0, dp(13), 0, dp(3));
-        wakeHint = label(idleLayer, "Activación por voz apagada · doble toque para opciones", 12, Color.rgb(151, 166, 195));
+        wakeHint = label(idleLayer, "Voz apagada · toca Activar Andrómeda", 12, Color.rgb(151, 166, 195));
+        assistantStart = new Button(this); assistantStart.setText(UnifiedVoicePolicy.START); assistantStart.setAllCaps(false);
+        assistantStart.setOnClickListener(value -> assistantVoice());
+        idleLayer.addView(assistantStart, new LinearLayout.LayoutParams(-2, dp(48)));
         root.addView(idleLayer, new FrameLayout.LayoutParams(-1, -1));
     }
     private void buildFace() {
@@ -164,7 +164,6 @@ public class MainActivity extends Activity {
         label(panel, "Andrómeda · opciones", 23, Color.WHITE);
         optionsCountdown = label(panel, "Se ocultan en 50 s sin interacción", 12, Color.rgb(151, 166, 195));
         LinearLayout first = new LinearLayout(this), second = new LinearLayout(this), third = new LinearLayout(this);
-        button(first, "Vista previa", () -> { closeOptions(); togglePreview(); });
         button(first, "Color del brillo", this::chooseColor);
         button(first, "Contexto", this::contextOptions);
         button(first, "Fuentes web", () -> showDialog(new AlertDialog.Builder(this).setTitle("Última búsqueda · fuentes en RAM")
@@ -172,8 +171,7 @@ public class MainActivity extends Activity {
         button(second, "Temporizadores", this::timerOptions);
         button(second, "Alarmas", () -> agendaOptions(AgendaEntry.Kind.ALARM));
         button(second, "Recordatorios", () -> agendaOptions(AgendaEntry.Kind.REMINDER));
-        button(third, "Micrófono", this::voiceDiagnostics);
-        button(third, "Silenciar", this::stopMicrophone);
+        assistantAction = button(third, UnifiedVoicePolicy.START, this::assistantVoice);
         button(third, "Volver", this::closeOptions);
         panel.addView(first); panel.addView(second); panel.addView(third);
         ScrollView optionsScroll = new ScrollView(this);
@@ -183,6 +181,12 @@ public class MainActivity extends Activity {
         optionsLayer.setVisibility(View.GONE); root.addView(optionsLayer, new FrameLayout.LayoutParams(-1, -1));
     }
     public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (!policy.optionsVisible() && assistantStart != null && assistantStart.isShown()) {
+            int[] location = new int[2]; assistantStart.getLocationOnScreen(location);
+            if (event.getRawX() >= location[0] && event.getRawX() <= location[0] + assistantStart.getWidth()
+                    && event.getRawY() >= location[1] && event.getRawY() <= location[1] + assistantStart.getHeight())
+                return super.dispatchTouchEvent(event);
+        }
         // An active mic always has a one-tap stop, even with ambient gestures.
         if (microphoneStop != null && microphoneStop.getVisibility() == View.VISIBLE && !policy.optionsVisible()) {
             float x = event.getX(), y = event.getY();
@@ -386,6 +390,38 @@ public class MainActivity extends Activity {
                 ConversationContexts.scheduleExpiry();
             }).setNegativeButton("Volver", null).create());
     }
+    Intent unifiedVoiceIntent() {
+        return new Intent(this, VoiceService.class).setAction("START")
+            .putExtra("conversation_only", true).putExtra("assistant_tools", true)
+            .putExtra("seconds", UnifiedVoicePolicy.SESSION_SECONDS);
+    }
+    void assistantVoice() {
+        if (VoiceService.active) { stopMicrophone(); return; }
+        if (!UnifiedVoicePolicy.mayStart(VoiceService.active, getIntent().getBooleanExtra("offline_preview", false),
+                AgendaDeliveryService.active || RingService.ringing, CaptureProbeService.active)) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Andrómeda")
+                .setMessage("No se activa voz en una vista de prueba ni durante un aviso o diagnóstico activo.")
+                .setPositiveButton("Cerrar", null).create()); return;
+        }
+        if (getSharedPreferences("ui", MODE_PRIVATE).getInt("voice_consent", 0) != UnifiedVoicePolicy.CONSENT_VERSION) {
+            showDialog(new AlertDialog.Builder(this).setTitle(UnifiedVoicePolicy.START)
+                .setMessage("Di Andrómeda y pide lo que necesites: conversación, temporizadores, alarmas, recordatorios, volumen del teléfono o una búsqueda explícita en Internet. No tienes que elegir una herramienta.\n\nEl volumen es multimedia (incluye mi voz), de 0 a 100 %. No modifica alarmas ni llamadas. Android tiene escalones y puede limitarlo: confirmaré el nivel real. A 0 % mi confirmación queda en pantalla, sin subirlo para hablar.\n\nEl micrófono estará activo hasta 5 minutos y puedes detenerlo en cualquier momento. No se activa solo al abrir la app ni al reiniciar el teléfono. El motor local debe estar preparado.\n\nSolo la consulta web explícita va a tu Worker; no la charla ni el audio. Las fuentes y conversaciones quedan en RAM hasta 1 h sin actividad. Los avisos de agenda son independientes.\n\n«Silencio» todavía no es fiable: conserva el botón Detener.")
+                .setNegativeButton("Cancelar", null).setPositiveButton("Activar", (dialog, which) -> {
+                    getSharedPreferences("ui", MODE_PRIVATE).edit().putInt("voice_consent", UnifiedVoicePolicy.CONSENT_VERSION).apply();
+                    startUnifiedVoice();
+                }).create()); return;
+        }
+        startUnifiedVoice();
+    }
+    private void startUnifiedVoice() {
+        if (!resumed || !UnifiedVoicePolicy.mayStart(VoiceService.active, getIntent().getBooleanExtra("offline_preview", false),
+                AgendaDeliveryService.active || RingService.ringing, CaptureProbeService.active)) return;
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1); return;
+        }
+        closeOptions(); stopPreview(); startForegroundService(unifiedVoiceIntent());
+    }
+    // Retained only for controlled diagnostics/instrumentation, not normal navigation.
     void voiceDiagnostics() {
         if (AgendaDeliveryService.active) {
             showDialog(new AlertDialog.Builder(this).setTitle("Aviso de agenda activo")
@@ -505,10 +541,12 @@ public class MainActivity extends Activity {
     }
     private void updateMicrophoneStop() {
         if (microphoneStop == null) return;
+        if (assistantStart != null) assistantStart.setVisibility(VoiceService.active ? View.GONE : View.VISIBLE);
+        if (assistantAction != null) assistantAction.setText(UnifiedVoicePolicy.action(VoiceService.active));
         microphoneStop.setVisibility(CaptureProbeService.active || VoiceService.active || RingService.ringing || AgendaDeliveryService.active || SilenceListener.recording() ? View.VISIBLE : View.GONE);
         if (CaptureProbeService.active) microphoneStop.setText("Detener diagnóstico · "
             + Math.max(0, (CaptureProbeService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000) + " s");
-        else if (VoiceService.active) microphoneStop.setText("Silenciar · "
+        else if (VoiceService.active) microphoneStop.setText("Detener · "
             + Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000) + " s");
         else if (RingService.ringing || AgendaDeliveryService.active || SilenceListener.recording()) microphoneStop.setText("Detener sonido y escucha");
     }
@@ -589,13 +627,14 @@ public class MainActivity extends Activity {
         TextView view = new TextView(this); view.setText(text); view.setTextColor(color); view.setTextSize(size); view.setGravity(Gravity.CENTER);
         parent.addView(view, new LinearLayout.LayoutParams(-1, -2)); return view;
     }
-    private void button(LinearLayout parent, String text, Runnable action) {
+    private Button button(LinearLayout parent, String text, Runnable action) {
         Button view = new Button(this); view.setText(text); view.setAllCaps(false); view.setTextSize(14); view.setTextColor(Color.rgb(224, 234, 255));
         GradientDrawable background = new GradientDrawable(); background.setColor(Color.rgb(22, 34, 55)); background.setCornerRadius(dp(14));
         background.setStroke(dp(1), Color.rgb(50, 66, 91));
         view.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(63, 83, 116)), background, null));
         view.setOnClickListener(value -> { noteOptionsInteraction(); action.run(); });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(48), 1); params.setMargins(dp(4), dp(6), dp(4), dp(2)); parent.addView(view, params);
+        return view;
     }
     public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) immersive(); }
     public void dump(String prefix, FileDescriptor fd, PrintWriter writer, String[] args) {

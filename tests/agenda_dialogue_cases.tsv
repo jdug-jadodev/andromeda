@@ -1,0 +1,26 @@
+case	step	kind	human	heard	expected	text
+basic	1	REMINDER	Andrómeda, pon un recordatorio	1	question	SUBJECT
+basic	2	REMINDER	lavar la loza	1	question	WHEN
+basic	3	REMINDER	en cinco minutos	-	proposal	lavar la loza
+partial	1	REMINDER	recuérdame lavar la loza	1	question	WHEN
+partial	2	REMINDER	mañana a las ocho de la mañana	-	proposal	lavar la loza
+alarm	1	ALARM	pon una alarma	1	question	ALARM_WHEN
+alarm	2	ALARM	en dos minutos	-	proposal	
+cancel	1	REMINDER	pon un recordatorio	1	question	SUBJECT
+cancel	2	REMINDER	cancela el recordatorio	-	cancelled	CANCELLED
+switch	1	REMINDER	pon un recordatorio	1	question	SUBJECT
+switch	2	REMINDER	busca en internet nebulosas	1	question	OTHER_REQUEST
+switch	3	REMINDER	cancela el aviso	-	cancelled	CANCELLED
+ambiguous	1	REMINDER	pon un recordatorio	1	question	SUBJECT
+ambiguous	2	REMINDER	lavar la loza	1	question	WHEN
+ambiguous	3	REMINDER	mañana a las ocho	1	question	INVALID_TIME
+ambiguous	4	REMINDER	mañana a las ocho de la mañana	-	proposal	lavar la loza
+unheard	1	REMINDER	pon un recordatorio	-	question	SUBJECT
+unheard	2	REMINDER	lavar la loza	-	INVALID	
+interrupted	1	REMINDER	pon un recordatorio	0	question	SUBJECT
+interrupted	2	REMINDER	lavar la loza	-	none	
+negated	1	REMINDER	no pongas un recordatorio	-	INVALID	
+reported	1	REMINDER	ayer dije pon un recordatorio	-	INVALID	
+quoted	1	REMINDER	«pon un recordatorio»	-	INVALID	
+mixed	1	REMINDER	pon un recordatorio y busca en internet nebulosas	-	INVALID	
+negated_tail	1	REMINDER	pon un recordatorio no lo hagas	-	INVALID	

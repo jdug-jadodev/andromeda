@@ -8,9 +8,12 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from conversation_voice import ConversationModel
 
-timer_trial = len(sys.argv) == 3 and sys.argv[2] == '--timer-trial'
-assistant_tools = len(sys.argv) == 3 and sys.argv[2] == '--assistant-tools'
-if len(sys.argv) not in (2, 3) or len(sys.argv) == 3 and not (timer_trial or assistant_tools): raise ValueError('Invalid preparation mode')
+options = tuple(sys.argv[2:])
+if len(sys.argv) < 2 or options not in ((), ('--timer-trial',), ('--assistant-tools',), ('--assistant-tools', '--guided-agenda')):
+    raise ValueError('Invalid preparation mode')
+timer_trial = options == ('--timer-trial',)
+assistant_tools = bool(options and options[0] == '--assistant-tools')
+guided_agenda = options == ('--assistant-tools', '--guided-agenda')
 if assistant_tools:
     from assistant_tools_model import AssistantToolsModel
     model_type = AssistantToolsModel
@@ -30,6 +33,7 @@ while True:
     if time.monotonic() >= deadline: raise TimeoutError('Inference preparation limit')
     time.sleep(.25)
 model = model_type(key_path)
+if guided_agenda: model.enable_agenda_dialogue()
 if assistant_tools:
     from conversation_voice import now_ms, SYSTEM
     body = model.payload([{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1)

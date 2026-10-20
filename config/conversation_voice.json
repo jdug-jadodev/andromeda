@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "guided_agenda": true,
   "protocol": 6,
   "entry_policy": "new_unless_recuerdas",
   "catalog_chats_max": 4,

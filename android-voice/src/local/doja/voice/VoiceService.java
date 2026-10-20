@@ -44,6 +44,7 @@ public class VoiceService extends Service {
     volatile boolean timerTrial;
     volatile boolean assistantTools;
     volatile AgendaActionChannel agendaChannel;
+    volatile PhoneVolumeChannel volumeChannel;
     volatile String activeTimerControl = "";
     volatile TimerActionChannel timerChannel;
     final ExecutorService timerExecutor = Executors.newSingleThreadExecutor();
@@ -202,8 +203,9 @@ public class VoiceService extends Service {
             int seconds = connection.ready.optInt("seconds");
             if (seconds != 90 && seconds != 300) throw new IOException("Duración inválida");
             expiresAt = Math.min(expiresAt, SystemClock.elapsedRealtime() + seconds * 1000L);
-            if (timerTrial || assistantTools) timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
-            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+            if (timerTrial || assistantTools) timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, assistantTools && AssistantConfig.GUIDED_AGENDA);
+            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, AssistantConfig.GUIDED_AGENDA);
+            if (assistantTools) volumeChannel = new PhoneVolumeChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, AssistantConfig.GUIDED_AGENDA);
             main.postDelayed(() -> { pilotExpired = true; stopSelf(); }, Math.max(0, expiresAt - SystemClock.elapsedRealtime()));
             main.post(this::initializeTts);
             long ttsDeadline = Math.min(expiresAt, SystemClock.elapsedRealtime() + 12000);
@@ -265,6 +267,7 @@ public class VoiceService extends Service {
             running = active = wakeListening = microphoneRecording = false;
             if (timerChannel != null) timerChannel.close();
             if (agendaChannel != null) agendaChannel.close();
+            if (volumeChannel != null) volumeChannel.close();
             if (contextChannel != null) contextChannel.close();
             if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
             ConversationContexts.scheduleExpiry();
@@ -307,6 +310,23 @@ public class VoiceService extends Service {
             catch (Exception failure) { status = AgendaStore.Status.UNKNOWN; }
             try {
                 JSONObject result = channel.result(permit, status);
+                if (running && !controls.isShutdown()) controls.execute(() -> {
+                    try { byte[] data = result.toString().getBytes(StandardCharsets.UTF_8); frame(3, data, data.length); }
+                    catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+                });
+            } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+        });
+    }
+    void executeVolume(JSONObject event) throws Exception {
+        if (!running || !assistantTools || volumeChannel == null || agendaChannel == null) throw new IOException("Volume not enabled");
+        agendaChannel.volumeExecution();
+        PhoneVolumeChannel channel = volumeChannel;
+        PhoneVolumePolicy.Permit permit = channel.execution(event, SystemClock.elapsedRealtime());
+        timerExecutor.execute(() -> {
+            if (!running) return;
+            PhoneVolumePolicy.Receipt receipt = PhoneVolumeControl.apply(this, permit);
+            try {
+                JSONObject result = channel.result(permit, receipt);
                 if (running && !controls.isShutdown()) controls.execute(() -> {
                     try { byte[] data = result.toString().getBytes(StandardCharsets.UTF_8); frame(3, data, data.length); }
                     catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
@@ -418,9 +438,11 @@ public class VoiceService extends Service {
                         contextChannel.select(event, SystemClock.elapsedRealtime()); contextLease = contextChannel.lease;
                         if (timerTrial || assistantTools) {
                             if (timerChannel != null) timerChannel.close();
-                            timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+                            timerChannel = new TimerActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, assistantTools && AssistantConfig.GUIDED_AGENDA);
                             if (agendaChannel != null) agendaChannel.close();
-                            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt);
+                            if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, AssistantConfig.GUIDED_AGENDA);
+                            if (volumeChannel != null) volumeChannel.close();
+                            if (assistantTools) volumeChannel = new PhoneVolumeChannel(contextChannel.sessionId, contextChannel.contextId, expiresAt, AssistantConfig.GUIDED_AGENDA);
                         }
                         ConversationContexts.scheduleExpiry(); continue;
                     }
@@ -432,6 +454,7 @@ public class VoiceService extends Service {
                         contextChannel.human(event, SystemClock.elapsedRealtime());
                         if (timerTrial || assistantTools) timerChannel.human(event);
                         if (assistantTools) agendaChannel.human(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
+                        if (assistantTools) volumeChannel.human(event);
                         ConversationContexts.scheduleExpiry();
                         speaking = true;
                         state(event.optBoolean("administrative") ? "Consultando charlas guardadas · micrófono en pausa"
@@ -447,6 +470,8 @@ public class VoiceService extends Service {
                         executeTimer(event);
                     } else if ("agenda_execute".equals(type) && assistantTools) {
                         executeAgenda(event);
+                    } else if ("volume_execute".equals(type) && assistantTools) {
+                        executeVolume(event);
                     } else if ("error".equals(type)) {
                         conversationTurn.clear(); speaking = false;
                         state(assistantTools ? "No hubo respuesta completa; revisa la agenda si había una acción pendiente" : timerTrial ? "No se obtuvo respuesta completa; revisa los timers si había una acción pendiente"
@@ -498,14 +523,16 @@ public class VoiceService extends Service {
                 if (!"say".equals(event.optString("type")) || event.has("tool_call_id") || !(timerTrial || assistantTools) && event.optInt("actions_executed", -1) != 0
                         || !conversationTurn.acceptReply(event.optString("turn_id"), event.optLong("turn_seq"),
                             event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime(),
-                             event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && "agenda_result".equals(event.optString("timer_control"))))) return;
+                             event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && ("agenda_result".equals(event.optString("timer_control")) || "volume_result".equals(event.optString("timer_control")))))) return;
                 message = event.getString("text");
                 boolean workerRead = assistantTools && "web".equals(event.optString("timer_control"))
-                    && event.optJSONObject("web_answer") != null && "service_answer".equals(event.getJSONObject("web_answer").optString("mode"));
+                    && event.optJSONObject("web_answer") != null && ("service_answer".equals(event.getJSONObject("web_answer").optString("mode"))
+                        || "service_excerpt".equals(event.getJSONObject("web_answer").optString("mode")));
                 if (message.isEmpty() || message.length() > (workerRead ? 2100 : 700)) throw new IOException("Respuesta inválida");
-                if (assistantTools) { if (!agendaChannel.speech(event)) timerChannel.validateSpeech(event); }
+                if (assistantTools) { if (!volumeChannel.speech(event) && !agendaChannel.speech(event)) timerChannel.validateSpeech(event); }
                 else if (timerTrial) timerChannel.validateSpeech(event);
-                activeWebAnswer = workerRead ? event.getJSONObject("web_answer").getString("answer_es") : "";
+                activeWebAnswer = !workerRead ? "" : event.getJSONObject("web_answer").getString(
+                    "service_excerpt".equals(event.getJSONObject("web_answer").optString("mode")) ? "evidence" : "answer_es");
                 activePlaybackMs = workerRead ? 60000 : 20000;
                 activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
             } else switch (event.optString("type")) {
@@ -570,6 +597,7 @@ public class VoiceService extends Service {
                 lastError = "Finalización de voz inválida; sesión detenida";
                 main.post(() -> stopSelf()); return;
             }
+            if (assistantTools && agendaChannel != null) agendaChannel.spoken(activeSpeechId, completed);
             controlTurn(speechInterrupted ? "tts_interrupted" : completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
         }
         boolean closing = conversationOnly && conversationTurn.awaitingClose();
@@ -606,6 +634,7 @@ public class VoiceService extends Service {
         if (silenceListener != null) silenceListener.close();
         if (timerChannel != null) timerChannel.close();
         if (agendaChannel != null) agendaChannel.close();
+        if (volumeChannel != null) volumeChannel.close();
         timerExecutor.shutdown(); // Accepted durable work is not a timer cancellation.
         conversationTurn.clear();
         if (contextChannel != null) contextChannel.close();

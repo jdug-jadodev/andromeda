@@ -338,10 +338,12 @@ def main():
     parser.add_argument("--conversation-only", action="store_true", help="TLS conversation trial; no tool registry/executor")
     parser.add_argument("--timer-trial", action="store_true", help="Explicit TLS-only create-timer trial; requires --conversation-only, never legacy actions")
     parser.add_argument("--assistant-tools", action="store_true", help="TLS protocol 9: timer, calendar events and explicit web queries")
+    parser.add_argument("--guided-agenda", action="store_true", help="Explicit protocol11 typed agenda dialogue and action continuation")
     parser.add_argument("--tls-cert")
     parser.add_argument("--tls-key")
     parser.add_argument("--synthetic-input", action="store_true", help="Accept only authenticated synthetic PCM, never a microphone client")
     args = parser.parse_args()
+    if args.guided_agenda and not args.assistant_tools: raise ValueError("Guided agenda requires assistant tools")
     if args.timer_trial and not args.conversation_only:
         raise ValueError("Timer trial requires the restricted TLS conversation transport")
     if args.assistant_tools and (not args.conversation_only or args.timer_trial):
@@ -380,7 +382,8 @@ def main():
     if args.conversation_only:
         from conversation_voice import serve
         serve(args.key, args.ai_key, spotter, args.seconds, args.tls_cert, args.tls_key,
-              'synthetic_pcm' if args.synthetic_input else 'microphone', resource_ok, timer_trial=args.timer_trial, assistant_tools=args.assistant_tools)
+              'synthetic_pcm' if args.synthetic_input else 'microphone', resource_ok, timer_trial=args.timer_trial, assistant_tools=args.assistant_tools,
+              **({'guided_agenda': True} if args.guided_agenda else {}))
         stats = resource.getrusage(resource.RUSAGE_SELF)
         print(json.dumps({'event': 'conversation_stopped', 'peak_rss_kib': stats.ru_maxrss,
                           'cpu_seconds': round(stats.ru_utime + stats.ru_stime, 2),

@@ -1,4 +1,191 @@
-# Agenda y web · app 0.11.7 / código 24 · Worker primero y continuación local verificados sin audio
+# Agenda y web · instalado26 · volumen físico confirmado; candidato residente comprobado
+
+## Candidato local nuevo: agenda guiada y continuidad, aún sin instalar
+
+Protocolo11 explícito:apertura nativa, preguntas conTTSonDone, respuestas humanas
+tipadas/procedencia y permiso final independientePython/Android, recibo/confirmación
+con contenido/hora y ¿algo más?. Agenda/timer/volumen dejan conversar/otra
+herramienta tras resultado solo bajo contrato nuevo; legacy siguecerrando.
+Actor simulado recordatorio→web pasa sin reactivación oLFM por cada campo.
+396 pruebasPython pasan/2 skips; suiteJava/95 aserciones nuevas, fuentesAndroid
+y sintaxis3scripts pasan. Worker-first preservado;LFM/ASR/TTS/guardado real nuevo
+todavía no comprobados. Base de modelo continuo codificada(no micrófono/canal
+continuo aún). Alarmas semanales/borrado/posponer y silencio real pendientes.
+No teléfono/instalación/modelo/captura/consulta/acciones por este trabajo, último
+físicoAPK26/protocolo10 apagado trasv2. Detalles/artefactos
+`artifacts/android-voice/guided-agenda-v1/findings.md`.
+
+## Requisito posterior: continuo, no ventanas manuales
+
+Además de agenda dinámica/recurrencia/posponer, el usuario solicitaLFM y micrófono
+local continuos conmonitoreo. Objetivo aceptado para diseño, NO implementado ni
+activado:espera de«Andrómeda» sinbotón, diálogo y nueva herramienta, vuelta aespera
+sin apagar modelo. ServicioFG/indicador/Detener y guardias con prioridad; privacidad
+RAM acotada/TTLhumano1h, sin audio/transcripciones persistidas. No añadirhorario/
+boot/reinicios implícitos o renovar pilotos. Ver sección0 de
+`CONVERSACION-Y-AGENDA-DINAMICA-ANDROMEDA.md`. APK26 actual300s y modeloapagado;
+no confundir intención del usuario con una nueva instalación/arranque.
+
+## Resultado humano vigente:WEB bien, agenda falla; diseño dinámico requerido
+
+Ensayo v2 cerrado16:22:18UTC/modelo apagado/0 servicios/puertos/lock,56 hashes,
+datos/recibos/volumen8/15/sistema preservados;814 muestras/RAMmín1236120KiB/
+máx24,7°C. Usuario confirma búsquedaWEB, «silencio» intermitente, recordatorios
+y alarmas fallan. Sin textos/diagnósticos generales recogidos; no causa exacta
+atribuida. Revisión de código confirma frase completa en unturno, alarmas de
+una ocurrencia y cierre obligatorio tras agenda enPython+Android.
+
+Nuevo comportamiento requerido:recordatorios preguntando contenido/cuándo y
+confirmación desde recibo, luego otra herramienta sin cerrar charla; alarmas
+semanales lunes-domingo, borrar con confirmación y posponer5min sin borrar serie.
+Especificación/plan `CONVERSACION-Y-AGENDA-DINAMICA-ANDROMEDA.md`. NO implementado
+o instalado todavía; no otra prueba con la misma versión. PreservarWEBWorker-first,
+nativo/permisos/recibos y micrófono manual; futuroAPK solo con consentimientoRAM.
+
+## Segunda prueba900s autorizada/lista con correcciónSSL, sin nuevoAPK
+
+16:07:41UTC:56 hashes/APK26/UID10238/proceso/datos/volumen/sistema y scripts verificados,
+motor saludable/TLS+pin pasan sin token/hello/captura del agente. Un arranque
+consentido, no renovación. Fin estimado16:22:06UTC/11:22:06Bogotá; INICIAR
+charlas300s antes16:17:01UTC/11:17:01Bogotá. Residente conserva modelo entre
+conexiones, micrófono manual y no reactivado automáticamente. Prueba humana
+pendiente, no declarar reparaciónSSL extremo a extremo. Evidencia actual
+`human-resident-v2/`; recolector único al plazo original recoge métricas/estado.
+
+## Vigente: residente detenido al plazo y corrección de rechazoSSL instalada
+
+Primer ensayo900s cerrado16:03:32UTC/0 procesos/servicios/puertos y credenciales
+temporales retiradas.835 muestras: mínimo1308600KiB disponibles/RSS736724KiB/
+máximo23,1°C. Agenda/timers/recibos/volumen8/15 y sistema conservados. No éxito
+humano declarado: reporteSSL durante el ensayo. Defecto identificado: cuando
+quedan<305s se rechazabaTCP antes deTLS. Corregido soloPython en reposo16:04:09UTC:
+TLS+autenticación primero, error residente después, sin renovar/restaurar contexto
+o captura/acciones.12 testsPOSIX/56 hashes pasan/otros55 módulos preservados,
+APK26/proceso/RAM intactos. Mensaje español nuevo solo en fuenteAndroid; noAPK
+sustituido ni otra prueba abierta. Nueva ventana requiere autorización explícita.
+Evidencia `resident-runtime-v1-install/after.json` y
+`resident-window-ending-fix-v1/final-state.json`.
+
+## Estado posterior: residente y monitor instalados, ensayo15min autorizado en curso
+
+Tres fuentes (dos nuevas) y tres scripts instalados con respaldo/owners/modos,
+56 hashes verificados y otros53 módulos intactos. No APK/reinicio/proceso/RAM
+perdidos. Una prueba900s, canalASR/TLS preparado a15:48:59UTC sin micrófono o
+consulta del agente; fin estimado16:03:21UTC. Recursos iniciales1432908KiB/RSS
+736636KiB/22,8°C. App escucha solo tras pulsación,300s/sesión; modelo retenido
+entre conexiones, sin modificar herramientas/recibos o contexto implícito.
+Guía `MODELO-RESIDENTE-ANDROMEDA.md`, evidencia `resident-runtime-v1-install/`;
+recolector diferido único, cierre/consumo15min pendientes hasta `after.json`.
+No nueva ventana automática, renovación, boot/horario/remoto o casa activados.
+## Resultado físico v2 y siguiente fase
+
+El usuario confirma ajuste de volumen. Media15/15→8/15, un Android action receipt
+y TTS DONE6537ms. Dos guardias rechazaron peticiones anteriores (texto no recogido,
+sin causa atribuida); una interrupción anterior tampoco certifica reparación de
+«silencio». Sesión cerrada/datos/recibos/54 hashes/privacidad/sistema conservados,
+0 servicios/puertos/modelos/temporales nuevos. Evidencia `human-phone-volume-v2/`.
+La actividad normal con offline_preview=false permitió usar el botón, sin
+reinstalar/reiniciar proceso/RAM; origen anterior de esa marca no demostrado.
+
+Residente/monitor en candidato, NO instalado/activado:382 pruebas locales
+aprobadas/2 omitidas Windows y11 específicas POSIX en Moto pasan. Dos conexiones
+TLS y respuestas LFM1628/1621ms conservan modelo/proceso, contextos separados,
+12s reposo y15 muestras numéricas. Actor simulado,0 micrófono/TTS/acciones/web.
+Modelo apagado al terminar, backend instalado intacto. No prueba de escucha
+humana, ASR del nuevo punto de entrada,15min de uso o24x7. Guía y autorización
+de activación pendientes en `MODELO-RESIDENTE-ANDROMEDA.md`; artefactos
+`artifacts/android-voice/resident-runtime-v1/`.
+
+**Primera ventana física de volumen vencida sin iniciar:**usuario ocupado;
+wrapper/filtro0,0 sesiones humanas/turnos/acciones, volumen15/15/54 hashes/datos/
+recibos/sistema preservados,0 servicios/puertos/modelos/temporales nuevos. Se
+recogen solo archivos técnicos propios, sin relanzar o exportar contenido humano.
+Evidencia `human-phone-volume-v1/after-user-reported-expiry.json`. No es fallo de
+volumen ni aceptación humana; coordinar disponibilidad antes de otra ventana.
+
+## Corrección autorizada posterior: mitad pasa con LFM, sin reinstalar la app
+
+Solo cambia la descripción de set_phone_volume, que ahora menciona bajar/subir/
+poner y «a la mitad», conservando llamada sin argumentos. SYSTEM/catálogo/orden/
+schemas/auto/guardias/plazos/modelo intactos.372 tests aprobados/1 omitido Windows.
+Un candidato aislado pasa8 casos LFM antes de modificar el archivo vivo: mitad
+3082ms/con wake2980ms/cincuenta2543ms/cero2488ms/cien2518ms/timer2910ms; negado y
+mezclado rechazados por validador2491/2842ms aunque el modelo seleccione volumen.
+328–333tokens. Recibos/relay solo simulados en RAM Python, no acciones físicas.
+
+Después de pasar, solo assistant_tools_model.py se reemplaza con respaldo exacto,
+SHA256 d635cf464da2062f03eb19d205ba4bb19ed54e40359892e8fa0212addf69cf34,
+owner10218/modo0640 y54 hashes verificados. APK26/UID/proceso/contexto RAM y otros53
+módulos/launcher conservados; sin reinstalar/reiniciar/instrumentar la app.
+Agenda/timers/recibos/volumen15/15/permisos privados/HOME/SELinux/swap/SSH/web
+intactos.0 servicios/puertos/modelos/temporales nuevos/captura/audio/Worker,
+sin ensayo humano preparado o residente/horario. Batería máxima20,9°C/RAM mínima
+1521044KiB. Datos/diagnósticos humanos no exportados. Evidencia vigente
+`artifacts/android-voice/phone-volume-half-selection-fix-v1/`; ajuste físico/voz
+todavía pendiente de prueba acordada. Fallo de mitad inferior es histórico.
+
+## Despliegue26 autorizado: Android pasa; LFM nativo de mitad falla de forma segura
+
+Una sustitución APK26/0.12.1-phone-volume y cuatro módulos congelados (uno nuevo),
+firma compatible/UID10238/datos preservados, respaldos exactos PC/Moto.54 hashes,
+owners/modos y otros50 módulos/launcher verificados, permiso audio normal concedido.
+Android real sin sonido pasa SQLite aislada/contrato fake de volumen/rechazo de
+paquete o confirmación alterada/segunda mutación y UI; NO ejecuta setter físico.
+
+Un LFM fresco, sin micrófono/proveedor/ejecutor real: mitad5346ms selecciona texto
+en vez de herramienta, `missing_native_call`; cero2771ms/cien2827ms seleccionan
+`set_phone_volume()` sin argumentos y relay fake pasa; timer3051ms pasa. Entradas
+313–315tokens, preparación22579ms. El parser de mitad sí acepta50, no es error de
+conversión/Android. No afirmar que volumen por voz o0–100 completo está aceptado.
+
+Al terminar:0 servicios/puertos voz/llama/supervisores/temporales nuevos; volumen
+real15/15 intacto, datos/recibos/privacidad/HOME/SELinux/swap/SSH/web conservados.
+Máxima batería20,4°C/RAM mínima1513008KiB.0 consultas Worker, acciones Android,
+captura/audio. No residente/horario activados, ni retry de modelo/instalación o
+prompts nuevos para ocultar fallo. Resultado/backups en
+`artifacts/android-voice/phone-volume-code26-install/`; corregir selección de mitad
+como próximo paso acordado. Estados «26 no instalado» y «último25» debajo históricos.
+
+## Estado posterior:25 instalado; nuevo volumen en desarrollo, no desplegado
+
+El consentimiento de sustituir25 con pérdida RAM se ejecutó: APK25 y tres módulos
+confirmados en `artifacts/android-voice/unified-voice-code25-install/`, UID10238 y
+datos conservados; Agenda/FaceInstrumentation pasan sin modelo/captura/audio/red.
+La fase final del instalador no escribió recibo de parada y no se repite. El
+usuario informó que él detuvo todo. No afirmar cierre técnico final verificado.
+Los estados de candidato25 «no instalado» siguientes son históricos.
+
+Al retomar, prioridades volumen0–100%, energía/suspensión/residente, casa y después
+remoto/caritas. Plan `FUNCIONES-Y-ENERGIA-ANDROMEDA.md`. Candidato26 mantiene lectura
+media/continuación y añade `set_phone_volume()` nativo sin argumentos, solo
+multimedia/voz del teléfono, validación actual+Android y recibo real antes de
+afirmar éxito. Protocolo10/`absolute_media_v1` y cinco herramientas requieren
+actualización coordinada; NO copiar Python sobre25. Sin nueva instalación,
+modelo, captura, sonido, consulta Worker o TV en esta fase. Política horaria23–06
+solo simulada, no modo residente/24x7 o reparación de silencio implementados.
+370 tests Python aprobados/1 omitido Windows,1073 aserciones JVM/build26 pasan
+solo local. Evidencia `artifacts/android-voice/phone-volume-code26-v1/`;
+selección LFM fresca/Android26/volumen físico/consumo siguen sin comprobar.
+
+## Resultado humano: respuesta correcta, demasiado larga; silencio NO funciona
+
+El usuario acepta respuesta/continuación («responde perfecto»), pero rechaza longitud y reporta que «silencio» no la detiene. La prioridad pasa a eliminar menús técnicos y selección manual de modo para elegir herramientas por voz. No se deduce aceptación de fuentes UI, uso prolongado o latencia exacta humana. No repetir voz/silencio ni ajustar confianza automáticamente.
+
+Recogida sin reiniciar/instrumentar ni exportar conversaciones: wrapper0/filtro0,2 turnos `search_web`/`service_answer` y1 `local_web_followup` sin búsqueda, seguido de cierre.4 `DONE`/memorias confirmadas; lectura inicial48389ms, continuación8777ms, segunda web29420ms y despedida3282ms. Inicio TTS desde fin estimado de habla14333/31910/12059/3606ms; continuación31,9s no cumple vieja meta30, sí límite60 acordado. Primer conteo de texto700 es clamp del diagnóstico, NO longitud exacta del mensaje. Total consultas reales Worker4 (dos anteriores+dos humanas explícitas); agente0 nuevas al recoger. Datos/fuentes/temas humanos no recogidos.
+
+Interrupción:4 ventanas fuente7, AEC habilitado, Android no silenciado,0 callbacks; primera con10 endpoints/10 rechazos/max1 palabra, tercera5 endpoints/5 rechazos/max0. No conocemos palabras, confianza ni causa exacta; no contradice el fallo percibido ni certifica reparación. Sesión/puertos/servicios cerrados, agenda vacía/esquema2/un `DELIVERED`, timers0/un recibo; dos temporales propios técnicos retirados, memoria app preservada. Evidencia `artifacts/android-voice/human-worker-first-v1/{after-user-feedback,owned-technical-cleanup}.json`.
+
+## Candidato25: interfaz unificada y extracto medio, NO instalado
+
+Un único Activar/Detener con modo actual tools300s fijo, no selectores de diagnóstico/transcripción/timer/conversación/agenda-web ni vista previa en opciones normales. Una vez activada, la selección de herramientas sigue nativa por voz. Primer aviso de privacidad correcto (Worker, no Bing), sin activación al abrir app/boot ni escucha permanente; todavía necesita motor preparado manualmente. Mantiene listas de eventos, contexto/fuentes y botón Detener de seguridad mientras silencio falla. Diagnósticos/desarrollo siguen disponibles al código/instrumentación, no como modos normales. No elimina datos/tareas ni promete uso24/7.
+
+Respuesta inicial mediana: `service_excerpt` declara un extracto del servicio, prefijo literal≤360 unidades UTF-16 a frontera de frase/palabra, sin otra generación. Contrato conserva respuesta completa≤2000 y Android valida relación de prefijo; nunca atribuye a una página ni inventa/resume. Tras `onDone`, el contenido completo queda como dato web en RAM para la continuación local, nunca instrucciones al selector. No garantiza duración exacta; TTS≤60s y sesión300s siguen vigentes. Negociación `worker_first_v2_medium` requiere desplegar APK25 y tres módulos juntos. No cambios de fuente/umbral ASR ni nuevas pruebas de «silencio».
+
+APK25/`0.12.0-unified-voice` solo local:353 tests Python aprobados/1 omitido Windows,911 aserciones JVM y compilación pasan. Tests/build/manifiesto en `artifacts/android-voice/unified-voice-code25-v1/`; teléfono sigue24, sin reinicio/instalación/otra consulta/modelo/micrófono/audio/ventana. Primera interop Python→Java detecta que el fixture enviaba evidencia vacía para el modo nuevo; se corrige fixture, no el guardia de producción. Reemplazo futuro pierde RAM y requiere consentimiento informado. No confundir comprobación JVM/compilación con Android real o aceptación de longitud/UI.
+
+## Ventana humana autorizada/lista · Worker-first, una consulta y continuación
+
+Usuario pide probar inmediatamente. Una sola sesión manual `pilot 300 tools`,5min dentro del límite ya existente, espera previa300s sin renovación. APK24/UID/53 hashes/launcher/archivo privado/recibos y ausencia de obligaciones/servicios/listeners verificados antes. Motor+TLS/certificado/pin y protocolo9/fuente micrófono listos a03:42:19UTC; no autenticación humana/captura/audio/consulta/acción del agente. Wrapper desacoplado de ADB; stdout crudo atraviesa soloFIFO→allowlist de enums/números/booleanos, archivo técnico≤64KiB, sin texto/audio/URLs/IDs humanos. Sin reinstalar/reiniciar/instrumentar. Inicio manual Agenda y búsqueda web→5min; probar una consulta pública, esperar lectura completa, luego una continuación local y cierre «gracias». El aviso UI todavía menciona Bing: texto histórico no actualizado, el proveedor instalado es el Worker. No probar alarmas/«silencio» ni otras consultas/ventanas automáticamente. Evidencia `artifacts/android-voice/human-worker-first-v1/` (`before.json`, `launch.json`, `readiness.json`); al terminar recoger solo métricas técnicas/feedback y cerrar archivos propios sin exportar contexto. Aceptación humana/voz/UI siguen pendientes.
 
 ## Estado vigente · corrección de continuación desplegada, LFM real aprobado
 

@@ -69,6 +69,13 @@ final class WebAnswerPolicy {
             String host = hosts.get(index);
             body = host.length() > 48 ? answer + " Fuente en Opciones." : "Según el extracto de " + host + ": " + answer;
             check(body.length() <= 300);
+        } else if ("service_excerpt".equals(mode)) {
+            // Literal prefix of the SERVICE answer, not a quote from a page.
+            check(index == -1 && !hosts.isEmpty()); validateServiceAnswer(evidence);
+            check(evidence.length() > 360 && !answer.isEmpty() && answer.length() <= 360 && evidence.startsWith(answer));
+            check(evidence.length() > answer.length() && " ,;:.!?".indexOf(evidence.charAt(answer.length())) >= 0);
+            validateServiceAnswer(answer);
+            body = "Un extracto del servicio web: " + answer + "… Fuentes en Opciones.";
         } else if ("service_answer".equals(mode)) {
             check(index == -1 && evidence.isEmpty() && !hosts.isEmpty());
             validateServiceAnswer(answer);

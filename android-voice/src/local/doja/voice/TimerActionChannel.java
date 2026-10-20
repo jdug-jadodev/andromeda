@@ -17,8 +17,13 @@ final class TimerActionChannel {
     private long sequence, speechEnd;
     private Execution accepted;
     private TimerCreation.Receipt receipt;
+    private final boolean continuing;
     TimerActionChannel(String session, String context, long sessionEnd) {
+        this(session, context, sessionEnd, false);
+    }
+    TimerActionChannel(String session, String context, long sessionEnd, boolean continuing) {
         this.session = session; this.context = context; this.sessionEnd = sessionEnd;
+        this.continuing = continuing;
         policy = new TimerActionPolicy(session, context);
     }
     private static long integer(JSONObject data, String key) throws Exception {
@@ -75,12 +80,12 @@ final class TimerActionChannel {
         long count = integer(event, "actions_executed");
         if (count < 0 || count > 1 || !turn.equals(event.optString("turn_id"))) throw new IOException("Respuesta de otro turno");
         if ("result".equals(control)) {
-            boolean timeout = value.equals("No llegó la confirmación de Android. El resultado es incierto; revisa los temporizadores en la pantalla antes de pedir otro.");
+            boolean timeout = value.equals(ActionCompletionPolicy.text("No llegó la confirmación de Android. El resultado es incierto; revisa los temporizadores en la pantalla antes de pedir otro.", continuing));
             if (!executedTurn.equals(turn) || (timeout ? count != 0 : receipt == null
-                    || count != (receipt.status == TimerCreation.Status.CREATED ? 1 : 0) || !resultText(receipt).equals(value)))
+                    || count != (receipt.status == TimerCreation.Status.CREATED ? 1 : 0) || !ActionCompletionPolicy.text(resultText(receipt), continuing).equals(value)))
                 throw new IOException("Confirmación sin resultado Android real");
-            if (!"action_result".equals(event.optString("close_reason")) || event.optBoolean("offered_more", true))
-                throw new IOException("La acción finalizada debe cerrar sin ofrecer más ayuda");
+            if (!ActionCompletionPolicy.valid(continuing, event.optString("close_reason"), event.optBoolean("offered_more", true)))
+                throw new IOException("Finalización de acción no negociada");
         } else if (count != 0 || !executedTurn.isEmpty()
                 || "action_result".equals(event.optString("close_reason")) || !(control.isEmpty() || "rejected".equals(control)))
             throw new IOException("Confirmación de acción no permitida");

@@ -1,0 +1,11 @@
+status	kind	text	due_ms	delay_ms	detailed	expected
+CREATED	REMINDER	lavar la loza	1792328706000	300000	1	Recordatorio guardado: lavar la loza. En 5 minutos, para el 18/10/2026 a las 08:05:06, hora de Bogotá.
+CREATED	REMINDER	beber agua	1792328400000	0	1	Recordatorio guardado: beber agua. Para el 18/10/2026 a las 08:00:00, hora de Bogotá.
+CREATED	REMINDER	beber agua	1792328400000	0	0	Recordatorio programado para el 18/10/2026 a las 08:00, hora de Bogotá.
+CREATED	ALARM		1792328400000	0	1	Alarma programada para el 18/10/2026 a las 08:00, hora de Bogotá.
+CREATED	REMINDER	pausa	1792328400000	3600000	1	Recordatorio guardado: pausa. En 1 hora, para el 18/10/2026 a las 08:00:00, hora de Bogotá.
+CREATED	REMINDER	pausa	1792328400000	1000	1	Recordatorio guardado: pausa. En 1 segundo, para el 18/10/2026 a las 08:00:00, hora de Bogotá.
+UNKNOWN	REMINDER	lavar la loza	1792328400000	0	1	No pude confirmar el resultado. Revisa Alarmas o Recordatorios antes de pedirlo otra vez.
+FAILED	REMINDER	lavar la loza	1792328400000	0	1	La programación falló y se retiró ese intento. Revisa la agenda manual.
+REJECTED	ALARM		1792328400000	0	1	Android rechazó la programación. No he confirmado un aviso nuevo.
+DUPLICATE	REMINDER	lavar la loza	1792328400000	0	1	Esa orden ya tenía un registro. No la repetí; revisa la agenda manual.

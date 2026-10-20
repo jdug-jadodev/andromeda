@@ -170,13 +170,14 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None):
         clock = [100000]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
         model.observed_contexts = []
         def start(text, speech_end, *_):
             model.done.clear()
+            if answers is not None: model.result = answers[len(model.observed_contexts)]
             model.observed_contexts.append(model.memory.messages(text, activity_ms=speech_end))
             if ready: model.done.set()
             return 123000
@@ -197,7 +198,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)), \
                 patch.object(voice.time, 'time', return_value=1792328400):
             voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
-                          timer_trial=timer_trial, assistant_tools=assistant_tools)
+                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda)
         return events, model
 
     @staticmethod

@@ -79,6 +79,14 @@ public final class WebAnswerPolicyTest {
         rejected(() -> WebAnswerPolicy.validateServiceAnswer(String.join(" ", Collections.nCopies(50, ES))));
         String tooLong = "La respuesta del servicio es demasiado extensa para esta lectura acotada. No la he recortado. Puedes revisar las fuentes en Opciones. ¿Necesitas algo más?";
         check(validate("answer_too_long", -1, "", "", tooLong).equals(tooLong));
+        String excerpt = String.join(" ", Collections.nCopies(4, ES));
+        String excerptSpeech = "Un extracto del servicio web: " + excerpt + "… Fuentes en Opciones. ¿Necesitas algo más?";
+        check(validate("service_excerpt", -1, longAnswer, excerpt, excerptSpeech).equals(excerptSpeech));
+        rejected(() -> validate("service_excerpt", 0, longAnswer, excerpt, excerptSpeech));
+        rejected(() -> validate("service_excerpt", -1, longAnswer, "Otra respuesta distinta.", excerptSpeech));
+        rejected(() -> validate("service_excerpt", -1, ES, ES, excerptSpeech));
+        rejected(() -> validate("quoted", -1, longAnswer, excerpt, excerptSpeech));
+        rejected(() -> validate("service_excerpt", -1, longAnswer, excerpt, direct));
         if (args.length == 1) {
             for (String line : Files.readAllLines(Paths.get(args[0]), StandardCharsets.UTF_8)) {
                 String[] fields = line.split("\t", -1); check(fields.length == 9);

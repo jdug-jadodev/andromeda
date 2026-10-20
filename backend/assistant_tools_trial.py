@@ -6,16 +6,26 @@ import uuid
 from agenda_requests import BOGOTA, request
 from timer_trial import TimerTrial
 from conversation_flow import ConversationFlow
+from phone_volume import VolumeTrial
 
-REJECTION = ('No he programado ningún aviso ni completado una búsqueda con esa petición. '
+REJECTION = ('No he confirmado ninguna acción ni búsqueda con esa petición. '
              'Indica una sola petición completa: fecha y hora inequívocas para la alarma, '
-             'contenido y momento para el recordatorio, o «busca en Internet» y la consulta.')
+              'contenido y momento para el recordatorio, «busca en Internet» y la consulta, o volumen de 0 a 100 por ciento.')
 
 
-def result_text(status, kind, due):
+def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False):
     name = 'Alarma' if kind == 'ALARM' else 'Recordatorio'
     when = datetime.fromtimestamp(due / 1000, BOGOTA).strftime('%d/%m/%Y a las %H:%M')
-    if status == 'CREATED': return f'{name} programado para el {when}, hora de Bogotá.' if kind == 'REMINDER' else f'Alarma programada para el {when}, hora de Bogotá.'
+    if status == 'CREATED':
+        if detailed and kind == 'REMINDER':
+            prefix = ''
+            if delay_ms:
+                scale, unit = (3600000, 'hora') if delay_ms % 3600000 == 0 else (60000, 'minuto') if delay_ms % 60000 == 0 else (1000, 'segundo')
+                count = delay_ms // scale; prefix = f'En {count} {unit}{"s" if count != 1 else ""}, '
+            exact = datetime.fromtimestamp(due / 1000, BOGOTA).strftime('%d/%m/%Y a las %H:%M:%S')
+            scheduled = prefix + 'para el ' if prefix else 'Para el '
+            return f'Recordatorio guardado: {reminder_text}. {scheduled}{exact}, hora de Bogotá.'
+        return f'{name} programado para el {when}, hora de Bogotá.' if kind == 'REMINDER' else f'Alarma programada para el {when}, hora de Bogotá.'
     return {'DUPLICATE': 'Esa orden ya tenía un registro. No la repetí; revisa la agenda manual.',
             'REJECTED': 'Android rechazó la programación. No he confirmado un aviso nuevo.',
             'FAILED': 'La programación falló y se retiró ese intento. Revisa la agenda manual.',
@@ -23,25 +33,69 @@ def result_text(status, kind, due):
 
 
 class AssistantToolsTrial:
-    def __init__(self, clock):
+    def __init__(self, clock, guided_agenda=False):
         self.clock, self.timer, self.inflight = clock, TimerTrial(clock), None
         self.consumed = set()
+        self.volume = VolumeTrial(clock)
+        self.guided_agenda = guided_agenda
+        from agenda_dialogue import AgendaDialogue
+        self.dialogue = AgendaDialogue()
+
+    def dialogue_response(self, result):
+        if result['kind'] == 'agenda_question':
+            return {'text': result['text'], 'timer_control': 'agenda_question', 'agenda_kind': result['event_kind'], 'offered_more': False}
+        if result['kind'] == 'agenda_cancelled':
+            return {'text': ConversationFlow.with_offer(result['text']), 'timer_control': 'agenda_cancelled', 'offered_more': True}
+        raise ValueError('Unknown agenda dialogue response')
+
+    def human(self, turn, session, context, session_end):
+        if not self.guided_agenda: return None
+        result = self.dialogue.answer(turn, self.clock())
+        if result is None: return None
+        if result['kind'] == 'guided_agenda_proposal': return self.model_result(result, turn, session, context, session_end)
+        return self.dialogue_response(result)
+
+    def spoken(self, turn_id, completed): self.dialogue.spoken(turn_id, completed)
+
+    def completion(self, response):
+        if self.guided_agenda and response is not None and response.get('close_reason') == 'action_result':
+            response = dict(response, text=ConversationFlow.with_offer(response['text']), close_reason='', offered_more=True)
+        return response
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind'] == 'agenda_dialogue_start':
+            if not self.guided_agenda: raise ValueError('Agenda dialogue not negotiated')
+            if self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None or turn['id'] in self.consumed:
+                raise ValueError('Agenda dialogue cannot replace an executing turn')
+            return self.dialogue_response(self.dialogue.begin(result['event_kind'], turn, self.clock()))
+        mutation = result['kind'] in {'timer_proposal', 'agenda_proposal', 'guided_agenda_proposal', 'volume_proposal'}
+        if mutation and (self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None
+                or turn['id'] in self.consumed or len(self.consumed) >= 24):
+            raise ValueError('One mutation per current turn')
+        if result['kind'] == 'volume_proposal':
+            response = self.volume.authorize(result, turn, session, context, session_end)
+            self.consumed.add(turn['id']); return response
         if result['kind'] == 'reply' and result.get('web_followup') is True:
             return {'text': ConversationFlow.with_offer(result['text']), 'timer_control': 'web_followup', 'offered_more': True}
         if result['kind'] in {'timer_proposal', 'timer_rejected', 'reply'}:
-            return self.timer.model_result(result, turn, session, context, session_end)
+            response = self.timer.model_result(result, turn, session, context, session_end)
+            if mutation: self.consumed.add(turn['id'])
+            return response
         if result['kind'] == 'tools_rejected': return {'text': REJECTION, 'timer_control': 'rejected'}
         if result['kind'] == 'web_result':
             direct = result.get('web_answer', {}).get('mode') == 'service_answer'
             return {'text': ConversationFlow.with_offer(result['text'], maximum=2100 if direct else 700), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True,
                     **({'web_answer': result['web_answer']} if 'web_answer' in result else {})}
-        if result['kind'] != 'agenda_proposal' or self.inflight is not None or turn['id'] in self.consumed or len(self.consumed) >= 24:
+        if result['kind'] not in {'agenda_proposal', 'guided_agenda_proposal'} or self.inflight is not None or turn['id'] in self.consumed or len(self.consumed) >= 24:
             raise ValueError('Invalid agenda proposal state')
         if not all(isinstance(value, str) and re.fullmatch('[0-9a-f]{32}', value) for value in (turn['id'], session, context)):
             raise ValueError('Invalid grant identity')
-        value = request(result['event_kind'], turn['text'], result['when_text'], result['text'], turn['calendar_anchor_ms'])
+        guided = result['kind'] == 'guided_agenda_proposal'
+        if guided:
+            if not self.guided_agenda: raise ValueError('Agenda dialogue not negotiated')
+            prepared = self.dialogue.claim(result, turn, self.clock())
+            value = {key: prepared[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone')}
+        else: value = request(result['event_kind'], turn['text'], result['when_text'], result['text'], turn['calendar_anchor_ms'])
         if any(type(result.get(key)) is not type(item) or result[key] != item for key, item in value.items()):
             raise ValueError('Agenda payload does not match current request')
         now = self.clock(); before = min(now + 4000, turn['speech_end'] + 26500, session_end - 5000)
@@ -56,11 +110,13 @@ class AssistantToolsTrial:
         self.inflight = dict(value, type='agenda_execute', event_id=str(uuid.uuid4()), nonce=uuid.uuid4().hex,
             request_turn_id=turn['id'], request_sequence=turn['seq'], speech_end_ms=turn['speech_end'],
             execute_before_ms=before, when_text=result['when_text'], calendar_anchor_ms=turn['calendar_anchor_ms'],
-            calendar_boot_ms=turn['calendar_boot_ms'])
+            calendar_boot_ms=turn['calendar_boot_ms'],
+            **({'dialogue_origin_turn_id': prepared['dialogue_origin_turn_id']} if guided else {}))
         return {'event': self.inflight, 'executing': True}
 
     def result(self, packet, session, context):
-        if packet.get('action') == 'timer_result': return self.timer.result(packet, session, context)
+        if packet.get('action') == 'volume_result': return self.completion(self.volume.result(packet, session, context))
+        if packet.get('action') == 'timer_result': return self.completion(self.timer.result(packet, session, context))
         grant = self.inflight
         if grant is None: return None
         expected = dict(session_id=session, context_id=context, **{key: grant[key] for key in
@@ -68,15 +124,17 @@ class AssistantToolsTrial:
         if any(type(packet.get(key)) is not type(value) or packet[key] != value for key, value in expected.items()) or packet.get('status') not in {'CREATED', 'DUPLICATE', 'REJECTED', 'FAILED', 'UNKNOWN'}:
             raise ValueError('Unrelated agenda result')
         self.inflight = None
-        return {'text': result_text(packet['status'], grant['event_kind'], grant['due_ms']), 'timer_control': 'agenda_result',
-                'actions_executed': int(packet['status'] == 'CREATED'), 'close_reason': 'action_result', 'offered_more': False}
+        return self.completion({'text': result_text(packet['status'], grant['event_kind'], grant['due_ms'], grant['text'], grant['delay_ms'], self.guided_agenda), 'timer_control': 'agenda_result',
+                'actions_executed': int(packet['status'] == 'CREATED'), 'close_reason': 'action_result', 'offered_more': False})
 
     def timed_out(self):
+        volume = self.volume.timed_out()
+        if volume is not None: return self.completion(volume)
         if self.inflight is not None and self.clock() >= self.inflight['execute_before_ms'] + 500:
             grant, self.inflight = self.inflight, None
-            return {'text': result_text('UNKNOWN', grant['event_kind'], grant['due_ms']), 'timer_control': 'agenda_result',
-                    'actions_executed': 0, 'close_reason': 'action_result', 'offered_more': False}
-        return self.timer.timed_out()
+            return self.completion({'text': result_text('UNKNOWN', grant['event_kind'], grant['due_ms']), 'timer_control': 'agenda_result',
+                    'actions_executed': 0, 'close_reason': 'action_result', 'offered_more': False})
+        return self.completion(self.timer.timed_out())
 
-    def cancel(self): self.timer.cancel()
-    def close(self): self.timer.close(); self.inflight = None
+    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear()
+    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.inflight = None

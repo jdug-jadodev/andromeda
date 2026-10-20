@@ -2,6 +2,45 @@
 
 ## Estado y alcance
 
+**Estado posterior más reciente:**mitad corregida en la descripción nativa y
+comprobada con LFM antes de desplegar solo assistant_tools_model.py.8 casos pasan,
+mitad3082ms. APK26/proceso/RAM/configuración/otros53 módulos intactos,0 Worker,
+audio/micrófono/acciones físicas, modelo apagado al cierre. No reinstalación ni
+horario/residente; volumen real intacto, prueba por voz pendiente. Evidencia
+`phone-volume-half-selection-fix-v1/final-state.json`; fallo de mitad debajo histórico.
+
+**Estado posterior vigente:**APK26+cuatro módulos de volumen instalados con
+consentimiento. Contrato Android con volumen ficticio pasa, selección LFM de0/100
+pasa pero «a la mitad» no llama herramienta y queda rechazada. Sin volumen físico,
+micrófono/audio/Worker,0 servicios/modelos al cierre. Se conservan lectura media,
+archivo privado/credenciales y resto de módulos;0 nuevas consultas o cambios del
+Worker. Evidencia `phone-volume-code26-install/final-state.json`. Los estados
+«26 no instalado»/«instalado25» siguientes son históricos.
+
+**Actualización posterior:** APK25/interfaz única/lectura media y tres módulos ya
+instalados con consentimiento; recibos en `unified-voice-code25-install/`.
+Comprobaciones Android sin audio pasan; cierre final no verificado por el agente,
+usuario informa que detuvo todo. «25 no instalado» debajo es histórico.
+Nuevo desarrollo local26 añade volumen multimedia mediante herramienta nativa y
+protocolo10, conservando `worker_first_v2_medium`; requiere despliegue coordinado,
+no está instalado y no cambia Worker/configuración/Tavily. Ninguna consulta nueva.
+Prioridades de energía/casa/remoto en `FUNCIONES-Y-ENERGIA-ANDROMEDA.md`.
+
+**Feedback humano posterior:** respuesta y continuación correctas según el
+usuario, pero primera lectura excesiva (48,4s de reproducción/`DONE`) y «silencio»
+no la detiene. Sesión cerrada, sin nueva consulta/captura del agente. Total Worker4
+consultas:2 previas+2 explícitas humanas. No se recogieron textos/fuentes humanos.
+
+**Candidato25 todavía NO instalado:** interfaz con una sola activación de voz y
+sin selectores técnicos. Lectura media como `service_excerpt`: extracto literal
+declarado≤360 unidades, sin otra generación; respuesta completa≤2000 conservada
+en contrato/RAM para continuar después de `onDone`. No es cita de una página ni
+una síntesis local. Validación Python/Java y negociación `worker_first_v2_medium`
+exigen APK25+tres módulos coordinados. El teléfono sigue24. No escucha permanente,
+autoinicio de motor o «silencio» reparado; el motor aún se prepara manualmente y
+la sesión sigue acotada a5min tras activación humana. Mantener Detener visible.
+Evidencia `artifacts/android-voice/unified-voice-code25-v1/`.
+
 **Continuación corregida e instalada con autorización, sin reinstalar la app.**
 Solo un módulo backend cambia; APK24/UID/proceso/datos conservados. La continuación
 conversacional entra al LFM local sin herramientas antes del selector; las posibles

@@ -13,6 +13,7 @@ from web_search import WEB_QUERY_REASONS, WebQueryValidationError, current_query
 from web_answers import contract as web_contract
 from internet_search import buscar_en_internet, InternetSearchError
 from worker_answers import answer as worker_answer, followup, latest_web
+from phone_volume import current_volume
 
 
 def tool(name, description, *arguments):
@@ -24,7 +25,8 @@ def tool(name, description, *arguments):
 TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('create_alarm', 'Programa la alarma Android solicitada.'),
          tool('create_reminder', 'Programa el recordatorio solicitado, también «recuérdame».'),
-         tool('search_web', 'Internet.')]
+         tool('search_web', 'Internet.'),
+         tool('set_phone_volume', 'Baja, sube o pon el volumen del teléfono, también «a la mitad». Usa esta herramienta sin argumentos.')]
 SYSTEM = ('Andrómeda. Sí puedes programar con herramientas. Alarmas/recordatorios usan el pedido actual, sin argumentos. '
           'Copia literal en español; no citas/negaciones.')
 
@@ -54,6 +56,7 @@ def native_call(message, finish):
 
 
 class AssistantToolsModel(ConversationModel):
+    guided_agenda = False
     anchor_wall = anchor_boot = 0
     response_start_ms = 60000
     compute_ms = 55000
@@ -67,6 +70,21 @@ class AssistantToolsModel(ConversationModel):
         # requires every field and rejects extra, duplicate, empty or mistyped values.
         result.update(tools=catalog, tool_choice='auto', parallel_tool_calls=False)
         return result
+
+    @staticmethod
+    def dialogue_payload(messages, maximum=96):
+        result = AssistantToolsModel.payload(messages, maximum)
+        result['messages'][0]['content'] += ' Si piden alarma o recordatorio incompletos, selecciona su herramienta para preguntar lo que falta.'
+        for item in result['tools']:
+            if item['function']['name'] == 'create_reminder':
+                item['function']['description'] = 'Crea o inicia un recordatorio. Selecciona también si falta contenido o momento; se preguntará. Sin argumentos.'
+            elif item['function']['name'] == 'create_alarm':
+                item['function']['description'] = 'Crea o inicia una alarma. Selecciona también si falta fecha y hora; se preguntará. Sin argumentos.'
+        return result
+
+    def enable_agenda_dialogue(self):
+        self.guided_agenda = True
+        self.payload = self.dialogue_payload
 
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
@@ -103,7 +121,7 @@ class AssistantToolsModel(ConversationModel):
         return bool(re.search(r'\b(?:busca|busques|buscar|consulta|consultes|investiga|investigues|'
             r'pon|ponme|pongas|crea|crees|crear|programa|programes|inicia|inicies|'
             r'recuerdame|recuerdes|alarma|alarmas|recordatorio|recordatorios|temporizador|temporizadores|'
-            r'timer|cuenta atras|cancela|canceles|apaga|enciende)\b', normalized(text)))
+            r'timer|cuenta atras|cancela|canceles|apaga|enciende|volumen|baja|bajes|sube|subas|ajusta)\b', normalized(text)))
 
     def interpret_result(self, message, finish_reason, human):
         selected, validation, web_attempted = 'none', 'invalid_native_call', False
@@ -126,8 +144,17 @@ class AssistantToolsModel(ConversationModel):
                     # The strict zero-argument schema rejects (never repairs)
                     # any model-supplied date, duration, text or copied request.
                     validation = 'agenda_request_rejected'
-                    value = current_event('ALARM' if name == 'create_alarm' else 'REMINDER', human, self.anchor_wall)
+                    kind = 'ALARM' if name == 'create_alarm' else 'REMINDER'
+                    try: value = current_event(kind, human, self.anchor_wall)
+                    except AgendaValidationError:
+                        if not self.guided_agenda: raise
+                        from agenda_dialogue import opening
+                        opening(kind, human)  # No execution; controller independently checks again.
+                        return finish({'kind': 'agenda_dialogue_start', 'event_kind': kind}, 'agenda_question')
                     return finish(dict(value, kind='agenda_proposal'), 'accepted')
+                if name == 'set_phone_volume':
+                    validation = 'volume_request_rejected'
+                    return finish({'kind': 'volume_proposal', 'percent': current_volume(human)}, 'accepted')
                 validation = 'web_query_rejected'
                 # Like agenda calls, this schema accepts NO echoed human data.
                 # An added query argument is rejected by native_call(), never
@@ -155,7 +182,7 @@ class AssistantToolsModel(ConversationModel):
             except (ValueError, KeyError, TypeError, AgendaValidationError, TimerValidationError):
                 return finish({'kind': 'tools_rejected'}, validation)
         plain = normalized(human)
-        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
+        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:baja|sube|ajusta|establece) el volumen\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
             return finish({'kind': 'tools_rejected'}, 'missing_native_call')
         try:
             plain_reply = conversational_reply(message, finish_reason)

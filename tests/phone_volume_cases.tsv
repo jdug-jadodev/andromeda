@@ -1,0 +1,41 @@
+human	percent
+Andrómeda, baja el volumen a la mitad	50
+baja el volumen al 50%	50
+pon el volumen a 0	0
+pon el volumen al cero por ciento	0
+sube el volumen al cien por ciento	100
+ajusta el volumen multimedia al 100 %	100
+por favor pon el volumen del teléfono al treinta y siete por ciento	37
+Andrómeda por favor establece el volumen al setenta y tres por ciento por favor	73
+ponme el volumen a veintidós	22
+pon el volumen al uno por ciento	1
+pon el volumen a 99	99
+pon el volumen al noventa y nueve	99
+no bajes el volumen a la mitad	INVALID
+ayer dije baja el volumen a la mitad	INVALID
+si digo baja el volumen al 50 qué pasa	INVALID
+di «baja el volumen al 50»	INVALID
+baja el volumen de la TV al 50	INVALID
+baja el volumen de la alarma al 0	INVALID
+pon el volumen de llamadas al cien	INVALID
+baja el volumen al 50 y apaga el TV	INVALID
+pon el volumen al 10 o al 20	INVALID
+baja el volumen un 50 por ciento	INVALID
+baja el volumen en 50 por ciento	INVALID
+baja el volumen a la mitad del actual	INVALID
+baja el volumen	INVALID
+baja el volumen al máximo	INVALID
+pon el volumen al 101	INVALID
+pon el volumen al -1	INVALID
+pon el volumen al 12.5	INVALID
+pon el volumen al 12,5 por ciento	INVALID
+pon el volumen al ５０	INVALID
+pon el volumen al ٥٠	INVALID
+pon el volumen al cien y uno	INVALID
+pon el volumen al veinte y uno	INVALID
+pon el volumen al cincuenta y cero	INVALID
+sí	INVALID
+hazlo	INVALID
+qué es el volumen	INVALID
+pon el volumen al 20 mañana	INVALID
+busca en Internet baja el volumen al 20	INVALID
