@@ -121,6 +121,18 @@ final class ConversationMemory {
         for (Chat chat : chats.values()) result.add(new Snapshot(chat.id, chat.lastHumanMs, chat.turns));
         return Collections.unmodifiableList(result);
     }
+    synchronized List<Snapshot> catalogForContinuous(long now) {
+        prune(now);
+        if (active != null) throw new IllegalStateException("Cierra primero el contexto activo");
+        // Explicit continuous mode keeps room for a fresh CLIENT-created identity.
+        // Capacity eviction is by human activity, never by assistant/background work.
+        if (chats.size() >= MAX_CONVERSATIONS) {
+            Chat oldest = null;
+            for (Chat chat : chats.values()) if (oldest == null || chat.activity() < oldest.activity()) oldest = chat;
+            chats.remove(oldest.id); if (currentId.equals(oldest.id)) currentId = "";
+        }
+        return catalog(now);
+    }
     synchronized Lease acquireExact(String id, boolean isNew, long now) {
         prune(now);
         if (active != null || !validId(id)) throw new IllegalStateException("Selección de charla no válida");

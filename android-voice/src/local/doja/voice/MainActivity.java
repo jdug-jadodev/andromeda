@@ -57,6 +57,8 @@ public class MainActivity extends Activity {
                 wakeHint.setText(CaptureProbeService.status + " · quedan "
                     + Math.max(0, (CaptureProbeService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000) + " s");
             } else if (SilenceListener.recording()) wakeHint.setText("MICRÓFONO ACTIVO · silencio o Andrómeda, silencio · no abre otra charla");
+            else if (VoiceService.active && VoiceService.continuousVoiceActive) wakeHint.setText(VoiceService.microphoneRecording
+                ? "Modo continuo · escucha local activa · di Andrómeda" : "Modo continuo · preparando o micrófono en pausa");
             else if (VoiceService.active && VoiceService.expiresAt > 0) {
                 long remaining = Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000);
                 wakeHint.setText("Andrómeda activa · quedan " + remaining + " s · habla para pedir lo que necesites");
@@ -320,7 +322,8 @@ public class MainActivity extends Activity {
             .setMessage(entry.title() + "\n\n" + entry.when() + "\n" + entry.status(System.currentTimeMillis()) + "\nID: " + entry.id)
             .setNegativeButton("Volver", (dialog, which) -> agendaOptions(entry.kind))
             .setPositiveButton("Eliminar…", (dialog, which) -> showDialog(new AlertDialog.Builder(this).setTitle("Eliminar solo " + name)
-                .setMessage("Se bloqueará su entrega y se borrará su contenido. Se retirará su programación y se intentará detener solo su aviso, si está activo. No toca otros eventos ni temporizadores.")
+                .setMessage((entry.weekday==0 ? "" : "Se eliminará TODA esta serie semanal, no solo la ocurrencia de hoy. No es silenciar ni posponer.\n\n")
+                    + "Se bloqueará su entrega y se borrará su contenido. Se retirará su programación y se intentará detener solo su aviso, si está activo. No toca otros eventos ni temporizadores.")
                 .setNegativeButton("Volver", (confirmation, button) -> agendaItem(entry))
                 .setPositiveButton("Eliminar", (confirmation, button) -> removeAgendaItem(entry)).create())).create());
     }
@@ -338,7 +341,7 @@ public class MainActivity extends Activity {
                 if (!resumed || isFinishing() || optionsDialog != loading) return;
                 String message;
                 switch (result) {
-                    case REMOVED: message = "Evento eliminado del registro; programación retirada y sin aviso propio activo registrado."; break;
+                    case REMOVED: message = (entry.weekday==0 ? "" : "Serie semanal completa eliminada. ")+"Evento eliminado del registro; programación retirada y sin aviso propio activo registrado."; break;
                     case NOT_FOUND: message = "Ese evento ya no está en el registro. No se ha tocado ningún otro."; break;
                     case STALE: message = "El evento cambió mientras lo revisabas. Abre la lista y selecciónalo de nuevo; no se ha eliminado."; break;
                     case CLEANUP_PENDING: message = "Contenido borrado y entrega bloqueada, pero no se pudo confirmar toda la limpieza. Revisa el evento marcado como eliminación pendiente."; break;
@@ -393,6 +396,7 @@ public class MainActivity extends Activity {
     Intent unifiedVoiceIntent() {
         return new Intent(this, VoiceService.class).setAction("START")
             .putExtra("conversation_only", true).putExtra("assistant_tools", true)
+            .putExtra("continuous_voice", AssistantConfig.CONTINUOUS_VOICE)
             .putExtra("seconds", UnifiedVoicePolicy.SESSION_SECONDS);
     }
     void assistantVoice() {
@@ -403,7 +407,14 @@ public class MainActivity extends Activity {
                 .setMessage("No se activa voz en una vista de prueba ni durante un aviso o diagnóstico activo.")
                 .setPositiveButton("Cerrar", null).create()); return;
         }
-        if (getSharedPreferences("ui", MODE_PRIVATE).getInt("voice_consent", 0) != UnifiedVoicePolicy.CONSENT_VERSION) {
+        if (AssistantConfig.CONTINUOUS_VOICE && getSharedPreferences("ui",MODE_PRIVATE).getInt("continuous_voice_consent",0) != ContinuousVoicePolicy.CONSENT_VERSION) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Activar escucha local continua")
+                .setMessage("El micrófono quedará disponible para detectar Andrómeda sin límite de cinco minutos, con indicador y botón Detener. Al cerrar una charla vuelve a esperar tu voz; el modelo permanece cargado mientras sea seguro. No se activa al abrir la app ni al reiniciar el teléfono. El supervisor local debe estar preparado.\n\nLa captura conversacional se pausa durante pensamiento, reproducción y cambios de contexto; durante mi voz se usa el detector local de silencio. Los avisos tienen prioridad de audio y la charla vuelve después. Los fallos detienen el modo y no se reinicia solo. La voz todavía necesita comprobación física: conserva Detener.\n\nNo guardo grabaciones ni transcripciones. Contexto solo en RAM, hasta una hora sin actividad humana y como máximo cuatro charlas: al llenarse se descarta la más antigua. Solo tus búsquedas web explícitas salen al Worker. Guardar o borrar un aviso requiere un recibo real de Android.\n\nEn el nuevo modo de alarmas, decir un día semanal y una hora crea repetición cada semana; las alarmas antiguas no se convierten. Borrar una serie requiere oír su horario y confirmar. Mientras suena una alarma, la escucha local solo admite silencio, pospón cinco minutos o descarta esta alarma. Posponer conserva la serie; silenciar no la borra. Tras silencio el micrófono del aviso se apaga: usa sus botones.\n\nDetener cierra la escucha y el canal; el supervisor apaga su modelo al cerrar una conexión continua autenticada. No elimina avisos guardados.")
+                .setNegativeButton("Cancelar",null).setPositiveButton("Activar",(dialog,which) -> {
+                    getSharedPreferences("ui",MODE_PRIVATE).edit().putInt("continuous_voice_consent",ContinuousVoicePolicy.CONSENT_VERSION).apply(); startUnifiedVoice();
+                }).create()); return;
+        }
+        if (!AssistantConfig.CONTINUOUS_VOICE && getSharedPreferences("ui", MODE_PRIVATE).getInt("voice_consent", 0) != UnifiedVoicePolicy.CONSENT_VERSION) {
             showDialog(new AlertDialog.Builder(this).setTitle(UnifiedVoicePolicy.START)
                 .setMessage("Di Andrómeda y pide lo que necesites: conversación, temporizadores, alarmas, recordatorios, volumen del teléfono o una búsqueda explícita en Internet. No tienes que elegir una herramienta.\n\nEl volumen es multimedia (incluye mi voz), de 0 a 100 %. No modifica alarmas ni llamadas. Android tiene escalones y puede limitarlo: confirmaré el nivel real. A 0 % mi confirmación queda en pantalla, sin subirlo para hablar.\n\nEl micrófono estará activo hasta 5 minutos y puedes detenerlo en cualquier momento. No se activa solo al abrir la app ni al reiniciar el teléfono. El motor local debe estar preparado.\n\nSolo la consulta web explícita va a tu Worker; no la charla ni el audio. Las fuentes y conversaciones quedan en RAM hasta 1 h sin actividad. Los avisos de agenda son independientes.\n\n«Silencio» todavía no es fiable: conserva el botón Detener.")
                 .setNegativeButton("Cancelar", null).setPositiveButton("Activar", (dialog, which) -> {
@@ -546,7 +557,7 @@ public class MainActivity extends Activity {
         microphoneStop.setVisibility(CaptureProbeService.active || VoiceService.active || RingService.ringing || AgendaDeliveryService.active || SilenceListener.recording() ? View.VISIBLE : View.GONE);
         if (CaptureProbeService.active) microphoneStop.setText("Detener diagnóstico · "
             + Math.max(0, (CaptureProbeService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000) + " s");
-        else if (VoiceService.active) microphoneStop.setText("Detener · "
+        else if (VoiceService.active) microphoneStop.setText(VoiceService.continuousVoiceActive ? "Detener · modo continuo" : "Detener · "
             + Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000) + " s");
         else if (RingService.ringing || AgendaDeliveryService.active || SilenceListener.recording()) microphoneStop.setText("Detener sonido y escucha");
     }

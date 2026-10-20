@@ -12,6 +12,9 @@ final class ConversationChannel {
     String contextId, newId;
     boolean voiceEntry, cancelled;
     final Map<String, Integer> candidates = new HashMap<>();
+    private ContinuousVoicePolicy.Reset pendingReset;
+    private ConversationMemory.Snapshot pendingSnapshot;
+    private List<ConversationMemory.Snapshot> pendingCatalog;
     ConversationChannel(ConversationMemory memory, ConversationMemory.Lease lease, JSONObject ready) throws Exception {
         this.memory = memory; this.lease = lease; this.sessionId = ready.getString("session_id");
         if (!sessionId.matches("[0-9a-f]{32}") || !lease.conversationId.equals(ready.optString("context_id")))
@@ -75,5 +78,53 @@ final class ConversationChannel {
         return !cancelled && lease != null && memory.answer(lease, turnId, text, now, true);
     }
     synchronized boolean end(String turnId, long now) { return !cancelled && (lease == null ? voiceEntry : memory.end(lease, turnId, now)); }
-    synchronized void close() { cancelled = true; memory.release(lease); }
+    synchronized JSONObject prepareContinuousReset(JSONObject event, long now, boolean dialogueClosed) throws Exception {
+        verify(event);
+        if (pendingReset != null) throw new IOException("Cambio de contexto ya pendiente");
+        String reason = AgendaActionChannel.text(event,"reason");
+        if ("dialogue_closed".equals(reason) != dialogueClosed) throw new IOException("Cierre de diálogo no verificado");
+        ContinuousVoicePolicy.Reset reset = new ContinuousVoicePolicy.Reset(sessionId,contextId,AgendaActionChannel.text(event,"reset_nonce"),reason,now);
+        boolean checkpoint = "turn_checkpoint".equals(reason);
+        ConversationMemory.Snapshot snapshot;
+        if (checkpoint) {
+            if (lease == null) throw new IOException("No hay charla para conservar");
+            snapshot = memory.snapshot(lease,now);
+            if (AgendaActionChannel.integer(event,"retained_turns") != snapshot.turns.size()
+                    || AgendaActionChannel.integer(event,"last_human_ms") != snapshot.lastHumanMs) throw new IOException("El contexto difiere del checkpoint");
+            memory.release(lease); lease = null;
+            pendingCatalog = Collections.emptyList();
+        } else {
+            if ("human_inactivity".equals(reason) && lease != null && !memory.snapshot(lease,now).turns.isEmpty())
+                throw new IOException("El contexto humano no ha caducado");
+            memory.release(lease); lease = null;
+            pendingCatalog = memory.catalogForContinuous(now); snapshot = ConversationMemory.emptySnapshot();
+        }
+        pendingReset = reset; pendingSnapshot = snapshot;
+        JSONArray catalog = new JSONArray(); for (ConversationMemory.Snapshot item : pendingCatalog) catalog.put(encode(item));
+        return new JSONObject().put("action","voice_context").put("reset_nonce",reset.nonce)
+            .put("previous_session_id",sessionId).put("previous_context_id",contextId)
+            .put("context",encode(snapshot)).put("catalog",catalog).put("voice_entry",!checkpoint);
+    }
+    synchronized ConversationChannel finishContinuousReset(JSONObject event, long now) throws Exception {
+        if (cancelled || pendingReset == null || pendingSnapshot == null) throw new IOException("Cambio de contexto no solicitado");
+        boolean voiceEntry = !"turn_checkpoint".equals(pendingReset.reason);
+        if (!(event.get("voice_entry") instanceof Boolean) || !(event.get("audio_yielded") instanceof Boolean) || event.getBoolean("voice_entry") != voiceEntry
+                || AgendaActionChannel.integer(event,"restored_turns") != pendingSnapshot.turns.size()
+                || !ContinuousVoicePolicy.VOICE.equals(event.optString("voice_lifetime_policy"))
+                || !ContinuousVoicePolicy.RESET.equals(event.optString("dialogue_reset_policy"))) throw new IOException("Cambio de contexto incompatible");
+        pendingReset.claim(AgendaActionChannel.text(event,"previous_session_id"),AgendaActionChannel.text(event,"previous_context_id"),
+            AgendaActionChannel.text(event,"reset_nonce"),AgendaActionChannel.text(event,"session_id"),AgendaActionChannel.text(event,"context_id"),pendingSnapshot.conversationId,now);
+        ConversationChannel next;
+        if (voiceEntry) next = new ConversationChannel(memory,pendingSnapshot,pendingCatalog,event);
+        else {
+            ConversationMemory.Lease nextLease = memory.acquireExact(pendingSnapshot.conversationId,false,now);
+            if (memory.snapshot(nextLease,now).turns.size() != pendingSnapshot.turns.size()) {
+                memory.release(nextLease); throw new IOException("El contexto cambió durante el relevo");
+            }
+            next = new ConversationChannel(memory,nextLease,event);
+        }
+        cancelled = true; pendingReset = null; pendingSnapshot = null; pendingCatalog = null;
+        return next;
+    }
+    synchronized void close() { cancelled = true; pendingReset = null; pendingSnapshot = null; pendingCatalog = null; memory.release(lease); }
 }

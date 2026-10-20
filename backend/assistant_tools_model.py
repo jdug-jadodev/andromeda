@@ -57,9 +57,13 @@ def native_call(message, finish):
 
 class AssistantToolsModel(ConversationModel):
     guided_agenda = False
+    alarm_lifecycle = False
     anchor_wall = anchor_boot = 0
     response_start_ms = 60000
     compute_ms = 55000
+    # The five-tool cold prefix exceeded 30s on Moto. This public-only startup
+    # budget is separate from human turns and remains below the 90s worker guard.
+    preparation_ms = 45000
     @staticmethod
     def payload(messages, maximum=96):
         messages = copy.deepcopy(messages); messages[0]['content'] = SYSTEM
@@ -85,6 +89,17 @@ class AssistantToolsModel(ConversationModel):
     def enable_agenda_dialogue(self):
         self.guided_agenda = True
         self.payload = self.dialogue_payload
+
+    @staticmethod
+    def alarm_payload(messages, maximum=96):
+        result=AssistantToolsModel.dialogue_payload(messages,maximum)
+        for item in result['tools']:
+            if item['function']['name']=='create_alarm':
+                item['function']['description']='Crea alarmas o solicita eliminar una alarma indicada. Selecciona también si faltan día y hora. Sin argumentos.'
+        return result
+
+    def enable_alarm_lifecycle(self):
+        self.enable_agenda_dialogue(); self.alarm_lifecycle=True; self.payload=self.alarm_payload
 
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
@@ -145,7 +160,12 @@ class AssistantToolsModel(ConversationModel):
                     # any model-supplied date, duration, text or copied request.
                     validation = 'agenda_request_rejected'
                     kind = 'ALARM' if name == 'create_alarm' else 'REMINDER'
-                    try: value = current_event(kind, human, self.anchor_wall)
+                    if self.alarm_lifecycle and kind=='ALARM':
+                        from alarm_schedule import deletion_target
+                        try: target=deletion_target(human)
+                        except ValueError: pass
+                        else: return finish(dict(kind='alarm_delete_request',**target),'accepted')
+                    try: value = current_event(kind, human, self.anchor_wall,self.alarm_lifecycle)
                     except AgendaValidationError:
                         if not self.guided_agenda: raise
                         from agenda_dialogue import opening
@@ -182,7 +202,7 @@ class AssistantToolsModel(ConversationModel):
             except (ValueError, KeyError, TypeError, AgendaValidationError, TimerValidationError):
                 return finish({'kind': 'tools_rejected'}, validation)
         plain = normalized(human)
-        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:baja|sube|ajusta|establece) el volumen\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
+        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:elimina|borra|cancela) la alarma\b|(?:baja|sube|ajusta|establece) el volumen\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
             return finish({'kind': 'tools_rejected'}, 'missing_native_call')
         try:
             plain_reply = conversational_reply(message, finish_reason)

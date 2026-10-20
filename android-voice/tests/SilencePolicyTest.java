@@ -49,7 +49,7 @@ public final class SilencePolicyTest {
             check(!window.containsKey("pcm") && !window.containsKey("text") && !window.containsKey("turn_id"), "Diagnostic stored human content/IDs");
             window.clear();
         }
-        check(SilenceDiagnostics.snapshot().get(0).size() == 16, "Caller altered retained diagnostics");
+        check(SilenceDiagnostics.snapshot().get(0).size() == 23, "Caller altered retained diagnostics");
         Object full = new Object(), interrupt = new Object();
         check(AudioInputGate.acquire(full), "Full microphone lease failed");
         check(!AudioInputGate.acquire(interrupt), "Two AudioRecords allowed");

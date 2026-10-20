@@ -10,6 +10,7 @@ from conversation_voice import OwnedInference, now_ms, serve
 from resident_runtime import Monitor, ProcSampler, ResidentRuntime, ContinuousResidentRuntime, write_report
 from spanish_wake import SpanishWakeDetector
 from web_search_env import configure
+from inference_privacy import purge_engine_cache
 
 
 def main():
@@ -18,7 +19,11 @@ def main():
     parser.add_argument('--synthetic-input',action='store_true')
     parser.add_argument('--guided-agenda',action='store_true')
     parser.add_argument('--continuous-model',action='store_true',help='Explicit continuous model ownership; does not enable continuous Android capture')
+    parser.add_argument('--continuous-voice',action='store_true',help='Explicit protocol12 continuous local voice, no bounded trial renewal')
+    parser.add_argument('--alarm-lifecycle',action='store_true',help='Coordinated protocol13 weekly alarm/deletion policy')
     args=parser.parse_args()
+    if args.continuous_voice and (not args.continuous_model or not args.guided_agenda): raise ValueError('Continuous voice requires continuous model and guided tools')
+    if args.alarm_lifecycle and not args.continuous_voice: raise ValueError('Alarm lifecycle requires continuous voice')
     work=Path(args.work)
     if (work.parent!=Path('/tmp') or not work.name.startswith('andromeda-resident.') or work.is_symlink()
             or not work.is_dir() or work.stat().st_uid!=os.geteuid() or stat.S_IMODE(work.stat().st_mode)!=0o700):
@@ -46,12 +51,13 @@ def main():
         detector=SpanishWakeDetector(SETTINGS['wake_word'],Path('/opt/doha-voice/models/vosk-model-small-es-0.42'))
         monitor=Monitor(now_ms,ProcSampler(owner.pid,now_ms),deadline,
             report=lambda value:write_report(work/'metrics.json',value),stop_requested=lambda:stopping['requested'] or (work/'STOP').exists(),continuous_model=args.continuous_model)
-        runtime=ContinuousResidentRuntime(owner,now_ms,monitor,enabled=True) if args.continuous_model else ResidentRuntime(owner,now_ms,deadline,monitor)
+        runtime=ContinuousResidentRuntime(owner,now_ms,monitor,enabled=True,cache_purger=lambda model:purge_engine_cache(model.key,now_ms,owner.alive)) if args.continuous_model else ResidentRuntime(owner,now_ms,deadline,monitor)
         if not runtime.check(): raise RuntimeError('Resident resource guard')
         try:
-            serve('/var/lib/andromeda-conversation/token',work/'key',detector,300,
+            serve('/var/lib/andromeda-conversation/token',work/'key',detector,0 if args.continuous_voice else 300,
                 '/var/lib/andromeda-conversation/server-cert.pem','/var/lib/andromeda-conversation/server-key.pem',
-                'synthetic_pcm' if args.synthetic_input else 'microphone',runtime.check,assistant_tools=True,resident=runtime,guided_agenda=args.guided_agenda)
+                'synthetic_pcm' if args.synthetic_input else 'microphone',runtime.check,assistant_tools=True,resident=runtime,guided_agenda=args.guided_agenda,
+                continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle)
         except RuntimeError:
             if monitor.reason not in {'manual_stop','time_limit','low_memory','battery_warm','stale_monitor','sensor_or_report_error','model_exit'}: raise
     finally:

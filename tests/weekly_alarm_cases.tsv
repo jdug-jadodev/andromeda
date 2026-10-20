@@ -1,0 +1,22 @@
+# when	weekday	minute_of_day	due_ms; anchor=2026-10-20 12:00 America/Bogota
+lunes a las cinco de la tarde	1	1020	1793052000000
+martes a las 17:00	2	1020	1792533600000
+miércoles a las siete de la mañana	3	420	1792584000000
+jueves a las 5 p. m.	4	1020	1792706400000
+viernes a las 12 a. m.	5	0	1792731600000
+sábado a las 12 p. m.	6	720	1792861200000
+domingo a medianoche	7	0	1792904400000
+martes a las 12:00	2	720	1793120400000
+martes a las 11:59	2	719	1793120340000
+todos los lunes a las cinco y media de la tarde	1	1050	1793053800000
+cada lunes a las 17:00	1	1020	1793052000000
+el lunes a las 17:00	1	1020	1793052000000
+los lunes a las 17:00	1	1020	1793052000000
+lunes a las cinco	REJECT	0	0
+lunes a las 25:00	REJECT	0	0
+lunes a las 17:60	REJECT	0	0
+lunes y martes a las 17:00	REJECT	0	0
+lunes a las 17:00 y busca noticias	REJECT	0	0
+no lunes a las 17:00	REJECT	0	0
+lunes a las cinco pm y no la pongas	REJECT	0	0
+lunes a las doce de la mañana	REJECT	0	0

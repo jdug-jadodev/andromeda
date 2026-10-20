@@ -17,12 +17,29 @@ else
 fi
 BEGIN_MS=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
 BIN=/data/local/doha-inference/llama-b11669
+CACHE_RAM=64
+SLOT_OPTIONS=''
+if [ "$MODE" = continuous ]; then
+  # b11669 gates erase behind slot-save-path. This ROOT-owned non-writable
+  # directory enables erase but prevents save from ever creating/overwriting a file.
+  [ ! -L "$BIN" ] && [ "$(stat -c '%u' "$BIN")" = 0 ] && [ ! -w "$BIN" ] || exit 1
+  [ "$(awk '/^CapEff:/ {print $2}' "/proc/$$/status")" = 0000000000000000 ] || exit 1
+  [ ! -u "$BIN/llama-server" ] && [ ! -g "$BIN/llama-server" ] || exit 1
+  for entry in "$BIN"/* "$BIN"/.[!.]* "$BIN"/..?*; do
+    if [ -e "$entry" ] || [ -L "$entry" ]; then
+      [ ! -L "$entry" ] && [ "$(stat -c '%u' "$entry")" = 0 ] && [ ! -w "$entry" ] || exit 1
+    fi
+  done
+  CACHE_RAM=0
+  SLOT_OPTIONS='--slot-save-path /data/local/doha-inference/llama-b11669'
+fi
 PID=''
 START=''
 owned() {
   [ -n "$PID" ] && [ -r "/proc/$PID/stat" ] && [ -r "/proc/$PID/status" ] || return 1
   [ "$(awk '{print $22}' "/proc/$PID/stat")" = "$START" ] || return 1
   [ "$(awk '/^Uid:/ {print $2}' "/proc/$PID/status")" = 10218 ] || return 1
+  [ "$(awk '/^CapEff:/ {print $2}' "/proc/$PID/status")" = 0000000000000000 ] || return 1
   tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq "$BIN/llama-server" || return 1
   tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq /data/local/doha-inference/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf || return 1
   tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq "$WORK/key"
@@ -39,7 +56,7 @@ export LD_LIBRARY_PATH=$BIN
 "$BIN/llama-server" -m /data/local/doha-inference/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf \
   -c 2048 -t 4 -tb 4 -ngl 0 -np 1 --cache-type-k f16 --cache-type-v f16 \
   --host 127.0.0.1 --port 11435 --api-key-file "$WORK/key" \
-  --no-webui --no-slots --no-ui-mcp-proxy --threads-http 1 --cache-ram 64 \
+  --no-webui --no-slots --no-ui-mcp-proxy --threads-http 1 --cache-ram "$CACHE_RAM" $SLOT_OPTIONS \
   --no-cache-idle-slots --cache-prompt --poll 0 --poll-batch 0 -b 256 -ub 16 \
   --ctx-checkpoints 32 --checkpoint-min-step 16 -n 96 --reasoning off \
   --reasoning-budget 0 --reasoning-format deepseek --no-reasoning-preserve --jinja --log-disable \

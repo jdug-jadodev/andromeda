@@ -1,10 +1,27 @@
 #!/system/bin/sh
 # Explicit model supervisor: bounded trials or opt-in continuous-model. No mic start.
 set -eu
-[ "$(id -u)" = 0 ] && [ "$#" -ge 1 ] && [ "$#" -le 2 ] || exit 2
+[ "$(id -u)" = 0 ] && [ "$#" -ge 1 ] && [ "$#" -le 3 ] || exit 2
 LIMIT=$1
-case "$LIMIT" in 900|1800) WORKER_MODE=bounded; CONTINUOUS='' ;; continuous-model) WORKER_MODE=continuous; CONTINUOUS='--continuous-model' ;; *) exit 2 ;; esac
-case "${2:-classic}" in classic) GUIDED='' ;; guided) GUIDED='--guided-agenda' ;; *) exit 2 ;; esac
+VOICE=''
+case "$LIMIT" in
+  900|1800) WORKER_MODE=bounded; CONTINUOUS='' ;;
+  continuous-model) WORKER_MODE=continuous; CONTINUOUS='--continuous-model' ;;
+  continuous-voice) WORKER_MODE=continuous; CONTINUOUS='--continuous-model'; VOICE='--continuous-voice' ;;
+  *) exit 2 ;;
+esac
+if [ -n "$VOICE" ]; then
+  [ "${2:-guided}" = guided ] || exit 2
+  GUIDED='--guided-agenda'
+else
+  case "${2:-classic}" in classic) GUIDED='' ;; guided) GUIDED='--guided-agenda' ;; *) exit 2 ;; esac
+fi
+ALARMS=''
+case "${3:-classic}" in
+  classic) ;;
+  alarms) [ -n "$VOICE" ] && [ -n "$GUIDED" ] || exit 2; ALARMS='--alarm-lifecycle' ;;
+  *) exit 2 ;;
+esac
 ROOT=/data/local/linux/debian-final
 LOCK=/data/local/tmp/andromeda-resident.lock
 debian_user() {
@@ -53,10 +70,10 @@ chown 10218:10218 "$WORK"
 debian_user /opt/doha-voice/benchmark-warm-client.py init "$INNER"
 su -g 10218 -G 3003 10218 -c "'/system/bin/env' -i PATH=/system/bin:/system/xbin HOME=/data/local/tmp '/data/local/doha-inference/resident-model-worker.sh' '$WORK' '$WORKER_MODE'" &
 SUPERVISOR=$!
-debian_user /opt/doha-voice/pilot/prepare-conversation.py "$INNER/key" --assistant-tools $GUIDED >/dev/null 2>&1
+debian_user /opt/doha-voice/pilot/prepare-conversation.py "$INNER/key" --assistant-tools $GUIDED $ALARMS >/dev/null 2>&1
 # No raw backend/model output is saved. Numeric monitoring has its own schema.
 status=0
-debian_user /opt/doha-voice/pilot/resident_voice.py --work "$INNER" $GUIDED $CONTINUOUS >/dev/null 2>&1 || status=$?
+debian_user /opt/doha-voice/pilot/resident_voice.py --work "$INNER" $GUIDED $CONTINUOUS $VOICE $ALARMS >/dev/null 2>&1 || status=$?
 debian_user -c 'import sys; sys.path.insert(0,"/opt/doha-voice/pilot"); from resident_runtime import request_stop; request_stop(sys.argv[1])' "$INNER"
 wait "$SUPERVISOR" || true # Backend already verified/stopped its owned model.
 SUPERVISOR=''

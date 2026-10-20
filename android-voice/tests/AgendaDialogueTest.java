@@ -66,6 +66,17 @@ public final class AgendaDialogueTest {
         AgendaPermit permit = AgendaPermit.validatedDialogue("00000000-0000-0000-0000-000000000001",proposal.eventKind,draftGuard,proposal.origin,last.id,last.sequence,
             proposal.when,proposal.text,proposal.value.due,proposal.value.delay,107000,last.wall,last.boot,103000,last.wall);
         check(permit.begin(103000,last.wall)); check(!permit.begin(103000,last.wall)); check(!draftGuard.active());
+        AgendaDialogue longEpoch = new AgendaDialogue(64);
+        AgendaDialogue.Human opening = new AgendaDialogue.Human(String.format("%032x",20),20,"pon un recordatorio",99900,1792328400000L,100000,100000,64);
+        longEpoch.begin(AgendaEntry.Kind.REMINDER,opening); longEpoch.spoken(opening.id,true);
+        for (int index=1; index<=9; index++) {
+            long at=100000+index*3000L;
+            AgendaDialogue.Human field = new AgendaDialogue.Human(String.format("%032x",20+index),20+index,"sí",at-100,1792328400000L+index*3000L,at,at,64);
+            AgendaDialogue.Decision decision = longEpoch.answer(field,at);
+            check(decision.kind.equals(index==9 ? "cancelled" : "question"));
+            longEpoch.spoken(field.id,true);
+        }
+        check(!longEpoch.active());
         System.out.println("Guided agenda and continuation: " + checks + " assertions passed (public shared turns, fake clocks, no device).");
     }
 }

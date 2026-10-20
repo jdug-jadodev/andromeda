@@ -15,7 +15,10 @@ final class AgendaDialogue {
         final String id, text;
         final long sequence, speechEnd, wall, boot;
         Human(String id, long sequence, String text, long speechEnd, long wall, long boot, long now) {
-            if (id == null || !id.matches("[0-9a-f]{32}") || sequence < 1 || sequence > 24
+            this(id,sequence,text,speechEnd,wall,boot,now,24);
+        }
+        Human(String id, long sequence, String text, long speechEnd, long wall, long boot, long now, long maximumSequence) {
+            if (id == null || !id.matches("[0-9a-f]{32}") || sequence < 1 || sequence > maximumSequence
                     || speechEnd <= 0 || speechEnd > now + 100 || now - speechEnd >= 60000
                     || wall <= 0 || boot <= 0 || boot > now + 100 || now - boot > 1500)
                 throw new IllegalArgumentException("Invalid agenda human turn");
@@ -38,8 +41,20 @@ final class AgendaDialogue {
     private long created, lastSequence;
     private boolean armed;
     private Decision prepared;
+    private final long maximumSequence;
+    private final boolean lifecycle;
+    private int answers;
+    AgendaDialogue() { this(24); }
+    AgendaDialogue(long maximumSequence) {
+        this(maximumSequence,false);
+    }
+    AgendaDialogue(long maximumSequence,boolean lifecycle) {
+        if (maximumSequence != 24 && maximumSequence != 64) throw new IllegalArgumentException("Invalid agenda epoch size");
+        this.maximumSequence = maximumSequence;
+        this.lifecycle=lifecycle;
+    }
     boolean active() { return kind != null; }
-    void clear() { kind = null; body = origin = questionTurn = ""; created = lastSequence = 0; armed = false; prepared = null; }
+    void clear() { kind = null; body = origin = questionTurn = ""; created = lastSequence = 0; answers = 0; armed = false; prepared = null; }
     static String subject(String text) {
         String value = AgendaRequestGuard.clean(text), plain = TimerRequestGuard.normalize(value);
         if (value.isEmpty() || value.length() > 160 || Pattern.compile("[;.!?]|\\b(?:no|hoy|manana|pasado manana)\\b|\\ben .+ (?:segundos?|minutos?|horas?)\\b").matcher(plain).find()
@@ -70,7 +85,7 @@ final class AgendaDialogue {
             "", origin, human, kind, null);
     }
     Decision begin(AgendaEntry.Kind kind, Human human) {
-        if (active()) throw new IllegalArgumentException("Agenda form already active");
+        if (active() || human.sequence > maximumSequence) throw new IllegalArgumentException("Agenda form already active/invalid sequence");
         String content = opening(kind, human.text);
         this.kind = kind; body = content; origin = human.id; created = human.boot; lastSequence = human.sequence;
         return question(human, null);
@@ -81,10 +96,12 @@ final class AgendaDialogue {
     }
     Decision answer(Human human, long now) {
         if (!active()) return null;
-        if (!armed || human.sequence <= lastSequence || now - created >= MAX_AGE_MS) {
+        if (!armed || human.sequence <= lastSequence || human.sequence > maximumSequence || now - created >= MAX_AGE_MS) {
             clear(); throw new IllegalArgumentException("Agenda question not heard/stale");
         }
         lastSequence = human.sequence; armed = false; prepared = null;
+        answers++;
+        if (answers > 8) { clear(); return new Decision("cancelled", CANCELLED, "", "", human, null, null); }
         String raw = AgendaRequestGuard.clean(human.text), plain = TimerRequestGuard.normalize(raw);
         if (plain.matches("cancela|cancelar|cancela el aviso|cancela el recordatorio|cancela la alarma|no|dejalo|olvidalo")) {
             clear(); return new Decision("cancelled", CANCELLED, "", "", human, null, null);
@@ -95,10 +112,13 @@ final class AgendaDialogue {
             try { body = subject(human.text); } catch (IllegalArgumentException error) { return question(human, SUBJECT); }
             return question(human, null);
         }
-        long[] due;
-        try { due = AgendaRequestGuard.due(raw, human.wall); }
+        AgendaRequestGuard.Value value;
+        try {
+            if(lifecycle) value=AlarmSchedule.parse(kind,raw,body,human.wall);
+            else { long[] due=AgendaRequestGuard.due(raw,human.wall); value=new AgendaRequestGuard.Value(kind,body,due[0],due[1]); }
+        }
         catch (RuntimeException error) { return question(human, INVALID_TIME); }
-        prepared = new Decision("proposal", body, raw, origin, human, kind, new AgendaRequestGuard.Value(kind, body, due[0], due[1]));
+        prepared = new Decision("proposal", body, raw, origin, human, kind, value);
         return prepared;
     }
     AgendaRequestGuard.Value claim(AgendaEntry.Kind kind, String origin, String turn, long sequence, String when, String text,

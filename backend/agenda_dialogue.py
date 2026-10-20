@@ -56,10 +56,10 @@ class Human:
     boot: int
 
     @classmethod
-    def from_turn(cls, turn, now, maximum_age=1500):
+    def from_turn(cls, turn, now, maximum_age=1500, maximum_sequence=24):
         value = cls(turn['id'], turn['seq'], turn['text'], turn['speech_end'], turn['calendar_anchor_ms'], turn['calendar_boot_ms'])
         if (not isinstance(value.id, str) or not re.fullmatch('[0-9a-f]{32}', value.id)
-                or type(value.seq) is not int or not 1 <= value.seq <= 24 or not isinstance(value.text, str)
+                or type(value.seq) is not int or not 1 <= value.seq <= maximum_sequence or not isinstance(value.text, str)
                 or type(value.speech_end) is not int or not 0 < value.speech_end <= now + 100 or now-value.speech_end >= 60000
                 or type(value.wall) is not int or value.wall <= 0 or type(value.boot) is not int
                 or not 0 < value.boot <= now + 100 or now-value.boot > maximum_age
@@ -69,11 +69,13 @@ class Human:
 
 
 class AgendaDialogue:
-    def __init__(self): self.clear()
+    def __init__(self, maximum_sequence=24, alarm_lifecycle=False):
+        if maximum_sequence not in (24,64): raise ValueError('Invalid agenda epoch size')
+        self.maximum_sequence=maximum_sequence; self.alarm_lifecycle=alarm_lifecycle; self.clear()
 
     def clear(self):
         self.kind = self.body = self.origin = self.question_turn = ''
-        self.created = self.last_seq = 0
+        self.created = self.last_seq = self.answers = 0
         self.armed = False
         self.prepared = None
 
@@ -87,7 +89,7 @@ class AgendaDialogue:
 
     def begin(self, kind, turn, now):
         if self.active: raise ValueError('Agenda form already active')
-        human = Human.from_turn(turn, now, maximum_age=60000); body = opening(kind, human.text)
+        human = Human.from_turn(turn, now, maximum_age=60000, maximum_sequence=self.maximum_sequence); body = opening(kind, human.text)
         self.kind, self.body, self.origin = kind, body, human.id
         self.created, self.last_seq = human.boot, human.seq
         return self.question(human)
@@ -99,10 +101,13 @@ class AgendaDialogue:
 
     def answer(self, turn, now):
         if not self.active: return None
-        human = Human.from_turn(turn, now)
+        human = Human.from_turn(turn, now, maximum_sequence=self.maximum_sequence)
         if not self.armed or human.seq <= self.last_seq or now-self.created >= MAX_AGE_MS:
             self.clear(); raise ValueError('Agenda question not heard/stale')
         self.last_seq = human.seq; self.armed = False; self.prepared = None
+        self.answers += 1
+        if self.answers > 8:
+            self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         plain = normalized(clean(human.text))
         if plain in {'cancela', 'cancelar', 'cancela el aviso', 'cancela el recordatorio', 'cancela la alarma', 'no', 'dejalo', 'olvidalo'}:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
@@ -112,15 +117,20 @@ class AgendaDialogue:
             try: self.body = subject(human.text)
             except ValueError: return self.question(human, SUBJECT)
             return self.question(human)
-        try: due, delay = calendar_due(clean(human.text), human.wall)
+        try:
+            if self.alarm_lifecycle:
+                from alarm_schedule import schedule
+                time = schedule(self.kind, clean(human.text), human.wall)
+            else:
+                due, delay = calendar_due(clean(human.text), human.wall); time=dict(due_ms=due,delay_ms=delay)
         except (ValueError, OverflowError): return self.question(human, INVALID_TIME)
-        self.prepared = dict(event_kind=self.kind, text=self.body, when_text=clean(human.text), due_ms=due,
-            delay_ms=delay, zone='America/Bogota', dialogue_origin_turn_id=self.origin,
+        self.prepared = dict(event_kind=self.kind, text=self.body, when_text=clean(human.text), **time,
+            zone='America/Bogota', dialogue_origin_turn_id=self.origin,
             dialogue_final_turn_id=human.id, dialogue_final_sequence=human.seq)
         return dict(self.prepared, kind='guided_agenda_proposal')
 
     def claim(self, result, turn, now):
-        human = Human.from_turn(turn, now)
+        human = Human.from_turn(turn, now, maximum_sequence=self.maximum_sequence)
         expected = self.prepared
         if (expected is None or now-self.created >= MAX_AGE_MS
                 or expected['dialogue_final_turn_id'] != human.id or expected['dialogue_final_sequence'] != human.seq

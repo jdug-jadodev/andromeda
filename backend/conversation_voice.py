@@ -58,8 +58,8 @@ def reject_unsupported_claims(text):
     plain = normalized(text)
     patterns = [
         r'\b(?:estoy|estamos)\s+(?:(?:ya|ahora)\s+)?(?:creando|poniendo|programando|activando|iniciando|cancelando|apagando|encendiendo|buscando|consultando)\b',
-        r'\b(?:he|hemos|ya|acabo de) (?:\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\b',
-        r'\b(?:temporizador|alarma|recordatorio)\b.{0,45}\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|list[oa])\b',
+        r'\b(?:he|hemos|ya|acabo de) (?:\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|eliminado|borrado|pospuesto|apagado|encendido|consultado|buscado|encontrado en internet)\b',
+        r'\b(?:temporizador|alarma|recordatorio)\b.{0,45}\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|eliminad[oa]|borrad[oa]|pospuest[oa]|list[oa])\b',
         r'\b(?:te avisare|te recordare|sonara en|voy a (?:poner|crear|programar|activar|cancelar)|timer (?:set|started)|alarm (?:set|scheduled))\b',
         r'\b(?:he|hemos|ya|acabo de)\s+(?:(?:bajado|subido|ajustado|establecido)\b)',
         r'\bvolumen\b.{0,35}\b(?:ajustado|establecido|puesto|al [0-9]+)\b',
@@ -98,8 +98,9 @@ def read_hello(conn, deadline):
 
 
 class FramePump:
-    def __init__(self, conn):
+    def __init__(self, conn, continuous_context_controls=False):
         self.conn, self.buffer = conn, bytearray()
+        self.continuous_context_controls = continuous_context_controls
         conn.settimeout(.05)
 
     def poll(self):
@@ -107,11 +108,12 @@ class FramePump:
         except (socket.timeout, ssl.SSLWantReadError): return []
         if not data: raise EOFError()
         self.buffer.extend(data)
-        if len(self.buffer) > 32768: raise ValueError('Excessive buffered PCM')
+        if len(self.buffer) > (135168 if self.continuous_context_controls else 32768): raise ValueError('Excessive buffered PCM')
         frames = []
         while len(self.buffer) >= 5:
             kind, length = struct.unpack('!BI', self.buffer[:5])
-            if length > 4096: raise ValueError('Oversized frame')
+            maximum = 131072 if kind == 5 and self.continuous_context_controls else 4096
+            if length > maximum: raise ValueError('Oversized frame')
             if len(self.buffer) < length + 5: break
             frames.append((kind, bytes(self.buffer[5:5 + length])))
             del self.buffer[:5 + length]
@@ -264,6 +266,7 @@ class OwnedInference:
 class ConversationModel:
     response_start_ms = 30000
     compute_ms = 22000
+    preparation_ms = 30000  # Public cold initialization, never a human-turn deadline.
     def __init__(self, key_path, owned=None, clock=now_ms):
         self.key = Path(key_path).read_text().strip()
         if len(self.key) < 32: raise ValueError('Missing inference credential')
@@ -297,7 +300,7 @@ class ConversationModel:
                 'temperature': 0, 'seed': 42, 'chat_template_kwargs': {'enable_thinking': False}}
 
     def prepare(self):
-        deadline = self.clock() + 30000
+        deadline = self.clock() + self.preparation_ms
         self.post('/v1/chat/completions', self.payload([
             {'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1), deadline)
 
@@ -349,9 +352,9 @@ class ConversationModel:
         self.thread.start()
         return deadline
 
-    def cancel(self):
+    def cancel_generation(self):
+        """Cancel only current generation; caller must stop owner if it stays stuck."""
         self.cancelled.set()
-        self.owned.stop()
         connection = self.http
         if connection is not None:
             try:
@@ -359,21 +362,36 @@ class ConversationModel:
                 connection.close()
             except OSError: pass
         if self.thread is not None: self.thread.join(timeout=.5)
+        self.result = self.error = None
+        return self.thread is None or not self.thread.is_alive()
+
+    def cancel(self):
+        self.cancelled.set()
+        self.owned.stop()
+        self.cancel_generation()
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False):
     from vosk import KaldiRecognizer, SetLogLevel
-    if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
+    from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
+        MAX_EPOCH_TURNS, STREAM_START_MS, STREAM_IDLE_MS, VOICE_POLICY, RESET_POLICY)
+    if detector is None or limit not in ((0,) if continuous_voice else (90, 300)) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
+    if continuous_voice and (not guided_agenda or timer_trial): raise ValueError('Continuous voice requires guided tools')
+    if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
     SetLogLevel(-1)
     response_start_ms = 60000 if assistant_tools else 30000
-    pump = FramePump(conn)
+    pump = FramePump(conn, continuous_context_controls=True) if continuous_voice else FramePump(conn)
     session_id = uuid.uuid4().hex
     context_id = context_id or uuid.uuid4().hex
     def emit(event):
         send_event(conn, dict(event, session_id=session_id, context_id=context_id))
     began = checked = now_ms(); session_end = began + limit * 1000
+    last_input, stream_started, pending_reset = began, False, None
+    checkpoint_followup = False
+    accept_audio_after = 0
+    audio_yielded = False
     state, recognizer, timeline = 'wake', None, None
     preroll = deque(maxlen=75)
     activation = last_audio = 0
@@ -383,7 +401,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     timers = None
     if assistant_tools:
         from assistant_tools_trial import AssistantToolsTrial
-        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda)
+        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda, maximum_sequence=MAX_EPOCH_TURNS if continuous_voice else 24,alarm_lifecycle=alarm_lifecycle)
     elif timer_trial:
         from timer_trial import TimerTrial
         timers = TimerTrial(now_ms)
@@ -402,7 +420,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
 
     def activate(trigger, delay_ms=0):
         nonlocal state, recognizer, timeline, activation
-        if session_end - now_ms() < 10000:
+        if not continuous_voice and session_end - now_ms() < 10000:
             emit({'type': 'state', 'state': 'wake'}); return
         state, activation = 'listen', now_ms() + delay_ms
         recognizer = KaldiRecognizer(detector.model, 16000); recognizer.SetWords(True)
@@ -442,9 +460,27 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     def closed():
         emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
             'speech_end_ms': turn['speech_end'], 'deadline_ms': turn['deadline_ms'],
-            'reason': turn['close_reason']})
+            'reason': turn['close_reason'], **({'keep_listening': True} if continuous_voice else {})})
 
-    emit({'type': 'ready', 'protocol': 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
+    def request_context(reason, followup=False):
+        nonlocal state, recognizer, timeline, turn, entry, pending_reset, checkpoint_followup
+        if pending_reset is not None: raise ValueError('Continuous context already pending')
+        if reason != 'turn_checkpoint' and model.purge_cache() is not True: raise ContinuousVoiceFault('voice_cache_clear_failed')
+        pending_reset = ContextReset(session_id, context_id, reason, now_ms,
+            len(model.memory.pairs) if reason=='turn_checkpoint' else 0, model.memory.last_human if reason=='turn_checkpoint' else 0)
+        timers.close(); flow.reset(); recognizer = timeline = turn = entry = None
+        preroll.clear(); detector.reset(); model.memory = ShortMemory(now_ms)
+        model.result = model.error = None; model.context_metrics.clear()
+        checkpoint_followup = followup; state = 'context'
+        emit(pending_reset.request())
+
+    def completed_turn(continue_chat):
+        if (continuous_voice and sequence >= CHECKPOINT_TURNS and not timers.pending_dialogue
+                and (entry is None or entry.stage == 'active')):
+            request_context('turn_checkpoint', followup=continue_chat)
+        else: reset(continue_chat=continue_chat)
+
+    emit({'type': 'ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
                       'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
                       **({'assistant_tools': True} if assistant_tools else {}),
                       'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'] if assistant_tools else ['create_timer'] if timer_trial else [],
@@ -452,16 +488,25 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                       'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
                        **({'web_response_mode': 'worker_first_v2_medium', 'phone_volume_policy': 'absolute_media_v1'} if assistant_tools else {}),
-                       **({'agenda_dialogue_policy': 'guided_agenda_v1', 'action_completion_policy': 'continue_v1'} if guided_agenda else {}),
+                         **({'agenda_dialogue_policy': 'guided_agenda_v1', 'action_completion_policy': 'continue_v1'} if guided_agenda else {}),
+                         **({'alarm_lifecycle_policy':'weekly_alarm_lifecycle_v1'} if alarm_lifecycle else {}),
+                        **({'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,
+                            'action_window_ms': ACTION_WINDOW_MS, 'stream_start_ms': STREAM_START_MS, 'stream_idle_ms': STREAM_IDLE_MS} if continuous_voice else {}),
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
                        'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
                        'voice_entry': entry is not None, 'speech_interrupt': True})
     try:
-        while now_ms() < session_end:
+        while continuous_voice or now_ms() < session_end:
             current = now_ms()
             if current - checked >= 1000:
                 checked = current
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation resource/server guard')
+                if continuous_voice and entry is not None: entry.prune()
+            if continuous_voice:
+                if current-last_input >= (STREAM_IDLE_MS if stream_started else STREAM_START_MS): raise ContinuousVoiceFault('voice_stream_lost')
+                if pending_reset is not None and current >= pending_reset.before: raise ContinuousVoiceFault('voice_context_timeout')
+                if (pending_reset is None and turn is None and model.memory.last_human
+                        and current-model.memory.last_human >= 3600000): request_context('human_inactivity')
             # Inactivity pauses reception; it does not delete or split a chat.
             if state == 'listen' and current - activation >= 50000: reset()
             if turn is not None:
@@ -474,7 +519,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if model.error or not model.result:
                         model.memory.unanswered(turn['text'])
                         emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
-                        reset()
+                        completed_turn(False)
                     elif current < turn['deadline_ms'] - 1500:
                         try:
                             if timers is not None:
@@ -488,7 +533,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         except ValueError:
                             model.memory.unanswered(turn['text'])
                             emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
-                            reset(); continue
+                            completed_turn(False); continue
                         say(answer)
                     else: return
                 elif state == 'executing':
@@ -500,12 +545,58 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     return
                 elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_excerpt'} else 20000): return
             for kind, data in pump.poll():
+                if continuous_voice:
+                    last_input = now_ms(); stream_started = True
+                    if kind == 5:
+                        if pending_reset is None: raise ValueError('Unsolicited continuous context')
+                        snapshot, catalog, voice_entry = pending_reset.claim(context_packet(data))
+                        memory = ShortMemory(now_ms); chosen = memory.restore(snapshot)
+                        restored = restore_catalog(catalog)
+                        if chosen in restored: raise ValueError('Duplicate continuous context')
+                        old_session, old_context, nonce = session_id, context_id, pending_reset.nonce
+                        model.memory = memory; context_id = chosen; session_id = uuid.uuid4().hex
+                        entry = ConversationEntry(restored, chosen, now_ms) if voice_entry else None
+                        sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle)
+                        pending_reset = None
+                        accept_audio_after = now_ms() + 600
+                        emit({'type': 'voice_context_ready', 'previous_session_id': old_session, 'previous_context_id': old_context,
+                            'reset_nonce': nonce, 'voice_entry': voice_entry, 'restored_turns': len(memory.pairs),
+                            'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,'audio_yielded':audio_yielded})
+                        if audio_yielded:
+                            state = 'yield'; emit({'type':'state','state':'audio_yield'})
+                        else: reset(continue_chat=checkpoint_followup)
+                        continue
+                    if pending_reset is not None:
+                        if kind == 3:
+                            action = json.loads(data).get('action')
+                            if action == 'stop': return 'voice_manual_stop'
+                            if action == 'pause': return 'voice_suspended'
+                            if action == 'audio_yield': audio_yielded = True; checkpoint_followup = False; continue
+                            if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
+                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','alarm_selection','alarm_delete_result','activate'}:
+                                raise ValueError('Control during context handoff')
+                        elif kind != 4: raise ValueError('Invalid continuous context frame')
+                        continue  # Discard queued microphone/TTS tail, never transcribe during handoff.
                 if kind == 3:
                     control = json.loads(data); action = control.get('action')
-                    if action == 'stop': return
-                    if action == 'pause': return
+                    if action == 'stop': return 'voice_manual_stop' if continuous_voice else None
+                    if action == 'pause': return 'voice_suspended' if continuous_voice else None
+                    if continuous_voice and action == 'audio_yield':
+                        if state == 'yield': continue
+                        audio_yielded = True
+                        if not model.cancel_generation(): raise ContinuousVoiceFault('voice_cancellation_stuck')
+                        if turn is not None and not turn.get('administrative'): model.memory.unanswered(turn['text'])
+                        timers.close(); timers = AssistantToolsTrial(now_ms,guided_agenda=True,maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle)
+                        turn = recognizer = timeline = None; preroll.clear(); detector.reset(); flow.reset()
+                        model.result = model.error = None; model.context_metrics.clear(); state = 'yield'
+                        emit({'type':'state','state':'audio_yield'}); continue
+                    if continuous_voice and action == 'audio_resume':
+                        if state != 'yield': raise ValueError('Unsolicited audio resume')
+                        audio_yielded = False
+                        request_context('audio_resume'); continue
                     if action == 'activate' and state == 'wake': activate('button')
-                    if action in {'timer_result', 'agenda_result', 'volume_result'} and timers is not None:
+                    if action in {'timer_result', 'agenda_result', 'volume_result','alarm_selection','alarm_delete_result'} and timers is not None:
+                        if action in {'alarm_selection','alarm_delete_result'} and not alarm_lifecycle: raise ValueError('Alarm policy not negotiated')
                         if action in {'agenda_result', 'volume_result'} and not assistant_tools: raise ValueError('Tools not enabled')
                         if state == 'executing':
                             response = timers.result(control, session_id, context_id)
@@ -541,8 +632,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             if turn['close_reason']:
-                                closed(); return
-                            reset(continue_chat=True)
+                                closed()
+                                if not continuous_voice: return
+                                request_context('dialogue_closed'); continue
+                            completed_turn(True)
                         elif action in {'tts_failed', 'tts_interrupted'}:
                             if guided_agenda: timers.spoken(turn['id'], False)
                             if not turn.get('administrative'): model.memory.unanswered(turn['text'])
@@ -551,11 +644,13 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             if turn['close_reason']:
-                                closed(); return
+                                closed()
+                                if not continuous_voice: return
+                                request_context('dialogue_closed'); continue
                             if action == 'tts_interrupted':
                                 flow.reset()  # An unheard offer never authorizes a later "no".
                                 if turn.get('administrative') and entry is not None: entry.cancel_pending()
-                            reset(continue_chat=action == 'tts_interrupted')
+                            completed_turn(action == 'tts_interrupted')
                     continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
                     raise ValueError('Expected timestamped PCM16')
@@ -564,6 +659,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 if stamp > current + 100 or current - stamp > 1000 or stamp < last_audio:
                     raise ValueError('Stale or incompatible audio clock')
                 last_audio = stamp
+                if continuous_voice and stamp < accept_audio_after: continue
                 if state == 'wake':
                     preroll.append((stamp, pcm))
                     if detector.accept_pcm(pcm): activate('voice')
@@ -575,14 +671,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if text_units(text) > 250:
                         # Never trim off a trailing negation/qualification and
                         # authorize a shorter request the human did not make.
-                        emit({'type': 'error', 'reason': 'request_too_long'}); return
+                        emit({'type': 'error', 'reason': 'request_too_long'}); return 'voice_request_rejected' if continuous_voice else None
                     if not text or words(text) == words(SETTINGS['wake_word']): continue
                     speech_end = timeline.speech_end(result)
                     head = text.split(maxsplit=1)
                     if len(head) == 2 and words(head[0]) == words(SETTINGS['wake_word']): text = head[1]
                     if now_ms() >= speech_end + response_start_ms - 3500: return
                     sequence += 1
-                    if sequence > 24: return
+                    if sequence > (MAX_EPOCH_TURNS if continuous_voice else 24): return 'voice_scope_limit' if continuous_voice else None
+                    if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
                              'deadline_ms': speech_end + response_start_ms, 'text': text}
                     if assistant_tools:
@@ -599,7 +696,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     turn['administrative'] = route['kind'] in {'notice', 'close'}
                     emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
                            'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
-                           **({key: turn[key] for key in ('calendar_anchor_ms', 'calendar_boot_ms')} if assistant_tools else {}),
+                            **({key: turn[key] for key in ('calendar_anchor_ms', 'calendar_boot_ms')} if assistant_tools else {}),
+                            **({'action_window_end_ms': session_end} if continuous_voice else {}),
                            'administrative': turn['administrative']})
                     recognizer = timeline = None; preroll.clear()
                     if route['kind'] == 'notice':
@@ -626,7 +724,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     turn['compute_end'] = model.start(text, speech_end, session_end)
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:
-        return
+        return 'voice_peer_closed' if continuous_voice else None
+    except ValueError:
+        if continuous_voice: raise ContinuousVoiceFault('voice_protocol_error') from None
+        raise
     finally:
         if timers is not None: timers.close()
         model.cancel()
@@ -649,10 +750,14 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False):
+    from continuous_voice import ContinuousVoiceFault, END_REASONS
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
+    if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
+    if continuous_voice and (not guided_agenda or resident is None or not resident.continuous_model or limit != 0):
+        raise ValueError('Continuous voice requires explicit continuous model owner')
     if resident is not None:
         from resident_runtime import ResidentRuntime
         if not isinstance(resident,ResidentRuntime) or timer_trial or not assistant_tools:
@@ -668,6 +773,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
     def make_model():
         value = model_type(inference_key,owned=resident.acquire()) if resident is not None else model_type(inference_key)
         if guided_agenda: value.enable_agenda_dialogue()
+        if alarm_lifecycle: value.enable_alarm_lifecycle()
+        if continuous_voice: value.purge_cache = lambda: resident.purge_cache(value)
         return value
     model = make_model()
     try:
@@ -678,7 +785,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
             # Reuse TIME_WAIT only; bind/listener guards still refuse an active peer.
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             server.bind(('127.0.0.1', 11436)); server.listen(1); server.settimeout(.5)
-            print(json.dumps({'event': 'conversation_ready', 'protocol': 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
+            print(json.dumps({'event': 'conversation_ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
                               'input_source': source, 'microphone_opened': False, 'actions_enabled': timer_trial or assistant_tools}), flush=True)
             deadline = resident.deadline if resident is not None else now_ms() + 300000
             while deadline is None or now_ms() < deadline:
@@ -686,6 +793,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                 try: raw, _ = server.accept()
                 except socket.timeout: continue
                 with raw:
+                    authenticated = False
                     authentication_end = now_ms() + 4000
                     if deadline is not None: authentication_end = min(authentication_end, deadline)
                     raw.settimeout(max(.001, (authentication_end - now_ms()) / 1000))
@@ -695,13 +803,16 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             if assistant_tools and hello.get('web_response_mode') != 'worker_first_v2_medium': continue
                             if assistant_tools and hello.get('phone_volume_policy') != 'absolute_media_v1': continue
                             if guided_agenda and (hello.get('agenda_dialogue_policy') != 'guided_agenda_v1' or hello.get('action_completion_policy') != 'continue_v1'): continue
+                            if continuous_voice and (hello.get('voice_lifetime_policy') != 'continuous_voice_v1' or hello.get('dialogue_reset_policy') != 'client_fresh_v1'): continue
+                            if alarm_lifecycle and hello.get('alarm_lifecycle_policy')!='weekly_alarm_lifecycle_v1': continue
                             supplied = hello.get('token', '')
-                            if (hello.get('protocol') != (11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL)
+                            if (hello.get('protocol') != (13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL)
                                     or hello.get('mode') != ('assistant_tools' if assistant_tools else 'timer_trial' if timer_trial else 'conversation_only')
                                     or hello.get('source') != source or not isinstance(supplied, str)
                                     or not hmac.compare_digest(supplied.encode(), key.encode())):
                                 continue
-                            if resident is not None and not resident.may_accept(limit):
+                            authenticated = True
+                            if resident is not None and not continuous_voice and not resident.may_accept(limit):
                                 # Lifetime admission is NOT a TLS failure. Authenticate
                                 # first, reject before restoring any human context or
                                 # starting a session; never extend the original deadline.
@@ -710,6 +821,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             try: context_id = model.memory.restore(hello.get('context'))
                             except ContextExpired:
                                 send_event(conn, {'type': 'error', 'reason': 'context_expired'})
+                                if continuous_voice:
+                                    resident.monitor.reason = 'voice_context_expired'; resident.shutdown(); return
                                 continue
                             entry = None
                             if hello.get('voice_entry') is True:
@@ -722,8 +835,16 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
-                            session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
-                                **({'guided_agenda': True} if guided_agenda else {}))
+                            try:
+                                end_reason = session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
+                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}))
+                            except ContinuousVoiceFault as fault:
+                                if not continuous_voice: raise
+                                resident.monitor.reason = fault.reason; resident.shutdown(); return
+                            if continuous_voice:
+                                if resident.monitor.reason == 'running':
+                                    resident.monitor.reason = end_reason if type(end_reason) is str and end_reason in END_REASONS else 'voice_session_failed'
+                                resident.shutdown(); return  # Stop/disconnect revokes both voice and owned model, never reconnect automatically.
                             if resident is None: return
                             # Session.cancel revokes only this lease. Drop all
                             # process-side human state before accepting another.
@@ -731,8 +852,12 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             detector.reset()
                             if not resident.check(): return
                             model = make_model()
-                    except (OSError, EOFError, ValueError):
+                    except (OSError, EOFError, ValueError) as error:
                         # No credentials, frames or speech text in diagnostics.
+                        if continuous_voice and authenticated:
+                            if resident.monitor.reason == 'running':
+                                resident.monitor.reason = 'voice_protocol_error' if isinstance(error,ValueError) else 'voice_peer_closed'
+                            resident.shutdown(); return
                         if model is None or not model.owned.alive(): return
                         if resident is not None:
                             resident.release(model); model = None; entry = None

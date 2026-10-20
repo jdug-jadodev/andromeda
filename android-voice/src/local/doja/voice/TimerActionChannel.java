@@ -12,18 +12,23 @@ final class TimerActionChannel {
     }
     private final TimerActionPolicy policy;
     private final String session, context;
-    private final long sessionEnd;
+    private long sessionEnd;
     private String turn = "", human = "", executedTurn = "";
     private long sequence, speechEnd;
     private Execution accepted;
     private TimerCreation.Receipt receipt;
     private final boolean continuing;
+    private final boolean continuous;
     TimerActionChannel(String session, String context, long sessionEnd) {
         this(session, context, sessionEnd, false);
     }
     TimerActionChannel(String session, String context, long sessionEnd, boolean continuing) {
+        this(session,context,sessionEnd,continuing,false);
+    }
+    TimerActionChannel(String session, String context, long sessionEnd, boolean continuing, boolean continuous) {
         this.session = session; this.context = context; this.sessionEnd = sessionEnd;
-        this.continuing = continuing;
+        this.continuing = continuing; this.continuous = continuous;
+        if (continuous && (!continuing || sessionEnd != 0)) throw new IllegalArgumentException("Continuous timer mode not negotiated");
         policy = new TimerActionPolicy(session, context);
     }
     private static long integer(JSONObject data, String key) throws Exception {
@@ -44,8 +49,12 @@ final class TimerActionChannel {
             (int)seconds, integer(data, "expires_ms"));
     }
     synchronized void human(JSONObject event) throws Exception {
+        human(event, android.os.SystemClock.elapsedRealtime());
+    }
+    synchronized void human(JSONObject event, long now) throws Exception {
         turn = text(event, "turn_id"); sequence = integer(event, "turn_seq"); human = text(event, "text");
         speechEnd = integer(event, "speech_end_ms"); receipt = null; executedTurn = "";
+        if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(integer(event,"action_window_end_ms"),speechEnd,now);
         policy.cancelProposal(); accepted = null;
     }
     synchronized Execution execution(JSONObject event, long now) throws Exception {

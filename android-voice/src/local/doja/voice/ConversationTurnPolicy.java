@@ -51,4 +51,8 @@ final class ConversationTurnPolicy {
     synchronized boolean expiredBeforeStart(long now) { return !id.isEmpty() && !started && !ended && now >= deadline; }
     synchronized boolean hasActiveTurn() { return !id.isEmpty(); }
     synchronized void clear() { id = ""; scheduled = started = ended = false; closeReason = ""; }
+    synchronized void resetScope() {
+        if (hasActiveTurn()) throw new IllegalStateException("Cannot replace an active turn scope");
+        sequence = 0; clear();
+    }
 }

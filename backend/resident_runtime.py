@@ -113,6 +113,9 @@ def validate_report(value):
     states={'running','manual_stop','time_limit','stale_monitor','low_memory','battery_warm','sensor_or_report_error','stopped','model_exit','cancellation_stuck'}
     if not isinstance(value,dict) or type(value.get('version')) is not int: raise ValueError('Invalid numeric report')
     continuous=value['version']==2
+    if continuous:
+        from continuous_voice import END_REASONS
+        states=states|END_REASONS
     expected=keys|{'lifetime'} if continuous else keys
     if (set(value)!=expected or value['version'] not in (1,2)
             or continuous and (value['lifetime']!='continuous_model_v1' or value['remaining_ms'] is not None)
@@ -267,11 +270,34 @@ class ContinuousResidentRuntime(ResidentRuntime):
     session_limit=None
     continuous_model=True
 
-    def __init__(self,owner,clock,monitor,*,enabled=False):
-        if enabled is not True or not monitor.continuous_model or monitor.deadline is not None:
+    def __init__(self,owner,clock,monitor,*,enabled=False,cache_purger=None):
+        if enabled is not True or not monitor.continuous_model or monitor.deadline is not None or not callable(cache_purger):
             raise ValueError('Continuous model mode not explicitly enabled')
         self.owner,self.clock,self.deadline,self.monitor=owner,clock,None,monitor
+        self.cache_purger=cache_purger
         self.active=None; self.closed=False; self.sessions=0; self.lock=threading.RLock()
 
     def alive(self): return not self.closed and self.owner.alive()
     def may_accept(self,seconds): return seconds in (90,300) and self.alive()
+
+    def _purge(self,model):
+        from continuous_voice import ContinuousVoiceFault
+        try:
+            if not self.alive() or model.thread is not None and model.thread.is_alive(): raise ValueError('Engine still processing')
+            count=self.cache_purger(model)
+            if type(count) is not int or not 0<=count<=2048: raise ValueError('Unconfirmed engine cache retirement')
+        except Exception:
+            self.monitor.reason='voice_cache_clear_failed'; self.shutdown()
+            raise ContinuousVoiceFault('voice_cache_clear_failed') from None
+        return True
+
+    def purge_cache(self,model):
+        if model.owned is not self.active: raise ValueError('Foreign engine cache lease')
+        return self._purge(model)
+
+    def release(self,model):
+        super().release(model)
+        if self.closed: return
+        if self.monitor.reason != 'running': self.shutdown(); return
+        if not self.owner.alive(): self.monitor.reason='model_exit'; self.shutdown(); return
+        self._purge(model)

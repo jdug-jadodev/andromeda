@@ -7,13 +7,17 @@ public class RingService extends Service {
     public static volatile boolean ringing = false;
     Ringtone tone;
     SilenceListener silenceListener;
+    SilenceListener.Handle interruption;
+    boolean sessionStarted,outputRequested;
     volatile String soundId = "";
     volatile boolean outputActive;
     public static volatile long soundExpiresAt;
     final Handler handler = new Handler(Looper.getMainLooper());
     public IBinder onBind(Intent intent) { return null; }
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && "STOP".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
+        if (intent == null || "STOP".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
+        if(sessionStarted) return START_NOT_STICKY;
+        sessionStarted=true;
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("timer", "Temporizadores " + AssistantConfig.NAME, NotificationManager.IMPORTANCE_LOW));
         PendingIntent stop = PendingIntent.getService(this, 2, new Intent(this, RingService.class).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE);
@@ -24,17 +28,9 @@ public class RingService extends Service {
         ringing = true;
         stopService(new Intent(this, AgendaDeliveryService.class));
         stopService(new Intent(this, CaptureProbeService.class));
-        stopService(new Intent(this, VoiceService.class)); // No full-chat capture over a sounding event.
+        if(!VoiceService.continuousVoiceActive) stopService(new Intent(this, VoiceService.class)); // Continuous mode yields its capture instead.
         soundId = java.util.UUID.randomUUID().toString();
         soundExpiresAt = SystemClock.elapsedRealtime() + 30000;
-        if (tone == null) {
-            tone = RingtoneManager.getRingtone(this, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if (tone != null) {
-                tone.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
-                tone.setLooping(true); tone.play();
-            }
-        }
-        outputActive = tone != null && tone.isPlaying();
         if (silenceListener == null) silenceListener = new SilenceListener(this, () -> {
             if (!ringing) return;
             sendBroadcast(new Intent(VoiceService.STATE).setPackage(getPackageName()));
@@ -47,23 +43,41 @@ public class RingService extends Service {
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER SONIDO", stop).build());
         }, SilenceDiagnostics.Owner.TONE);
         String id = soundId;
-        silenceListener.end(); silenceListener.begin(id, soundExpiresAt,
-            () -> ringing && outputActive && id.equals(soundId), () -> interruptSound(id));
-        handler.removeCallbacksAndMessages(null); handler.postDelayed(() -> stopSelf(), 30000);
+        silenceListener.prepare();
+        interruption=silenceListener.arm(id,soundExpiresAt,Math.min(soundExpiresAt,SystemClock.elapsedRealtime()+3000),
+            () -> ringing && id.equals(soundId),() -> startSound(id,true),() -> startSound(id,false),() -> interruptSound(id));
+        if(interruption==null) startSound(id,false);
+        handler.postDelayed(() -> startSound(id,false),SilenceWindowPolicy.ARM_MS);
+        handler.postDelayed(() -> stopSelf(),Math.max(0,soundExpiresAt-SystemClock.elapsedRealtime()));
         return START_NOT_STICKY;
+    }
+    void startSound(String id,boolean prepared) {
+        if(!ringing || outputRequested || !id.equals(soundId) || SystemClock.elapsedRealtime()>=soundExpiresAt) return;
+        outputRequested=true;
+        if(!prepared) { silenceListener.end(interruption); interruption=null; }
+        try {
+            tone=RingtoneManager.getRingtone(this,RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
+            if(tone==null) { stopSelf(); return; }
+            tone.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
+            tone.setLooping(true); tone.play(); outputActive=tone.isPlaying();
+            if(interruption!=null && !silenceListener.outputStarted(interruption)) { silenceListener.end(interruption); interruption=null; }
+            if(!outputActive) stopSelf();
+        } catch(RuntimeException failure) { stopSelf(); }
     }
     void interruptSound(String id) {
         if (!outputActive || id == null || id.isEmpty() || !id.equals(soundId)) return;
         outputActive = false; soundId = "";
         if (silenceListener != null) silenceListener.end();
-        stopSoundOutput(); finishSoundService();
+        boolean stopped=stopSoundOutput();
+        if(interruption!=null) interruption.diagnostic.stopped(stopped,SystemClock.elapsedRealtime());
+        finishSoundService();
     }
-    void stopSoundOutput() { if (tone != null) tone.stop(); }
+    boolean stopSoundOutput() { try { if(tone!=null) tone.stop(); return tone==null || !tone.isPlaying(); } catch(RuntimeException failure) { return false; } }
     void finishSoundService() { stopSelf(); }
     public void onDestroy() {
         ringing = false; outputActive = false; soundId = ""; soundExpiresAt = 0; handler.removeCallbacksAndMessages(null);
         if (silenceListener != null) silenceListener.close();
-        if (tone != null) tone.stop(); stopForeground(true); super.onDestroy();
+        stopSoundOutput(); stopForeground(true); super.onDestroy();
         sendBroadcast(new Intent(VoiceService.STATE).setPackage(getPackageName()));
     }
 }

@@ -2,6 +2,82 @@
 
 20 de octubre de 2026. Siguiente prioridad tras la prueba física de volumen.
 
+## Estado vigente:30/13 instalado; servicio de voz y modelo continuos activados
+
+Después del error humano se añadieron recibos numéricos y comprobaciones aisladas,
+sin instrumentación/transcripciones. Preparación sin mic, captura/reloj con PCM
+descartado y pre-arm real listo353ms/lag10ms pasan. Cierres confirmados antes de
+un único dueño nuevo, activado por operador con consentimiento4 y Detener visible;
+no reinicios/reconexiones/boot/renovaciones automáticos. Servicio+modelo observados
+activos; no humano/acciones/web inyectados. APK30/UID/datos/agenda3 preservados.
+La causa exacta del error anterior (peer_closed del cliente) sigue sin prueba;
+diálogo/silencio/eco/recibos requieren petición hablada. Referencia actual
+`artifacts/android-voice/voice-session-observed-v1/`; texto inferior es historia.
+
+Diagnóstico acotado confirmó TimeoutError en prefijo público frío a30s. Nuevo
+presupuesto de preparación45s solo en tools; respuesta humana60s/cómputo55s y
+watchdog/guardias intactos. Dos módulos corregidos sin reinstalarAPK27 ni perder
+UID/datos/recibos/volumen/sistema. Arranque real nuevo:35,5s y TLS/monitor2 continuo
+listo, sin límite total ficticio, micrófono manual.443 Python:441 pasan/2skips;
+24 POSIX pasan. `artifacts/android-voice/startup-preparation-fix-v1/` es referencia
+vigente. Voz/eco/recibos/consumo con captura real todavía no aceptados. El fallo
+cerrado inferior es historia; no describe el dueño nuevo.
+
+Actualización coordinada con consentimientoRAM recibido y misma firma/UID/datos.
+Prefijo nativo380/1536 y seis selecciones públicas pasan sin ejecutar tools.
+Retirada b11669 corregida/verificada: máximo un token público descartado, erase
+slot0 con recibo4 y comprobación posterior0; cache secundaria0/readonly/caps0.
+No usar el supuesto histórico de cero tokens. MigraciónAndroid2→3 verificada tras
+abrir Alarmas: vacía y recibos preservados. El único arranque real continuo falló
+antes de listo/monitor (exit1); causa no confirmada. Dueño/servicios/puertos/lock
+apagados, micrófono nunca activado. No relanzar igual ni ampliar plazos a ciegas;
+diagnóstico/corrección y activación manual/Detener/consumo/acústica pendientes.
+Plan/evidencia `artifacts/android-voice/joint-code27-deploy/`; apartados inferiores
+son hitos históricos, no el estado operativo actual.
+
+## Interrupción del candidato13 corregida solo en código
+
+Pre-arm del micrófono antes de hablar, tickets por salida y continuidad más allá
+de32 respuestas; PCM fresco y callback acotados. Fallo de interrupción/stop o mute
+detiene de forma segura, sin restart; tono de aviso puede conservar sus botones
+sin fingir ASR disponible. Temporizador ya no mata la voz continua y START no
+extiende30s. Modelo/Worker/presupuestos y permisos nativos no cambian. Pruebas
+locales/compilación, no consumo o acústica físicos. Modelo/Moto no se iniciaron.
+Plan conjunto con preflight nativo y consentimiento RAM/escucha pendientes:
+`artifacts/android-voice/silence-lifecycle-v1/`.
+
+## Candidato local13: ciclo de alarmas integrado, no desplegado
+
+Sobre la voz continua del12: política explícita `weekly_alarm_lifecycle_v1`, mismos
+cinco native tools/auto y límites2048/1536/96. Prefijo de preparación y runtime
+actualizados juntos; LFM real y presupuesto aún no medidos. Alarmas semanales,
+borrado de serie con confirmación oída y posposición5min con recibos durables.
+Audio de avisos conserva el dueño continuo al ceder micrófono, en lugar de parar
+el servicio por estar activo. No autoarranque, reconexión o renovación de pruebas.
+
+431 Python pasan/2 skips; Java161 alarmas/105 agenda y compilación/sintaxis pasan,
+sin dispositivo o APK. Siguen pendientes silencio fiable y validación real de
+audio/consumo/purga del motor; no equiparar compilación a funcionamiento físico.
+Detalles actuales `artifacts/android-voice/weekly-alarm-v1/`. Instalado sigue26/10.
+
+## Segundo bloque: modelo y voz continuos integrados solo en candidato local
+
+Protocolo12/seconds0/continuous_voice_v1: foregroundmic habilitado por humano y
+consentimientonuevo3, sinplazo total/noautorenovar/noautoboot. Cerrar charla→nonce/
+contextofresco deAndroid→esperavoz, mismaTLS/mismoLFM; checkpoints≥20turnos mantienen
+historia pero revocan ámbitos anteriores. Plazos/colas/datos acotados, contexto1h/
+máximo4LRU, heartbeat, cesión audio aavisos y vuelta tras acabar. Detener/EOF/
+guardias paran ambos, no autoreinicio. nativotools2048/1536/96/Worker-first intactos.
+
+Privacidad motor añadida: prompt público0tokens reemplaza task_prev, erase slot0
+conrecibo elimina KV/checkpoints, cachéRAMsecundaria deshabilitada solo continuo.
+slot-save-path b11669 exige directorio: solo BINroot verificado no writable,
+sin symlinks/caps/setuid; no guardar archivos o cambiarpermisos. API/FS/consumo real
+todavía sincomprobar: no instalar hasta hacerlo. Fallo depurga→apagado verificable.
+417testsPython pasan/2skips, Java37continuo/105agenda, compilaciónAndroid/sintaxis
+pasan. No dispositivo o modelo iniciado. Detalles `continuous-voice-v1/findings.md`.
+Último físico APK26/proto10 apagado; pendientes semana/posponer/borrar ysilencio.
+
 ## Implementación local posterior: modelo continuo explícito, voz aún acotada
 
 ContinuousResidentRuntime y monitor schema2/lifetime=continuous_model_v1 sin

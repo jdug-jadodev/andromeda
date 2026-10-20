@@ -1,4 +1,70 @@
-# Agenda y web · instalado26 · volumen físico confirmado; candidato residente comprobado
+# Agenda y web · instalado30/protocolo13 · aceptación hablada pendiente
+
+## Estado vigente: sesión continua activada y observada, recibos numéricos disponibles
+
+APK28/29/30 autorizadas preservan firma/UID/datos/agenda3/recibos/volumen. Fallo
+anterior fue cierre del cliente, sin prueba de causa exacta. Comprobaciones de
+preparación sin mic, captura/reloj con PCM descartado y pre-arm real353ms/lag10ms
+pasan y cerraron antes de otro dueño. Nueva activación explícita del operador con
+consentimiento4/app/Detener visibles: servicio+modelo activos, sin frases/acciones/
+web inyectadas ni autorestart/boot/renovación. Micrófono ya habilitado; falta
+aceptación hablada/acústica/recibos. Última referencia
+`artifacts/android-voice/voice-session-observed-v1/`; apartados inferiores son historia.
+
+**Arranque corregido:** TimeoutError de preparación pública confirmado con
+diagnóstico técnico sin textos. Frío tools45s separado de respuesta humana60s,
+guardias intactas. Nuevo arranque pasó en35,5s y modelo/TLS continuo listo; APK27/
+UID/datos/agenda3/recibos/volumen conservados. No micrófono/acciones del agente.
+Manifiesto/evidencia vigente `artifacts/android-voice/startup-preparation-fix-v1/`.
+Los fallos apagados inferiores son del intento anterior, no el dueño corregido.
+
+Misma firma/UID10238, datos/recibos/volumen8/15 y sistema preservados. Nativo real
+público380/1536 tokens, cinco tools/auto y seis selecciones correctas sin acciones
+ni consultasWorker. Purga corregida a un token público máximo descartado+erase0,
+con recibos reales. Humano abrió Alarmas: vacía/migraciónAndroid2→3/recibos verificados.
+El único arranque real continuo falló antes de listo/monitor (exit1), causa desconocida;
+todo apagado, micrófono nunca activado. Diagnosticar/corregir antes de otro arranque,
+sin repetir igual ni ampliar plazos a ciegas.
+Silencio/eco, recordatorio→otra herramienta, web y alarmas nuevas no están aceptados
+end-to-end. `artifacts/android-voice/joint-code27-deploy/` es el plan/evidencia activo;
+los hitos inferiores y sus indicadores no instalado/sin consentimiento son historia.
+
+## Interrupción local revisada; validación conjunta preparada, no ejecutada
+
+Detector armado antes de TTS, sin agotarse tras32 respuestas, con tickets que
+descartan callbacks antiguos y guardias de PCM fresco/privacidad. Stop fallido
+no reabre captura ni confirma una pregunta. Avisos/timers ceden audio al modo
+continuo sin renovar ventanas. Cinco herramientas, permisos/recibos, agenda13
+y lectura Worker-first intactos. Suites/compilación y5000 salidas simuladas,
+sin uso del teléfono: no certifican eco o ASR real. Plan de consentimiento,
+preflight nativo y pruebas humanas: `artifacts/android-voice/silence-lifecycle-v1/`.
+
+## Candidato local13: alarmas semanales y gestión de la ocurrencia
+
+Implementados siete días/AM-PM, migración sin convertir avisos antiguos, borrado
+de serie por día/hora con pregunta oída y confirmación humana, y posposición5min
+que conserva la serie. Silenciar, descartar esta vez y borrar toda la serie son
+operaciones distintas. Recibos durables y permisos por revisión/turno; no reintentar
+resultados inciertos. Cinco herramientas nativas y web Worker-first preservados.
+
+431 pruebas Python pasan/2 skips; Java161 alarmas/105 agenda, compilación Android
+y sintaxis correctas, **sin APK construida/instalada ni uso del teléfono**. Actor
+borrado→recibo→web es simulado, no aceptación física. Borrado por voz de una fecha
+única y duplicados sigue manual. Próximo: silencio fiable y comprobación completa
+real con consentimiento. `artifacts/android-voice/weekly-alarm-v1/findings.md`.
+
+## Segundo bloque local: conversación/escucha continua, aún no instalado
+
+Protocolo12 mantieneTLS/capturaFG sinplazo de prueba ymodelo residente; cerrar
+charla vuelve aAndrómeda concontexto nuevocliente, permisosporcheckpoint sinreplay.
+Contexto1h/4charlas/colas yheartbeat acotados, prioridad deaudioavisos yreactivación,
+Detener/EOF para voz+modelo. Retiro decaché delmotor con0tokens públicos+erase
+numérico yFSreadonly incorporado, BIN/permisos/API real pendiente. Agenda guiada/
+recibos/continución del11 ywebWorker-first preservados.417testsPython pasan/2skips,
+Java37continuo/105agenda ycompilaciónAndroid/sintaxis pasan(sin dispositivo).
+Artefactos `artifacts/android-voice/continuous-voice-v1/`. No nuevoAPK/modelo/escucha;
+último físicov26/proto10 apagado. Alarmas semanales/borrado/posponer ysilencio fiable
+siguen pendientes, pruebas simuladas no son aprobación funcional humana.
 
 ## Candidato local nuevo: agenda guiada y continuidad, aún sin instalar
 

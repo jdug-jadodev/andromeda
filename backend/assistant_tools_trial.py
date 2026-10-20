@@ -13,10 +13,13 @@ REJECTION = ('No he confirmado ninguna acción ni búsqueda con esa petición. '
               'contenido y momento para el recordatorio, «busca en Internet» y la consulta, o volumen de 0 a 100 por ciento.')
 
 
-def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False):
+def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False, weekday=0, minute_of_day=-1):
     name = 'Alarma' if kind == 'ALARM' else 'Recordatorio'
     when = datetime.fromtimestamp(due / 1000, BOGOTA).strftime('%d/%m/%Y a las %H:%M')
     if status == 'CREATED':
+        if weekday:
+            from alarm_schedule import label
+            return f'Alarma semanal guardada: {label(weekday,minute_of_day)}. Próxima: {when}.'
         if detailed and kind == 'REMINDER':
             prefix = ''
             if delay_ms:
@@ -33,13 +36,25 @@ def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False)
 
 
 class AssistantToolsTrial:
-    def __init__(self, clock, guided_agenda=False):
+    def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False):
         self.clock, self.timer, self.inflight = clock, TimerTrial(clock), None
         self.consumed = set()
         self.volume = VolumeTrial(clock)
         self.guided_agenda = guided_agenda
         from agenda_dialogue import AgendaDialogue
-        self.dialogue = AgendaDialogue()
+        self.alarm_lifecycle=alarm_lifecycle
+        self.dialogue = AgendaDialogue(maximum_sequence,alarm_lifecycle)
+        from alarm_deletion import AlarmDeletion
+        self.deletion=AlarmDeletion(clock,maximum_sequence)
+
+    @property
+    def pending_dialogue(self): return self.dialogue.active or self.deletion.active
+
+    @staticmethod
+    def deletion_response(response):
+        if response is not None and response.get('offered_more'):
+            return dict(response,text=ConversationFlow.with_offer(response['text']))
+        return response
 
     def dialogue_response(self, result):
         if result['kind'] == 'agenda_question':
@@ -50,12 +65,19 @@ class AssistantToolsTrial:
 
     def human(self, turn, session, context, session_end):
         if not self.guided_agenda: return None
+        if self.alarm_lifecycle and self.deletion.active:
+            response=self.deletion.human(turn,session,context,session_end)
+            if response and response.get('executing'):
+                if turn['id'] in self.consumed or len(self.consumed)>=24: raise ValueError('Second mutation')
+                self.consumed.add(turn['id'])
+            return self.deletion_response(response)
         result = self.dialogue.answer(turn, self.clock())
         if result is None: return None
         if result['kind'] == 'guided_agenda_proposal': return self.model_result(result, turn, session, context, session_end)
         return self.dialogue_response(result)
 
-    def spoken(self, turn_id, completed): self.dialogue.spoken(turn_id, completed)
+    def spoken(self, turn_id, completed):
+        self.dialogue.spoken(turn_id, completed); self.deletion.spoken(turn_id,completed)
 
     def completion(self, response):
         if self.guided_agenda and response is not None and response.get('close_reason') == 'action_result':
@@ -63,13 +85,17 @@ class AssistantToolsTrial:
         return response
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind']=='alarm_delete_request':
+            if not self.alarm_lifecycle or self.pending_dialogue or self.deletion.grant or self.inflight or self.timer.inflight or self.volume.inflight or turn['id'] in self.consumed or len(self.consumed)>=24:
+                raise ValueError('Alarm deletion unavailable/current turn consumed')
+            response=self.deletion.start(result,turn,session,context); self.consumed.add(turn['id']); return response
         if result['kind'] == 'agenda_dialogue_start':
             if not self.guided_agenda: raise ValueError('Agenda dialogue not negotiated')
             if self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None or turn['id'] in self.consumed:
                 raise ValueError('Agenda dialogue cannot replace an executing turn')
             return self.dialogue_response(self.dialogue.begin(result['event_kind'], turn, self.clock()))
         mutation = result['kind'] in {'timer_proposal', 'agenda_proposal', 'guided_agenda_proposal', 'volume_proposal'}
-        if mutation and (self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None
+        if mutation and (self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None or self.deletion.grant is not None
                 or turn['id'] in self.consumed or len(self.consumed) >= 24):
             raise ValueError('One mutation per current turn')
         if result['kind'] == 'volume_proposal':
@@ -94,8 +120,8 @@ class AssistantToolsTrial:
         if guided:
             if not self.guided_agenda: raise ValueError('Agenda dialogue not negotiated')
             prepared = self.dialogue.claim(result, turn, self.clock())
-            value = {key: prepared[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone')}
-        else: value = request(result['event_kind'], turn['text'], result['when_text'], result['text'], turn['calendar_anchor_ms'])
+            value = {key: prepared[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone') + (('weekday','minute_of_day') if self.alarm_lifecycle else ())}
+        else: value = request(result['event_kind'], turn['text'], result['when_text'], result['text'], turn['calendar_anchor_ms'],self.alarm_lifecycle)
         if any(type(result.get(key)) is not type(item) or result[key] != item for key, item in value.items()):
             raise ValueError('Agenda payload does not match current request')
         now = self.clock(); before = min(now + 4000, turn['speech_end'] + 26500, session_end - 5000)
@@ -115,19 +141,23 @@ class AssistantToolsTrial:
         return {'event': self.inflight, 'executing': True}
 
     def result(self, packet, session, context):
+        if packet.get('action')=='alarm_selection': return self.deletion_response(self.deletion.selection(packet,session,context))
+        if packet.get('action')=='alarm_delete_result': return self.deletion_response(self.deletion.result(packet,session,context))
         if packet.get('action') == 'volume_result': return self.completion(self.volume.result(packet, session, context))
         if packet.get('action') == 'timer_result': return self.completion(self.timer.result(packet, session, context))
         grant = self.inflight
         if grant is None: return None
         expected = dict(session_id=session, context_id=context, **{key: grant[key] for key in
-            ('event_id', 'nonce', 'event_kind', 'due_ms', 'request_turn_id', 'request_sequence')})
+            ('event_id', 'nonce', 'event_kind', 'due_ms', 'request_turn_id', 'request_sequence')+(('weekday','minute_of_day') if self.alarm_lifecycle else ())})
         if any(type(packet.get(key)) is not type(value) or packet[key] != value for key, value in expected.items()) or packet.get('status') not in {'CREATED', 'DUPLICATE', 'REJECTED', 'FAILED', 'UNKNOWN'}:
             raise ValueError('Unrelated agenda result')
         self.inflight = None
-        return self.completion({'text': result_text(packet['status'], grant['event_kind'], grant['due_ms'], grant['text'], grant['delay_ms'], self.guided_agenda), 'timer_control': 'agenda_result',
+        return self.completion({'text': result_text(packet['status'], grant['event_kind'], grant['due_ms'], grant['text'], grant['delay_ms'], self.guided_agenda,grant.get('weekday',0),grant.get('minute_of_day',-1)), 'timer_control': 'agenda_result',
                 'actions_executed': int(packet['status'] == 'CREATED'), 'close_reason': 'action_result', 'offered_more': False})
 
     def timed_out(self):
+        deletion=self.deletion.timed_out()
+        if deletion is not None: return self.deletion_response(deletion)
         volume = self.volume.timed_out()
         if volume is not None: return self.completion(volume)
         if self.inflight is not None and self.clock() >= self.inflight['execute_before_ms'] + 500:
@@ -136,5 +166,5 @@ class AssistantToolsTrial:
                     'actions_executed': 0, 'close_reason': 'action_result', 'offered_more': False})
         return self.completion(self.timer.timed_out())
 
-    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear()
-    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.inflight = None
+    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear(); self.deletion.clear()
+    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.deletion.clear(); self.inflight = None

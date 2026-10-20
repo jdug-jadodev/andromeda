@@ -9,6 +9,7 @@ final class AgendaSpeechPolicy {
         if ("CREATED".equals(status)) {
             SimpleDateFormat format = new SimpleDateFormat("dd/MM/yyyy 'a las' HH:mm", new Locale("es", "CO"));
             format.setTimeZone(TimeZone.getTimeZone(AgendaEntry.ZONE));
+            if(value.weekday!=0) return "Alarma semanal guardada: "+AlarmSchedule.label(value.weekday,value.minute)+". Próxima: "+format.format(new Date(value.due))+".";
             if (detailed && value.kind == AgendaEntry.Kind.REMINDER) {
                 String prefix = "";
                 if (value.delay > 0) {

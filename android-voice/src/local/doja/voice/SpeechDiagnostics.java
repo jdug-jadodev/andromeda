@@ -5,7 +5,7 @@ import java.util.*;
 /** Eight content-free TTS summaries, RAM only, expiring after one hour. No text/IDs/audio. */
 final class SpeechDiagnostics {
     enum End { DONE, DONE_WITHOUT_START, ENGINE_ERROR, NOT_READY, START_REJECTED,
-        PLAYBACK_LIMIT, INTERRUPTED, LATE_START, SERVICE_STOP, OTHER }
+        PLAYBACK_LIMIT, INTERRUPTED, LATE_START, SERVICE_STOP, OTHER, INTERRUPT_UNAVAILABLE, STOP_FAILED, ENGINE_STOPPED }
     private static final Deque<Window> windows = new ArrayDeque<>();
     private static long sequence;
     static synchronized Window begin(long now, int units) {

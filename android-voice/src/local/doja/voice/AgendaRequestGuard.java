@@ -21,8 +21,13 @@ final class AgendaRequestGuard {
         return String.join(" ", result);
     }
     static final class Value {
-        final AgendaEntry.Kind kind; final String text; final long due, delay;
-        Value(AgendaEntry.Kind kind, String text, long due, long delay) { this.kind = kind; this.text = text; this.due = due; this.delay = delay; }
+        final AgendaEntry.Kind kind; final String text; final long due, delay; final int weekday, minute;
+        Value(AgendaEntry.Kind kind, String text, long due, long delay) { this(kind,text,due,delay,0,-1); }
+        Value(AgendaEntry.Kind kind, String text, long due, long delay,int weekday,int minute) {
+            if(weekday!=0) { AlarmSchedule.validate(weekday,minute); if(kind!=AgendaEntry.Kind.ALARM || delay!=0) throw new IllegalArgumentException("Invalid recurrence"); }
+            else if(minute!=-1) throw new IllegalArgumentException("Invalid one-shot clock");
+            this.kind = kind; this.text = text; this.due = due; this.delay = delay; this.weekday=weekday; this.minute=minute;
+        }
     }
     static String clean(String human) {
         if (human == null || human.isEmpty() || human.length() > 250 || human.contains("<|")
@@ -73,11 +78,15 @@ final class AgendaRequestGuard {
                 else if ((period.equals("de la tarde") || period.equals("de la noche")) && hour < 12) hour += 12;
             } else if (!digits && hour < 13) throw new IllegalArgumentException("Morning/evening required");
         }
+        if(hour<0 || hour>23 || minute<0 || minute>59) throw new IllegalArgumentException("Invalid clock range");
         long due = day.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli();
         if (due <= anchor || due - anchor > 366 * 86400000L) throw new IllegalArgumentException("Past/out of range");
         return new long[]{due, 0};
     }
     static Value parse(AgendaEntry.Kind kind, String human, String when, String text, long anchor) {
+        return parse(kind,human,when,text,anchor,false);
+    }
+    static Value parse(AgendaEntry.Kind kind, String human, String when, String text, long anchor,boolean lifecycle) {
         String raw = clean(human);
         if (kind == null || when == null || text == null || Pattern.compile("\\bno (?:lo hagas|la pongas|lo pongas|la crees|lo crees|programes)\\b")
                 .matcher(TimerRequestGuard.normalize(raw)).find()) throw new IllegalArgumentException("Invalid request");
@@ -104,9 +113,9 @@ final class AgendaRequestGuard {
                 + "(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\\b"
                 + "|\\ben .+ (?:segundos?|minutos?|horas?)\\b")
                 .matcher(TimerRequestGuard.normalize(candidate[1])).find())) continue;
-            long[] time = due(candidate[0], anchor);
             if (result != null) throw new IllegalArgumentException("Ambiguous request");
-            result = new Value(kind, candidate[1], time[0], time[1]);
+            if(lifecycle) result=AlarmSchedule.parse(kind,candidate[0],candidate[1],anchor);
+            else { long[] time = due(candidate[0], anchor); result = new Value(kind, candidate[1], time[0], time[1]); }
         }
         if (result == null) throw new IllegalArgumentException("Whole current request required"); return result;
     }

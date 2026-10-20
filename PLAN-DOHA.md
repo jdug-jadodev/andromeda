@@ -2,6 +2,110 @@
 
 Fecha de revisión: 20 de octubre de 2026.
 
+## Estado vigente:30/13 instalado, modo continuo activado y observado
+
+Reporte de error anterior: backend registra peer_closed, no fallo de recursos;
+sin recibo Android previo no se atribuye causa. APK28/29/30 autorizadas preservan
+datos/UID/sistema y añaden diagnóstico numérico más preflight aislado sin acciones:
+TTS/ASR/TLS sin mic, captura/reloj con PCM descartado y pre-arm real353ms/lag10ms
+pasan, cierres verificados. Un nuevo dueño y activación explícita del operador,
+con consentimiento4 y app/Detener visibles, mantienen servicio+modelo activos.
+No reinicio/reconexión/boot/renovación automáticos, ni humano simulado para grants.
+446 Python:444 pasan/2skips, Java completo pasa. Referencia actual
+`artifacts/android-voice/voice-session-observed-v1/`. Micrófono habilitado, falta
+petición hablada/aceptación acústica y recibos reales; no prometerla por preflights.
+
+**Actualización posterior:** causa del arranque confirmada por enums/ubicaciones
+sin logs humanos: TimeoutError del prefijo público a30s. Corrección separa frío45s
+solo en tools, sin ampliar respuesta humana60s o guardias. Nuevo arranque real
+pasó en35,5s/TLS+monitor continuo listo, micrófono todavía manual. APK27/UID/datos/
+volumen/sistema preservados;443 Python:441 pasan/2skips y24 POSIX pasan. Usuario
+autoriza correcciones/actualizaciones sin consultas repetidas, aún sin uso real.
+Referencia vigente `artifacts/android-voice/startup-preparation-fix-v1/`;
+descripciones apagado/fallo inferiores son del intento anterior.
+
+APK27/UID10238 y61 módulos/helper, misma firma/datos/recibos/volumen/sistema
+preservados. Preflight real público:380/1536 tokens, cinco tools/auto y seis
+selecciones correctas sin acciones. Corregida retirada de caché b11669: máximo
+un token público descartado (cero no era garantía), erase4 y segunda lectura0;
+readonly/capacidades0/cache secundaria0 verificados.441 Python:439 pasan/2skips;
+22 POSIX pasan. Humano abrió Alarmas; migraciónAndroid2→3/conteos pasan.
+El único arranque real continuo falló antes de listo/monitor (exit1); causa aún
+sin confirmar. Todo apagado/conteos preservados y micrófono nunca activado.
+Diagnosticar/corregir sin repetir el mismo software ni extender plazos a ciegas;
+voz/validación acústica/recibos/parada continúan pendientes.
+Evidencia/plan activo: `artifacts/android-voice/joint-code27-deploy/`.
+Bloques siguientes son historia, no el estado instalado ni autorización actuales.
+
+## Cuarto bloque local: corregido ciclo de silencio, física pendiente
+
+Sin teléfono/APK/modelo: pre-arm antes de TTS, primer PCM fresco, tickets por
+generación, cola acotada y eliminación del agotamiento tras32 salidas. Stop
+rechazado no permite reanudar captura; onStop no equivale a pregunta oída.
+Mute/client-silenced/PCM atrasado hacen fallar de forma segura, sin cambio de
+fuente/reintentos. Temporizador comparte cesión con modo continuo y no renueva30s.
+5000 ventanas falsas prueban continuidad/replay; no prueban ASR/acústica/eco real.
+Se conservan protocolo13, agenda, cinco tools/auto y Worker-first.
+
+Plan conjunto, recibos de suites/compilación y límites en
+`artifacts/android-voice/silence-lifecycle-v1/`. Consentimiento informado de pérdida
+de RAM por APK y escucha continua todavía pendiente. Antes de instalar: baseline
+actual numérico y preflight nativo de presupuesto/purga/readonly. No exportar UI,
+voz, transcripciones o claves, no instrumentation, no test humano automático ni
+repetición de fallo con software sin cambios. Último físico verificado26/10 apagado.
+
+## Tercer bloque implementado localmente: alarmas semanales/borrar/posponer
+
+Candidato protocolo13 con negociación `weekly_alarm_lifecycle_v1`, manteniendo
+las cinco herramientas nativas/auto, memoria y voz continua del12, web Worker-first
+y presupuestos2048/1536/96. Siete días y AM/PM; nombrar día implica serie semanal
+con confirmación exacta. Migración no destructiva agenda1/2→3; antiguos avisos siguen
+siendo de una sola vez. Recibos de mutaciones acotados64/48h, sin contenido humano.
+
+Borrado semanal por día/hora: selección local sin escoger entre duplicados, pregunta
+oída, humano posterior, permiso sellado4s/revisión/turnos y recibo durable. Detector
+local del aviso permite silencio, posponer5min y descartar solo esta vez; botones
+vinculados a identidad/revisión/nonce. La serie no se elimina al posponer/descartar,
+y vuelve a su horario original. Incertidumbre se conserva, no se reintenta al boot.
+Avisos ya no paran el servicio continuo por estar activo: se espera cesión real.
+
+433 tests Python:431 pasan/2 omitidosWindows; Java161 alarmas/105 agenda pasan;
+Android compila y tres scripts pasan sintaxis. No teléfono/modelo/micrófono/acciones,
+consulta, APK construida/instalada ni cambios en sistema/datos/credenciales reales.
+Último físico sigue APK26/proto10 apagado. Evidencia y límites actuales:
+`artifacts/android-voice/weekly-alarm-v1/`. Borrado por voz de fechas únicas/series
+ambiguas sigue manual. Próximo: fiabilidad de silencio y validación coordinada real,
+incluida caché/recursos del12; no declarar funcionamiento físico por estos tests.
+Nada de despliegue parcial o instalación sin consentimiento informado sobre RAM.
+
+## Segundo bloque local implementado: voz continua/protocolo12, NO desplegado
+
+Usuario pide continuar. CapturaFG/transporte explícitos sin plazo total, seconds0,
+no deadline gigante/renovaciones depruebas. Despedida→esperaAndrómeda sobre mismaTLS,
+identidad fresca cliente/nonce4s, historia1h/máximo4/LRU; checkpoints≥20turnos
+conservan historia pero renuevan ámbitos/nonces, sin permisos heredados. Ventana
+deacción≤300000ms porhumano, ejecución4s/26500ms ymodelo2048/1536/96/5tools nativos
+auto/Worker-first intactos. Colas24acciones/64controles, gracia15s/heartbeat5s,
+Detener/EOF/fallos paranvoz+dueño sinreconectar/reiniciar. Avisos cedenAudioGate y
+cancelan solo generación/formulario no guardado; tras aviso reactiva enmismaTLS.
+
+Privacidad: caducar frontend no vacía motor. Fuentes públicas b11669 revisadas;
+inference_privacy.py sustituye task_prev conprompt público/0tokens y exigeerase
+numérico delslot0; falla→modelostop. Continuous desactiva cachéRAM secundaria,
+mantiene checkpoints32, habilita erase solo con slot-save-path existente root
+NO writable/symlink/CapEff/setuid, impidiendo save a disco sin cambiarpermisos.
+BINreal/permissions/API/latencia aún requieren comprobación, NO declararlo validado
+enMoto. Reporte numérico tiene razones enum parafallos devoz/caché, sincontenido.
+
+419 testsPython:417 pasan/2 omitidosWindows; suiteJava pasa(37continuo/105agenda),
+fuentesAndroid compilan y3scripts pasan sintaxis. Tests simulados≥1800s/45acciones
+ficticias atraviesan varios ámbitos sinreplays; no45acciones reales oensayo devoz.
+No teléfono/modelo/micrófono/Worker/acciones/instalación/binario/credenciales/boot
+usados o cambiados. Último físico verificadoAPK26/protocolo10 apagado v2. Referencia
+actual deCÓDIGO `artifacts/android-voice/continuous-voice-v1/`, findings detalla.
+Próximo bloque:alarmas semanales/migración/borrar/posponer5min, formatos/correcciones,
+silencio fiable. No desplegar parcial, nuevoAPK solo con consentimientoRAM informado.
+
 ## Trabajo iniciado: primer bloque implementado LOCALMENTE, teléfono intacto
 
 Usuario pide iniciar ya. Candidato integra agenda guiada Python/Android y

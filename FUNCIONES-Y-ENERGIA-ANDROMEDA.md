@@ -2,6 +2,61 @@
 
 Actualizado: 20 de octubre de 2026. Orden solicitado por el usuario al retomar.
 
+**Vigente30/13:** tras error reportado, cierre del cliente confirmado sin causa
+exacta aún probada; APK28/29/30 añaden solo recibos numéricos y preflights aislados.
+Preparación sin mic/captura con PCM descartado/pre-arm353ms y lag10ms pasan, con
+cierres verificados. Nueva activación explícita del operador, consentimiento4 y
+app/Detener visibles; servicio+modelo continuos activos sin comandos/acciones/web
+inyectados. No autorestart/reconexión/boot/renovación; datos/UID/sistema preservados.
+Voz/eco/recibos reales siguen pendientes; referencia actual
+`artifacts/android-voice/voice-session-observed-v1/`. Micrófono ya habilitado.
+
+**Vigente tras corrección:** usuario autoriza diagnóstico/actualizaciones/APK sin
+consultas repetidas y aún no tiene uso real. TimeoutError del prefijo público30s
+confirmado; preparación tools45s independiente, respuesta≤60s y guardias intactas.
+Dos módulos corregidos; nuevo modelo/TLS continuo listo tras35,5s. APK27/firma/UID/
+agenda3/datos/recibos/volumen/sistema preservados. Micrófono sigue manual; voz/eco/
+recibos reales pendientes. Evidencia vigente `artifacts/android-voice/startup-preparation-fix-v1/`;
+descripciones inferiores de fallo/apagado corresponden al intento anterior.
+
+**Vigente tras consentimiento informado:**APK27/protocolo13 y backend/helper/scripts
+instalados preservando firma/UID/datos/recibos/volumen/sistema. Prefijo real380/1536,
+seis selecciones nativas públicas y purga de caché pasan, sin tools ni web reales.
+Purga b11669 ahora máximo un token público descartado seguido de erase con recibo;
+cero tokens no servía como garantía. Humano abrió Alarmas: migraciónAndroid2→3 y
+conteos pasan. El único arranque real continuo falló antes de listo/monitor (exit1),
+causa aún desconocida; todo apagado, micrófono nunca activado. Diagnosticar/corregir
+sin relanzar igual ni ampliar plazos a ciegas. Acústica/consumo/recibos/cierre pendientes; casa no
+integrada. Evidencia/plan `artifacts/android-voice/joint-code27-deploy/`.
+Los apartados siguientes conservan hitos históricos, no autorización/estado actuales.
+
+**Interrupción local revisada:** detector antes de TTS y sin tope de32 salidas,
+tickets por generación, guardias de PCM/privacidad y stop fallido sin reabrir
+captura. Tono y modo continuo ceden audio, sin renovar deadlines. Suites locales,
+5000 salidas simuladas y compilación; no prueba acústica ni cambio en el Moto.
+Validación conjunta preparada y gated por consentimiento informado RAM/escucha
+y preflight nativo. `artifacts/android-voice/silence-lifecycle-v1/`.
+
+**Tercer bloque local implementado:** alarmas semanales (siete días/AM-PM),
+migración conservadora, borrado de serie por día/hora tras pregunta oída y «sí»,
+posponer5min sin borrar repetición y descartar solo esta vez. Silencio es parada
+de salida, no eliminación. Política13, cinco native tools, recibos durables y
+protección contra revisiones viejas/reintentos. Web y servicio continuo conservados.
+431 Python pasan/2 skips; Java161 alarmas/105 agenda y compilación/sintaxis pasan.
+Sin dispositivo, modelo, micrófono o APK. Próximo: silencio fiable y validación
+física coordinada, con consentimiento antes de reemplazar APK/RAM. Fechas únicas
+y duplicados se borran manualmente. `artifacts/android-voice/weekly-alarm-v1/`.
+
+**Segundo bloque local:**vozFG/canal continuo protocolo12, cerrar diálogo vuelve
+aespera sincerrarTLS odescargarLFM. Ámbitos/nonces porcheckpoint, memoria1h/4charlas,
+audioyield/resume conavisos, colas/plazos/guardias y Stop/EOF sinautorestart.
+Retiro verificable decaché de motor sin disco añadido; BIN/readonly/API real
+pendiente devalidación.417Python pasan/2skips, Java37continuo/105agenda ycompilación
+Android/sintaxis3scripts pasan. Teléfono NO usado/instalado/activado: último físico
+APK26/proto10 apagado trasv2. `artifacts/android-voice/continuous-voice-v1/`.
+Faltan semana/borrar/posponer, formatos/correcciones y silencio físico; no confundir
+simulaciones de45grants con herramientas/hardware aceptados.
+
 **Código iniciado, primer bloque local listo:**agenda guiada Python/Android,
 protocolo11 y confirmación→otra herramienta con recibos. Base de modelo continuo
 sin vencimiento/monitor numérico+watchdog codificada, NO micrófono continuo aún.

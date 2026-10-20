@@ -8,19 +8,29 @@ import org.json.*;
 /** Protocol9/10 literal requests, or explicit protocol11 typed forms and continuation. */
 final class AgendaActionChannel {
     private final String session, context;
-    private final long sessionEnd;
+    private long sessionEnd;
     private String turn = "", human = "", nonce = "", eventId = "";
     private long sequence, speechEnd, wall, boot;
-    private boolean closed, timerAccepted, volumeAccepted;
+    private boolean closed, timerAccepted, volumeAccepted,alarmAccepted;
     private final Set<String> consumed = new HashSet<>();
     private AgendaPermit accepted;
     private AgendaStore.Status receipt;
     private final boolean guided;
-    private final AgendaDialogue dialogue = new AgendaDialogue();
+    private final boolean continuous;
+    private final boolean lifecycle;
+    private final AgendaDialogue dialogue;
     private AgendaDialogue.Human latestHuman;
     private AgendaDialogue.Decision dialogueDecision;
     AgendaActionChannel(String session, String context, long end) { this(session, context, end, false); }
-    AgendaActionChannel(String session, String context, long end, boolean guided) { this.session = session; this.context = context; sessionEnd = end; this.guided = guided; }
+    AgendaActionChannel(String session, String context, long end, boolean guided) { this(session,context,end,guided,false); }
+    AgendaActionChannel(String session, String context, long end, boolean guided, boolean continuous) {
+        this(session,context,end,guided,continuous,false);
+    }
+    AgendaActionChannel(String session, String context, long end, boolean guided, boolean continuous,boolean lifecycle) {
+        this.session = session; this.context = context; sessionEnd = end; this.guided = guided; this.continuous = continuous;
+        if (continuous && (!guided || end != 0)) throw new IllegalArgumentException("Continuous agenda mode not negotiated");
+        this.lifecycle=lifecycle; dialogue = new AgendaDialogue(continuous ? 64 : 24,lifecycle);
+    }
     static long integer(JSONObject event, String key) throws Exception {
         Object value = event.get(key);
         if (!(value instanceof Integer || value instanceof Long)) throw new IOException("Integer required");
@@ -33,24 +43,30 @@ final class AgendaActionChannel {
         if (closed) throw new IOException("Revoked tools channel");
         turn = text(event, "turn_id"); human = text(event, "text"); sequence = integer(event, "turn_seq"); speechEnd = integer(event, "speech_end_ms");
         wall = integer(event, "calendar_anchor_ms"); boot = integer(event, "calendar_boot_ms"); accepted = null; receipt = null;
-        nonce = eventId = ""; timerAccepted = volumeAccepted = false;
+        nonce = eventId = ""; timerAccepted = volumeAccepted = alarmAccepted = false;
         if (boot > now + 100 || now - boot > 1500 || Math.abs((nowWall - wall) - (now - boot)) > 1500) throw new IOException("Calendar clock mismatch");
         if (guided) {
-            latestHuman = new AgendaDialogue.Human(turn, sequence, human, speechEnd, wall, boot, now);
+            if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(integer(event,"action_window_end_ms"),speechEnd,now);
+            latestHuman = new AgendaDialogue.Human(turn, sequence, human, speechEnd, wall, boot, now,continuous ? 64 : 24);
             dialogueDecision = dialogue.answer(latestHuman, now);
         }
     }
     synchronized void timerExecution() throws IOException {
-        if (closed || accepted != null || volumeAccepted || !timerAccepted && consumed.contains(turn) || consumed.size() >= 24 && !timerAccepted)
+        if (closed || accepted != null || volumeAccepted || alarmAccepted || !timerAccepted && consumed.contains(turn) || consumed.size() >= 24 && !timerAccepted)
             throw new IOException("Second mutation in current turn");
         timerAccepted = true; consumed.add(turn);
     }
     synchronized void volumeExecution() throws IOException {
-        if (closed || accepted != null || timerAccepted || volumeAccepted || consumed.contains(turn) || consumed.size() >= 24)
+        if (closed || accepted != null || timerAccepted || volumeAccepted || alarmAccepted || consumed.contains(turn) || consumed.size() >= 24)
             throw new IOException("Second mutation in current turn");
         volumeAccepted = true; consumed.add(turn);
     }
+    synchronized void alarmExecution() throws IOException {
+        if(closed || accepted!=null || timerAccepted || volumeAccepted || alarmAccepted || consumed.contains(turn) || consumed.size()>=24) throw new IOException("Second action in current turn");
+        alarmAccepted=true; consumed.add(turn);
+    }
     synchronized AgendaPermit execution(JSONObject event, long now, long nowWall) throws Exception {
+        if(alarmAccepted) throw new IOException("Alarm operation already reserved this turn");
         if (closed || !session.equals(text(event, "session_id")) || !context.equals(text(event, "context_id"))
                 || !turn.equals(text(event, "request_turn_id")) || sequence != integer(event, "request_sequence")
                 || speechEnd != integer(event, "speech_end_ms") || wall != integer(event, "calendar_anchor_ms") || boot != integer(event, "calendar_boot_ms"))
@@ -73,15 +89,18 @@ final class AgendaActionChannel {
         } else {
             if (guided && dialogueDecision != null) throw new IOException("Guided agenda provenance omitted");
             permit = AgendaPermit.validated(id, kind, human, text(event, "when_text"), text(event, "text"),
-                integer(event, "due_ms"), integer(event, "delay_ms"), before, wall, boot, now, nowWall);
+                integer(event, "due_ms"), integer(event, "delay_ms"), before, wall, boot, now, nowWall,lifecycle);
         }
+        if(lifecycle && (integer(event,"weekday")!=permit.value.weekday || integer(event,"minute_of_day")!=permit.value.minute)) throw new IOException("Recurrence mismatch");
         consumed.add(turn); accepted = permit; nonce = token; eventId = id; return permit;
     }
     synchronized JSONObject result(AgendaPermit permit, AgendaStore.Status status) throws Exception {
         if (accepted != permit) throw new IOException("Unrelated agenda receipt"); receipt = status;
-        return new JSONObject().put("action", "agenda_result").put("session_id", session).put("context_id", context)
+        JSONObject result=new JSONObject().put("action", "agenda_result").put("session_id", session).put("context_id", context)
             .put("event_id", eventId).put("nonce", nonce).put("event_kind", permit.value.kind.name()).put("due_ms", permit.value.due)
             .put("request_turn_id", turn).put("request_sequence", sequence).put("status", status.name());
+        if(lifecycle) result.put("weekday",permit.value.weekday).put("minute_of_day",permit.value.minute);
+        return result;
     }
     synchronized boolean speech(JSONObject event) throws Exception {
         String control = event.optString("timer_control"); long count = integer(event, "actions_executed");
@@ -126,5 +145,6 @@ final class AgendaActionChannel {
         return AgendaSpeechPolicy.text(status.name(), value, detailed);
     }
     synchronized void spoken(String turn, boolean completed) { if (guided) dialogue.spoken(turn, completed); }
+    synchronized void cancelDialogue() { dialogue.clear(); dialogueDecision=null; }
     synchronized void close() { closed = true; dialogue.clear(); latestHuman = null; dialogueDecision = null; if (accepted != null) accepted.revoke(); }
 }

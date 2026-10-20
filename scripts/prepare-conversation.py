@@ -9,11 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from conversation_voice import ConversationModel
 
 options = tuple(sys.argv[2:])
-if len(sys.argv) < 2 or options not in ((), ('--timer-trial',), ('--assistant-tools',), ('--assistant-tools', '--guided-agenda')):
+if len(sys.argv) < 2 or options not in ((), ('--timer-trial',), ('--assistant-tools',), ('--assistant-tools', '--guided-agenda'), ('--assistant-tools','--guided-agenda','--alarm-lifecycle')):
     raise ValueError('Invalid preparation mode')
 timer_trial = options == ('--timer-trial',)
 assistant_tools = bool(options and options[0] == '--assistant-tools')
-guided_agenda = options == ('--assistant-tools', '--guided-agenda')
+guided_agenda = '--guided-agenda' in options
+alarm_lifecycle = '--alarm-lifecycle' in options
 if assistant_tools:
     from assistant_tools_model import AssistantToolsModel
     model_type = AssistantToolsModel
@@ -34,6 +35,7 @@ while True:
     time.sleep(.25)
 model = model_type(key_path)
 if guided_agenda: model.enable_agenda_dialogue()
+if alarm_lifecycle: model.enable_alarm_lifecycle()
 if assistant_tools:
     from conversation_voice import now_ms, SYSTEM
     body = model.payload([{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1)

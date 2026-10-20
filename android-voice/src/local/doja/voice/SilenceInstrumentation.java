@@ -53,7 +53,7 @@ public final class SilenceInstrumentation extends Instrumentation {
             AtomicInteger stops = new AtomicInteger();
             List<String> acknowledgments = new ArrayList<>();
             simulated = new VoiceService() {
-                void stopSpeechOutput() { stops.incrementAndGet(); }
+                boolean stopSpeechOutput() { stops.incrementAndGet(); return true; }
                 void controlTurn(String action, String id, long at) { acknowledgments.add(action); }
                 void state(String text, FaceState presentation, String words) { /* Detached UI, no real service. */ }
             };
@@ -80,7 +80,7 @@ public final class SilenceInstrumentation extends Instrumentation {
                 "Interrupted action result reopened capture before authenticated close");
             AtomicInteger soundStops = new AtomicInteger(), serviceStops = new AtomicInteger();
             RingService ring = new RingService() {
-                void stopSoundOutput() { soundStops.incrementAndGet(); }
+                boolean stopSoundOutput() { soundStops.incrementAndGet(); return true; }
                 void finishSoundService() { serviceStops.incrementAndGet(); }
             };
             ring.soundId = "public-output-epoch"; ring.outputActive = true;

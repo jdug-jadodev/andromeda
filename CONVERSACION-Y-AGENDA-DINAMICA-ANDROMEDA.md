@@ -1,5 +1,99 @@
 # Andrómeda: conversación dinámica, recordatorios y alarmas
 
+## Estado vigente: APK30/protocolo13, sesión continua activada; aceptación hablada pendiente
+
+Tras reporte humano de error, se confirmó cierre por el cliente, no guardia de
+recursos; la etapa exacta anterior no estaba registrada y no se inventa causa.
+Actualizaciones autorizadas28/29/30 preservan firma/UID/datos/agenda3/recibos y
+añaden únicamente recibos numéricos y comprobaciones fijas: preparación sin mic,
+captura/reloj con PCM descartado y pre-arm sin reproducción/decodificación pasan.
+Pre-arm real listo353ms/lag10ms, sin rebajar guardias. Comprobaciones cerradas
+verificadas antes de otro dueño. Sesión continua nueva activada explícitamente
+por el operador con app visible/Detener y consentimiento4 previo; servicio+modelo
+observados activos, sin frases/acciones/web de prueba inyectadas. No autoinicio,
+autorestart, reconexión o renovación de pilotos.446 Python:444 pasan/2skips y Java
+completo pasa. Referencia actual `artifacts/android-voice/voice-session-observed-v1/`.
+El micrófono ya está habilitado. Todavía no se certifican diálogo, silencio/eco,
+web o agenda por estas comprobaciones; el fallo anterior no se declara resuelto
+sin una petición hablada. Apartados siguientes conservan estados históricos.
+
+**Arranque corregido después:** el usuario autoriza diagnóstico/actualizaciones
+autónomos sin nuevas preguntas y aclara que aún no usa Andrómeda para nada real.
+Una frontera de diagnóstico sin mensajes/locales confirmó TimeoutError en el
+prefijo público, antes de residente/ASR. Separado presupuesto frío:45s solo para
+cinco herramientas; respuestas siguen≤60s/cómputo55s, guardias sin ampliar.
+Dos módulos actualizados conservando APK27/UID/datos/volumen/sistema. Nuevo arranque
+real pasó: preparación35,5s y TLS/monitor continuo listo, sin micrófono del agente.
+443 Python:441 pasan/2skips;24 POSIX pasan. Referencia/manifiesto actual:
+`artifacts/android-voice/startup-preparation-fix-v1/`. Falta aceptación humana de
+voz/eco/agenda/recibos; no se prometen por el arranque. El fallo cerrado descrito
+a continuación es el intento anterior, no el estado del dueño corregido.
+
+Con consentimiento informado se verificó el Moto y se instaló coordinadamente
+APK27/`0.13.0-continuous-agenda`, backend/helper y scripts; misma firma/UID10238,
+datos/recibos/volumen8/15 y sistema preservados. Humano abrió **Alarmas**: lista
+vacía y migraciónAndroid2→3 verificadas por lectura en RAM, mismos recibos.
+El único arranque real continuo de esta instalación falló antes de quedar listo
+(exit1, sin monitor); causa interna aún desconocida, sin transcripciones/log crudo.
+Modelo/backend/worker/launcher/servicios/puertos/lock apagados, sin work reciente
+restante ni cambios de obligaciones. Micrófono nunca activado. No relanzar igual
+ni ampliar plazos sin evidencia: falta diagnosticar/corregir arranque antes de voz.
+
+Preflight nativo público: prefijo380/1536, cinco herramientas `auto` y seis
+selecciones correctas sin ejecutarlas. Retirada de caché de cero tokens falló;
+el motor se apagó sin instalar entonces. b11669 muestrea antes de comprobar el
+límite: se corrigió a **un token público máximo, salida descartada**, seguido de
+erase exacto del slot0. Nueva verificación solo del cambio pasó:4 tokens borrados,
+segundo erase0; readonly/capacidades0/cache secundaria0.441 testsPython:439 pasan/2skips;22 POSIX pasan.
+
+No hay aceptación acústica ni de herramientasAndroid: silencio/eco, conversación,
+web, recordatorio guiado, alarma semanal/borrado/posponer, recursos continuos y
+parada completa siguen pendientes. Evidencia y plan vigente:
+`artifacts/android-voice/joint-code27-deploy/`. Los bloques siguientes son hitos
+históricos y sus estados «local/no instalado/sin consentimiento» no son actuales.
+
+## Cuarto bloque local: interrupción y validación conjunta
+
+Corregidos el límite de32 salidas y el arranque del detector después de TTS.
+Ahora se prepara captura fresca antes de hablar, con tickets por salida y
+rechazo de callbacks/PCM obsoletos. Un fallo de stop no reabre micrófono; mute,
+client-silenced y captura atascada cierran de forma segura. Tono y conversación
+continua ceden audio sin renovar límites. No se rebaja confianza ni se autorizan
+acciones desde parciales. Prueba de5000 salidas simuladas y suite local completa;
+todavía **no aceptación acústica en Moto**. No APK/dispositivo/modelo usados.
+Plan conjunto con consentimiento y preflight nativo pendientes:
+`artifacts/android-voice/silence-lifecycle-v1/`.
+
+## Tercer bloque local: alarmas semanales y controles de ocurrencia
+
+Candidato protocolo13 (`weekly_alarm_lifecycle_v1`), **no instalado**. Siete días,
+hora inequívoca/AM-PM y confirmación explícita de repetición semanal. Migración
+agenda1/2→3 conserva los eventos antiguos como una sola vez. Borrado por voz de
+serie indicada por día/hora: lectura local, pregunta TTS completada, confirmación
+humana posterior, permiso por revisión y recibo real antes de anunciar éxito.
+Posponer5min y descartar esta vez afectan solo la ocurrencia; silencio no borra
+la serie. Programación y recibos durables acotados, sin retries de incertidumbre.
+
+433 pruebas Python:431 pasan/2 skips; Java incluye161 aserciones de alarmas y105
+de agenda guiada; compilación Android y sintaxis de scripts correctas. Son pruebas
+locales/simuladas, sin teléfono, APK, micrófono o modelo. Borrado por voz de fechas
+únicas/duplicadas sigue manual; silencio y nuevo ciclo completo requieren validación
+física. Detalle: `artifacts/android-voice/weekly-alarm-v1/findings.md`.
+
+## Segundo bloque de código: canal continuo (local, no instalado)
+
+Protocolo12 y capturaAndroidFG sin plazo total, cierre dediálogo→espera devoz en
+mismaTLS, identidades frescas delcliente y checkpoint depermisos sin reconectar.
+ContextoRAM1h/máximo4/LRU humano, aviso→cesión deaudio→reactivación sinapagar modelo,
+Detener/EOF/guardias apagan eldueño sin autorestart. Colas/plazos/datos acotados y
+permisos nuevos por cada turno. Vaciado verificado decachéKV/checkpoints/task_prev
+añadido sin guardar slots, sujeto averificación delBINreal/FSreadonly antes deuso.
+419 testsPython:417 pasan/2skipsWindows; suiteJava pasa(37continuo/105agenda),
+fuentesAndroid y3scripts compilan/pasan sintaxis. Reloj/modelo/audio/recibos son
+simulados: no hardware, instalación o escucha nueva. Evidencia
+`artifacts/android-voice/continuous-voice-v1/`. Pendientes: alarmas semanales y
+borrado/posponer, calendario/correcciones y silencio real; no producto completo.
+
 ## Primer bloque de código (posterior a los requisitos)
 
 Implementado LOCALMENTE y no instalado: formulario tipado guiado Python/Android

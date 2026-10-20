@@ -38,9 +38,15 @@ final class VoiceConnection implements Closeable {
         return open(context, source, snapshot, catalog, timerTrial, false);
     }
     static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot,
-             List<ConversationMemory.Snapshot> catalog, boolean timerTrial, boolean assistantTools) throws Exception {
+              List<ConversationMemory.Snapshot> catalog, boolean timerTrial, boolean assistantTools) throws Exception {
+        return open(context,source,snapshot,catalog,timerTrial,assistantTools,false);
+    }
+    static VoiceConnection open(Context context, String source, ConversationMemory.Snapshot snapshot,
+              List<ConversationMemory.Snapshot> catalog, boolean timerTrial, boolean assistantTools, boolean continuousVoice) throws Exception {
         if (timerTrial && assistantTools) throw new IOException("Modos incompatibles");
         boolean guidedAgenda = assistantTools && AssistantConfig.GUIDED_AGENDA;
+        boolean lifecycle=continuousVoice && AssistantConfig.ALARM_LIFECYCLE;
+        if (continuousVoice && (!guidedAgenda || catalog == null || timerTrial)) throw new IOException("Modo continuo no habilitado");
         if (!"microphone".equals(source) && !"synthetic_pcm".equals(source)) throw new IOException("Fuente inválida");
         SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(null, new TrustManager[]{new X509TrustManager() {
@@ -66,10 +72,12 @@ final class VoiceConnection implements Closeable {
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
-            JSONObject hello = new JSONObject().put("protocol", guidedAgenda ? 11 : assistantTools ? 10 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
+            JSONObject hello = new JSONObject().put("protocol", lifecycle ? 13 : continuousVoice ? 12 : guidedAgenda ? 11 : assistantTools ? 10 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
             if (assistantTools) hello.put("web_response_mode", "worker_first_v2_medium").put("phone_volume_policy", "absolute_media_v1");
             if (guidedAgenda) hello.put("agenda_dialogue_policy", "guided_agenda_v1").put("action_completion_policy", "continue_v1");
+            if (continuousVoice) hello.put("voice_lifetime_policy",ContinuousVoicePolicy.VOICE).put("dialogue_reset_policy",ContinuousVoicePolicy.RESET);
+            if(lifecycle) hello.put("alarm_lifecycle_policy",AlarmSchedule.POLICY);
             if (catalog != null) {
                 JSONArray chats = new JSONArray();
                 for (ConversationMemory.Snapshot chat : catalog) chats.put(ConversationChannel.encode(chat));
@@ -83,7 +91,7 @@ final class VoiceConnection implements Closeable {
             String rejection = VoiceStartPolicy.rejection(ready.optString("type"), ready.optString("reason"));
             if (rejection != null) throw new IOException(rejection);
             if ("context_expired".equals(ready.optString("reason"))) throw new IOException("El contexto caducó; vuelve a elegir la prueba");
-            boolean validMode = assistantTools ? ready.optInt("protocol") == (guidedAgenda ? 11 : 10) && ready.optBoolean("assistant_tools") && ready.optBoolean("actions_enabled")
+            boolean validMode = assistantTools ? ready.optInt("protocol") == (lifecycle ? 13 : continuousVoice ? 12 : guidedAgenda ? 11 : 10) && ready.optBoolean("assistant_tools") && ready.optBoolean("actions_enabled")
                     && !ready.optBoolean("conversation_only", true) && !ready.optBoolean("wake_only") && ready.optBoolean("wake_enabled") && ready.optBoolean("ai_enabled")
                 : timerTrial ? VoiceSessionPolicy.isTimerReady(ready.optInt("protocol"), ready.optBoolean("timer_trial"),
                     ready.optBoolean("conversation_only", true), ready.optBoolean("wake_only"), ready.optBoolean("wake_enabled"),
@@ -102,6 +110,9 @@ final class VoiceConnection implements Closeable {
                     || assistantTools && !"worker_first_v2_medium".equals(ready.optString("web_response_mode"))
                     || assistantTools && !"absolute_media_v1".equals(ready.optString("phone_volume_policy"))
                     || guidedAgenda && (!"guided_agenda_v1".equals(ready.optString("agenda_dialogue_policy")) || !"continue_v1".equals(ready.optString("action_completion_policy")))
+                    || continuousVoice && !ContinuousVoicePolicy.ready(ready.optInt("protocol"),ready.optInt("seconds",-1),ready.optString("voice_lifetime_policy"),
+                        ready.optString("dialogue_reset_policy"),ready.optLong("action_window_ms"),ready.optLong("stream_start_ms"),ready.optLong("stream_idle_ms"),lifecycle)
+                    || lifecycle && !AlarmSchedule.POLICY.equals(ready.optString("alarm_lifecycle_policy"))
                     || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
                     || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
                     || catalog != null && !ready.optBoolean("voice_entry")

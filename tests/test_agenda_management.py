@@ -24,7 +24,7 @@ class AgendaManagementTests(unittest.TestCase):
     def test_agenda_schema_keeps_only_event_fields_not_conversation(self):
         database = self.schema()
         columns = [row[1] for row in database.execute('PRAGMA table_info(agenda)')]
-        self.assertEqual(columns, ['id', 'kind', 'text', 'due_ms', 'zone', 'state', 'revision', 'elapsed_due'])
+        self.assertEqual(columns, ['id', 'kind', 'text', 'due_ms', 'zone', 'state', 'revision', 'elapsed_due','weekday','minute_of_day'])
         self.assertNotIn('request', columns)
         self.assertNotIn('audio', columns)
         self.assertNotIn('hash', columns)
@@ -32,19 +32,19 @@ class AgendaManagementTests(unittest.TestCase):
     def test_sql_rejects_invalid_kind_zone_time_state_and_content(self):
         database = self.schema()
         valid = ['00000000-0000-4000-8000-000000000001', 'REMINDER', 'Frase pública de prueba', 1792328400000,
-                 'America/Bogota', 'PENDING', 1, 0]
-        database.execute('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?)', valid)
+                 'America/Bogota', 'PENDING', 1, 0,0,-1]
+        database.execute('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?,?,?)', valid)
         database.execute('DELETE FROM agenda')
         for index, value in [(1, 'TIMER'), (3, 0), (4, 'UTC'), (5, 'DELIVERED'), (6, 0), (2, 'a' * 161), (2, ''), (2, ' '), (5, 'CANCEL_PENDING'), (1, 'ALARM')]:
             entry = valid.copy(); entry[index] = value
             with self.subTest(index=index, value=value), self.assertRaises(sqlite3.IntegrityError):
-                database.execute('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?)', entry)
+                database.execute('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?,?,?)', entry)
 
     def test_selected_id_redaction_and_deletion_do_not_touch_other_kind(self):
         database = self.schema()
-        reminder = ['00000000-0000-4000-8000-000000000001', 'REMINDER', 'Prueba pública', 1792328400000, 'America/Bogota', 'FAILED', 1, 0]
-        alarm = ['00000000-0000-4000-8000-000000000002', 'ALARM', '', 1792328400000, 'America/Bogota', 'SCHEDULED', 1, 0]
-        database.executemany('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?)', [reminder, alarm])
+        reminder = ['00000000-0000-4000-8000-000000000001', 'REMINDER', 'Prueba pública', 1792328400000, 'America/Bogota', 'FAILED', 1, 0,0,-1]
+        alarm = ['00000000-0000-4000-8000-000000000002', 'ALARM', '', 1792328400000, 'America/Bogota', 'SCHEDULED', 1, 0,0,-1]
+        database.executemany('INSERT INTO agenda VALUES (?,?,?,?,?,?,?,?,?,?)', [reminder, alarm])
         self.assertEqual(database.execute("UPDATE agenda SET text='',state='CANCEL_PENDING',revision=revision+1 WHERE id=? AND kind=? AND revision=?", [reminder[0], 'REMINDER', 2]).rowcount, 0)
         self.assertEqual(database.execute("UPDATE agenda SET text='',state='CANCEL_PENDING',revision=revision+1 WHERE id=? AND kind=? AND revision=?", [reminder[0], 'REMINDER', 1]).rowcount, 1)
         self.assertEqual(database.execute('SELECT text,state FROM agenda WHERE id=?', [reminder[0]]).fetchone(), ('', 'CANCEL_PENDING'))

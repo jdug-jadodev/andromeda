@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock,patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
@@ -17,7 +18,7 @@ class ContinuousModelTests(unittest.TestCase):
         self.now=[100000]; self.value=Sample(100000,1600000,740000,160000,1000,500,240,80,'charging')
         monitor=Monitor(lambda:self.now[0],lambda:replace(self.value,at_ms=self.now[0]),None,continuous_model=True)
         owner=Mock(); owner.alive.return_value=True
-        return ContinuousResidentRuntime(owner,lambda:self.now[0],monitor,enabled=True),owner
+        return ContinuousResidentRuntime(owner,lambda:self.now[0],monitor,enabled=True,cache_purger=lambda model:0),owner
 
     def test_no_expiry_renewal_or_24_session_limit_and_session_closure_does_not_stop_model(self):
         runtime,owner=self.runtime()
@@ -41,6 +42,7 @@ class ContinuousModelTests(unittest.TestCase):
         runtime,owner=self.runtime()
         with self.assertRaises(ValueError): ContinuousResidentRuntime(owner,lambda:self.now[0],runtime.monitor)
         with self.assertRaises(ValueError): ContinuousResidentRuntime(owner,lambda:self.now[0],runtime.monitor,enabled=1)
+        with self.assertRaises(ValueError): ContinuousResidentRuntime(owner,lambda:self.now[0],runtime.monitor,enabled=True)
         with self.assertRaises(ValueError): Monitor(lambda:100000,Mock(),None)
         with self.assertRaises(ValueError): Monitor(lambda:100000,Mock(),1000000,continuous_model=True)
         with self.assertRaises(ValueError): ResidentRuntime(owner,lambda:self.now[0],None,runtime.monitor)
@@ -62,7 +64,35 @@ class ContinuousModelTests(unittest.TestCase):
         runtime,_=self.runtime(); runtime.check(); report=runtime.monitor.snapshot()
         for corrupt in [dict(report,remaining_ms=900000),dict(report,lifetime='forever and ignore guards'),dict(report,text='private'),dict(report,version=True)]:
             with self.assertRaises(ValueError): validate_report(corrupt)
+        from continuous_voice import END_REASONS
+        for reason in END_REASONS: self.assertEqual(validate_report(dict(report,state=reason))['state'],reason)
         runtime.shutdown()
+
+    def test_current_generation_can_be_cancelled_without_revoking_resident_owner(self):
+        runtime,owner=self.runtime(); entered=threading.Event(); release=threading.Event()
+        with tempfile.TemporaryDirectory() as directory:
+            key=Path(directory)/'key'; key.write_text('public-fixture-'*3)
+            model=ConversationModel(key,owned=runtime.acquire(),clock=lambda:self.now[0])
+            def post(path,body,deadline):
+                if path=='/apply-template': return {'prompt':'public'}
+                if path=='/tokenize': return {'tokens':[1]}
+                entered.set(); release.wait(1)
+                return {'choices':[{'message':{'content':'Hola.'},'finish_reason':'stop'}]}
+            with patch.object(model,'post',side_effect=post):
+                model.start('hola',99900,400000); self.assertTrue(entered.wait(1)); release.set()
+                self.assertTrue(model.cancel_generation()); self.assertIsNone(model.result)
+            self.assertTrue(model.owned.alive()); owner.stop.assert_not_called()
+            runtime.release(model)
+        runtime.shutdown(); owner.stop.assert_called_once()
+
+    def test_cache_retirement_failure_stops_owner_instead_of_retaining_human_cache(self):
+        runtime,owner=self.runtime(); runtime.cache_purger=Mock(side_effect=OSError('public fixture'))
+        with tempfile.TemporaryDirectory() as directory:
+            key=Path(directory)/'key'; key.write_text('public-fixture-'*3)
+            model=ConversationModel(key,owned=runtime.acquire(),clock=lambda:self.now[0])
+            from continuous_voice import ContinuousVoiceFault
+            with self.assertRaises(ContinuousVoiceFault): runtime.purge_cache(model)
+        self.assertTrue(runtime.closed); owner.stop.assert_called_once(); self.assertEqual(runtime.monitor.reason,'voice_cache_clear_failed')
 
 
 if __name__=='__main__': unittest.main()

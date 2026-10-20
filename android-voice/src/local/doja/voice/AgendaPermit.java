@@ -11,9 +11,13 @@ final class AgendaPermit {
     }
     static AgendaPermit validated(String id, AgendaEntry.Kind kind, String human, String when, String text,
             long due, long delay, long before, long wall, long boot, long now, long nowWall) {
+        return validated(id,kind,human,when,text,due,delay,before,wall,boot,now,nowWall,false);
+    }
+    static AgendaPermit validated(String id, AgendaEntry.Kind kind, String human, String when, String text,
+            long due, long delay, long before, long wall, long boot, long now, long nowWall,boolean lifecycle) {
         if (!AgendaEntry.validId(id) || before <= now || before - now > 4100 || boot <= 0 || boot > now + 100
                 || now - boot > 26500 || Math.abs((nowWall - wall) - (now - boot)) > 1500) throw new IllegalArgumentException("Invalid agenda clock/grant");
-        AgendaRequestGuard.Value value = AgendaRequestGuard.parse(kind, human, when, text, wall);
+        AgendaRequestGuard.Value value = AgendaRequestGuard.parse(kind, human, when, text, wall,lifecycle);
         if (value.due != due || value.delay != delay || due <= nowWall + 1000) throw new IllegalArgumentException("Agenda payload mismatch/past");
         return new AgendaPermit(id, value, before, wall, boot);
     }

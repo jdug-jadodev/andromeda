@@ -170,19 +170,22 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None):
-        clock = [100000]; events = []
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None, continuous_voice=False, wake_on_pcm=False, initial_ms=100000, memory_setup=None,alarm_lifecycle=False):
+        clock = [initial_ms]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
+        model.cancel_generation.return_value = True
+        model.purge_cache.return_value = True
         model.memory = voice.ShortMemory(lambda: clock[0]); model.done = threading.Event()
+        if memory_setup is not None: memory_setup(model.memory,clock)
         model.observed_contexts = []
         def start(text, speech_end, *_):
             model.done.clear()
-            if answers is not None: model.result = answers[len(model.observed_contexts)]
+            model.result = answers[len(model.observed_contexts)] if answers is not None else answer
             model.observed_contexts.append(model.memory.messages(text, activity_ms=speech_end))
             if ready: model.done.set()
-            return 123000
+            return clock[0]+23000 if continuous_voice else 123000
         model.start.side_effect = start
-        detector = Mock(model=object()); detector.accept_pcm.return_value = False
+        detector = Mock(model=object()); detector.accept_pcm.return_value = wake_on_pcm
         recognizer = Mock(); recognizer.AcceptWaveform.return_value = True
         recognizer.Result.side_effect = [json.dumps({'text': text, 'result': [{'end': .02}]})
                                          for text in (transcripts or ['hola'])]
@@ -197,8 +200,8 @@ class ConversationVoiceTests(unittest.TestCase):
         with patch.dict(sys.modules, vosk=vosk), patch.object(voice, 'now_ms', side_effect=lambda: clock[0]), \
                 patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)), \
                 patch.object(voice.time, 'time', return_value=1792328400):
-            voice.session(Mock(), detector, model, 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
-                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda)
+            voice.session(Mock(), detector, model, 0 if continuous_voice else 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
+                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda,continuous_voice=continuous_voice,alarm_lifecycle=alarm_lifecycle)
         return events, model
 
     @staticmethod

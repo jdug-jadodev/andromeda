@@ -7,25 +7,34 @@ import org.json.JSONObject;
 final class PhoneVolumeChannel {
     private final PhoneVolumePolicy policy;
     private final String session, context;
-    private final long sessionEnd;
+    private long sessionEnd;
     private String turn = "", human = "";
     private long sequence, speechEnd;
     private PhoneVolumePolicy.Permit accepted;
     private PhoneVolumePolicy.Receipt receipt;
     private boolean closed;
     private final boolean continuing;
+    private final boolean continuous;
     PhoneVolumeChannel(String session, String context, long end) {
         this(session, context, end, false);
     }
     PhoneVolumeChannel(String session, String context, long end, boolean continuing) {
+        this(session,context,end,continuing,false);
+    }
+    PhoneVolumeChannel(String session, String context, long end, boolean continuing, boolean continuous) {
         this.session = session; this.context = context; sessionEnd = end;
-        this.continuing = continuing;
+        this.continuing = continuing; this.continuous = continuous;
+        if (continuous && (!continuing || end != 0)) throw new IllegalArgumentException("Continuous volume mode not negotiated");
         policy = new PhoneVolumePolicy(session, context);
     }
     synchronized void human(JSONObject event) throws Exception {
+        human(event, android.os.SystemClock.elapsedRealtime());
+    }
+    synchronized void human(JSONObject event, long now) throws Exception {
         if (closed || accepted != null && receipt == null) throw new IOException("Pending/revoked volume turn");
         turn = AgendaActionChannel.text(event, "turn_id"); human = AgendaActionChannel.text(event, "text");
         sequence = AgendaActionChannel.integer(event, "turn_seq"); speechEnd = AgendaActionChannel.integer(event, "speech_end_ms");
+        if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(AgendaActionChannel.integer(event,"action_window_end_ms"),speechEnd,now);
         accepted = null; receipt = null;
     }
     synchronized PhoneVolumePolicy.Permit execution(JSONObject event, long now) throws Exception {

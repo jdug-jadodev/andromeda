@@ -105,7 +105,7 @@ def parts(kind, raw):
     return candidates
 
 
-def request(kind, human, when_text, reminder_text, anchor_ms):
+def request(kind, human, when_text, reminder_text, anchor_ms, alarm_lifecycle=False):
     """Validate the WHOLE current request and arguments; retain only extracted human payload."""
     raw = clean(human)
     if kind not in {'ALARM', 'REMINDER'} or not isinstance(when_text, str) or not isinstance(reminder_text, str):
@@ -121,13 +121,17 @@ def request(kind, human, when_text, reminder_text, anchor_ms):
                 r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
                 r'|\ben .+ (?:segundos?|minutos?|horas?)\b', normalized(body))):
             continue
-        due, delay = calendar_due(when, anchor_ms)
-        matches.append({'event_kind': kind, 'text': body, 'due_ms': due, 'delay_ms': delay, 'zone': 'America/Bogota'})
+        if alarm_lifecycle:
+            from alarm_schedule import schedule
+            time = schedule(kind, when, anchor_ms)
+        else:
+            due, delay = calendar_due(when, anchor_ms); time = dict(due_ms=due, delay_ms=delay)
+        matches.append(dict(event_kind=kind, text=body, zone='America/Bogota', **time))
     if len(matches) != 1: raise AgendaValidationError('invalid_request')
     return matches[0]
 
 
-def current_event(kind, human, anchor_ms):
+def current_event(kind, human, anchor_ms, alarm_lifecycle=False):
     """Validate literal data only AFTER the model selects this exact calendar kind.
 
     Native calendar tools have no data arguments: neither the model's history
@@ -136,7 +140,7 @@ def current_event(kind, human, anchor_ms):
     if kind not in {'ALARM', 'REMINDER'}: raise AgendaValidationError('invalid_call')
     matches = []
     for when, body in parts(kind, clean(human)):
-        try: value = request(kind, human, when, body, anchor_ms)
+        try: value = request(kind, human, when, body, anchor_ms, alarm_lifecycle)
         except (ValueError, OverflowError): continue
         matches.append(dict(value, when_text=when))
     if len(matches) != 1: raise AgendaValidationError('invalid_request')
