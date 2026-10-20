@@ -67,6 +67,7 @@ final class VoiceConnection implements Closeable {
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
             JSONObject hello = new JSONObject().put("protocol", assistantTools ? 9 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
+            if (assistantTools) hello.put("web_response_mode", "worker_first_v1");
             if (catalog != null) {
                 JSONArray chats = new JSONArray();
                 for (ConversationMemory.Snapshot chat : catalog) chats.put(ConversationChannel.encode(chat));
@@ -93,7 +94,8 @@ final class VoiceConnection implements Closeable {
                     || assistantTools && !"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\"]".equals(String.valueOf(ready.optJSONArray("allowed_tools")))
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
-                    || ready.optInt("response_start_ms") != 30000 || ready.optInt("context_version") != 1
+                    || ready.optInt("response_start_ms") != (assistantTools ? 60000 : 30000) || ready.optInt("context_version") != 1
+                    || assistantTools && !"worker_first_v1".equals(ready.optString("web_response_mode"))
                     || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
                     || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
                     || catalog != null && !ready.optBoolean("voice_entry")
@@ -107,7 +109,7 @@ final class VoiceConnection implements Closeable {
     }
     static JSONObject readEvent(DataInputStream input) throws Exception {
         int size = input.readInt();
-        if (size < 1 || size > 16384) throw new IOException("Evento inválido");
+        if (size < 1 || size > 65536) throw new IOException("Evento inválido");
         byte[] data = new byte[size]; input.readFully(data);
         return new JSONObject(new String(data, StandardCharsets.UTF_8));
     }

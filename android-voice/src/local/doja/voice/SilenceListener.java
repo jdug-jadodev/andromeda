@@ -69,7 +69,7 @@ final class SilenceListener implements AutoCloseable {
         return ready();
     }
     void begin(String id, long deadline, BooleanSupplier stillPlaying, Runnable command) {
-        if (closed || !policy.begin(id, deadline, SystemClock.elapsedRealtime())) return;
+        if (closed || !policy.begin(id, deadline, SystemClock.elapsedRealtime(), owner == SilenceDiagnostics.Owner.SPEECH ? 60000 : 30000)) return;
         SilenceDiagnostics.Window diagnostic = SilenceDiagnostics.begin(owner, SystemClock.elapsedRealtime());
         prepare(); jobs.incrementAndGet();
         try { worker.execute(() -> listen(id, deadline, stillPlaying, command, diagnostic)); }

@@ -23,6 +23,10 @@ def answer(query, result, post, clock, deadline, cancelled):
     response = {'text': FALLBACK, 'status': 'invalid_response', 'source_index': -1, 'input_tokens': 0}
     if not rows:
         return dict(response, text='No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda.', status='no_results')
+    if result.get('estado') == 'sin_respuesta_directa' and not any(row.get('excerpt', '').strip() for row in rows):
+        # The actual Worker still emits question/URL boilerplate with empty
+        # fragments. That is not evidence for a model to answer from memory.
+        return dict(response, status='insufficient_evidence', text='No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones.')
     if cancelled.is_set(): return dict(response, status='cancelled')
     if clock() >= deadline:
         return dict(response, status='deadline', text='Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones.')

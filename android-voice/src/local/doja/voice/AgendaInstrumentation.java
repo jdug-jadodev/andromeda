@@ -109,6 +109,15 @@ public final class AgendaInstrumentation extends Instrumentation {
             try { WebSources.validate("busca en Internet nebulosas", falseQuote); } catch (Exception expected) { falseQuoteRejected = true; }
             check(falseQuoteRejected, "Service synthesis accepted as a literal page quote");
             result.putBoolean("service_summary_web_guard", true);
+            JSONObject worker = new JSONObject(synthesis.toString());
+            worker.getJSONObject("web_answer").put("mode", "service_answer");
+            worker.put("text", "El servicio web responde: " + translated + " Fuentes en Opciones. ¿Necesitas algo más?");
+            check(WebSources.validate("busca en Internet nebulosas", worker).contains("https://example.org/public"), "Direct Worker answer rejected");
+            JSONObject forged = new JSONObject(worker.toString()); forged.getJSONObject("web_answer").put("mode", "quoted");
+            boolean forgedRejected = false;
+            try { WebSources.validate("busca en Internet nebulosas", forged); } catch (Exception expected) { forgedRejected = true; }
+            check(forgedRejected, "Worker answer accepted as page quotation");
+            result.putBoolean("worker_first_web_guard", true);
             check(timers.equals(TimerStore.prefs(context).getAll()) && receipts.equals(TimerStore.actionReceipts(context).getAll()), "Real timer data changed");
             result.putBoolean("passed", true); result.putBoolean("android_sqlite", true); result.putBoolean("real_scheduler", false);
             result.putBoolean("microphone_opened", false); result.putBoolean("audio_played", false); result.putBoolean("llm_started", false);

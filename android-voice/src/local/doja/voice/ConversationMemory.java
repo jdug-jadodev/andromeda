@@ -7,10 +7,19 @@ final class ConversationMemory {
     static final long INACTIVITY_MS = 3600000;
     static final int MAX_CONVERSATIONS = 4, MAX_TURNS = 24, MAX_TEXT_UNITS = 5700;
     static final class Turn {
-        final String id, user, assistant;
+        final String id, user, assistant, webAnswer;
+        final boolean webFollowup;
         final long humanMs;
         Turn(String id, String user, String assistant, long humanMs) {
+            this(id, user, assistant, humanMs, null);
+        }
+        Turn(String id, String user, String assistant, long humanMs, String webAnswer) {
+            this(id, user, assistant, humanMs, webAnswer, false);
+        }
+        Turn(String id, String user, String assistant, long humanMs, String webAnswer, boolean webFollowup) {
             this.id = id; this.user = user; this.assistant = assistant; this.humanMs = humanMs;
+            this.webAnswer = webAnswer;
+            this.webFollowup = webFollowup;
         }
     }
     static final class Lease {
@@ -136,10 +145,10 @@ final class ConversationMemory {
     }
     private void trim(Chat chat) {
         int units = 0;
-        for (Turn turn : chat.turns) units += turn.user.length() + (turn.assistant == null ? 0 : turn.assistant.length());
+        for (Turn turn : chat.turns) units += turn.user.length() + (turn.assistant == null ? 0 : turn.assistant.length()) + (turn.webAnswer == null ? 0 : turn.webAnswer.length());
         while (chat.turns.size() > MAX_TURNS || units > MAX_TEXT_UNITS) {
             Turn removed = chat.turns.remove(0);
-            units -= removed.user.length() + (removed.assistant == null ? 0 : removed.assistant.length());
+            units -= removed.user.length() + (removed.assistant == null ? 0 : removed.assistant.length()) + (removed.webAnswer == null ? 0 : removed.webAnswer.length());
         }
     }
     synchronized Snapshot snapshot(Lease lease, long now) {
@@ -159,15 +168,29 @@ final class ConversationMemory {
         return true;
     }
     synchronized boolean answer(Lease lease, String turnId, String text, long now) {
+        return answer(lease, turnId, text, now, false);
+    }
+    synchronized boolean answer(Lease lease, String turnId, String text, long now, boolean webFollowup) {
         prune(now);
         if (!owns(lease) || !validText(text, 700)) return false;
         Chat chat = chats.get(lease.conversationId);
         if (chat.turns.isEmpty()) return false;
         int last = chat.turns.size() - 1; Turn turn = chat.turns.get(last);
-        if (!turn.id.equals(turnId) || turn.assistant != null) return false;
-        chat.turns.set(last, new Turn(turn.id, turn.user, text, turn.humanMs));
+        if (!turn.id.equals(turnId) || turn.assistant != null || turn.webAnswer != null) return false;
+        chat.turns.set(last, new Turn(turn.id, turn.user, text, turn.humanMs, null, webFollowup));
         trim(chat);
         return true; // Assistant activity never renews human inactivity.
+    }
+    synchronized boolean webAnswer(Lease lease, String turnId, String text, long now) {
+        prune(now);
+        if (!owns(lease)) return false;
+        try { WebAnswerPolicy.validateServiceAnswer(text); } catch (IllegalArgumentException invalid) { return false; }
+        Chat chat = chats.get(lease.conversationId);
+        if (chat.turns.isEmpty()) return false;
+        int last = chat.turns.size() - 1; Turn turn = chat.turns.get(last);
+        if (!turn.id.equals(turnId) || turn.assistant != null || turn.webAnswer != null) return false;
+        chat.turns.set(last, new Turn(turn.id, turn.user, null, turn.humanMs, text)); trim(chat);
+        return true;
     }
     synchronized List<Info> list(long now) {
         prune(now); List<Info> items = new ArrayList<>();

@@ -101,6 +101,33 @@ class InternetSearchTests(unittest.TestCase):
         rows = internet.normalize(value, QUERY)['fuentes']
         self.assertEqual(len(rows), 1); self.assertEqual(rows[0]['url'], 'https://science.example.org/a')
 
+    def test_actual_worker_fragmento_and_null_answer_states(self):
+        source = {'id': 1, 'titulo': 'Nebulosa', 'url': 'https://science.example.org/a',
+                  'fragmento': SPANISH, 'fecha_publicacion': None}
+        for state, answer in [('ok', SPANISH), ('sin_respuesta_directa', None)]:
+            result = internet.normalize(dict(RAW, estado=state, respuesta=answer, fuentes=[source]), QUERY)
+            self.assertEqual(result['estado'], state)
+            self.assertEqual(result['fuentes'][0]['excerpt'], SPANISH)
+            self.assertEqual(result['respuesta'], answer or '')
+        result = internet.normalize(dict(RAW, estado='sin_resultados', respuesta=None, fuentes=[]), QUERY)
+        self.assertEqual(result, {'estado': 'sin_resultados', 'respuesta': '', 'contexto_para_ia': '', 'fuentes': []})
+        # Contradictory states and missing/empty content still fail closed.
+        for fields in [{'estado':'sin_resultados','respuesta':SPANISH,'fuentes':[]},
+                       {'estado':'sin_resultados','respuesta':None,'fuentes':[source]},
+                       {'estado':'sin_respuesta_directa','respuesta':SPANISH},
+                       {'estado':'ok','respuesta':None},
+                       {'estado':'sin_respuesta_directa','respuesta':None,'contexto_para_ia':''}]:
+            with self.subTest(fields=fields), self.assertRaises(internet.InternetSearchError):
+                internet.normalize(dict(RAW, **fields), QUERY)
+
+    def test_empty_results_state_survives_worker_pipe_without_becoming_provider_failure(self):
+        value = internet.normalize(dict(RAW, estado='sin_resultados', respuesta=None, fuentes=[]), QUERY)
+        process = self.process(value)
+        with patch('internet_search.subprocess.Popen', return_value=process):
+            result = internet.buscar_en_internet(QUERY, time.monotonic() + 4, environ=ENV)
+        self.assertEqual(result, value)
+        process.kill.assert_not_called()
+
     def process(self, value):
         process = Mock(); process.returncode = 0; process.poll.return_value = 0
         process.communicate.return_value = (json.dumps(value).encode(), None)
@@ -168,6 +195,20 @@ class InternetSearchTests(unittest.TestCase):
             internet.buscar_en_internet(QUERY, started + .6, environ=ENV)
         self.assertEqual(error.exception.code, 'timeout'); self.assertLess(time.monotonic() - started, 2)
         self.assertIsNotNone(children[0].poll())
+
+    def test_ten_second_worker_response_fits_new_absolute_budget_without_retries(self):
+        clock=[100.0]
+        process=self.process(internet.normalize(RAW,QUERY))
+        def communicate(**kwargs):
+            clock[0]=110.0
+            return json.dumps(internet.normalize(RAW,QUERY)).encode(),None
+        process.communicate.side_effect=communicate
+        with patch('internet_search.time.monotonic',side_effect=lambda:clock[0]), patch('internet_search.subprocess.Popen',return_value=process) as spawn:
+            result=internet.buscar_en_internet(QUERY,155.0,environ=ENV)
+        self.assertEqual(result['respuesta'],SPANISH)
+        spawn.assert_called_once(); process.kill.assert_not_called()
+        self.assertEqual(internet.NETWORK_SECONDS,55)
+        self.assertLessEqual(internet.NETWORK_SECONDS,60)
 
     def test_cancellation_during_worker_wait_kills_and_reaps_no_retry(self):
         launch, children = self.launch_fixture('import time; time.sleep(10)')

@@ -144,6 +144,30 @@ public final class ConversationMemoryTest {
         try { entry.acquireExact(explicit, false, 3700010); throw new AssertionError("Expired resume silently created a chat"); }
         catch (IllegalStateException expected) { assertions++; }
         check(entry.list(3700010).isEmpty(), "Failed resume left a new empty chat");
+        ConversationMemory web = new ConversationMemory(); ConversationMemory.Lease wl = web.acquire(100000);
+        String data = "Una nebulosa es una nube de gas y polvo en el espacio.";
+        check(web.human(wl, id(600), "busca en Internet nebulosas", 100000, 100000), "Web question rejected");
+        check(web.webAnswer(wl, id(600), data, 100100), "Acknowledged web answer rejected");
+        check(web.snapshot(wl, 100100).turns.get(0).assistant == null, "Web data stored as native assistant instruction");
+        check(web.snapshot(wl, 100100).turns.get(0).webAnswer.equals(data), "Typed web data lost");
+        check(!web.webAnswer(wl, id(600), data, 100100), "Duplicate web answer accepted");
+        check(!web.answer(wl, id(600), "Changed", 100100), "Web provenance overwritten");
+        check(web.human(wl, id(601), "qué contiene", 100200, 100200), "Followup rejected");
+        check(web.answer(wl, id(601), "Contiene gas y polvo.", 100300, true), "Local followup rejected");
+        check(web.snapshot(wl, 100300).turns.get(1).webFollowup, "Derived data lost its provenance");
+        check(web.snapshot(wl, 3700200).turns.isEmpty(), "Web text did not expire");
+        ConversationTurnPolicy minute = new ConversationTurnPolicy();
+        check(minute.begin(id(700), 1, 100000, 160000, 100100, 60000), "Minute turn rejected");
+        check(minute.acceptReply(id(700), 1, 100000, 160000, 157000), "Within-minute reply rejected");
+        check(!minute.acceptStart(id(700), 160001), "Over-minute response started");
+        ConversationTurnPolicy invalidWait = new ConversationTurnPolicy();
+        check(!invalidWait.begin(id(701), 1, 100000, 160001, 100100, 60001), "Wait extended beyond a minute");
+        check(!invalidWait.begin(id(701), 1, 100000, 160000, 100100), "Legacy mode silently widened");
+        SilenceWindowPolicy longSpeech = new SilenceWindowPolicy();
+        check(longSpeech.begin("long-web", 160000, 100000, 60000), "Long speech interruption window rejected");
+        check(longSpeech.active("long-web", 159999) && !longSpeech.active("long-web", 160000), "Long speech window not bounded");
+        SilenceWindowPolicy legacySpeech = new SilenceWindowPolicy();
+        check(!legacySpeech.begin("legacy", 160000, 100000), "Other microphone windows widened");
         System.out.println("Conversation RAM: " + assertions + " assertions passed (no device/disk/network/audio).");
     }
 }

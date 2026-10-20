@@ -18,7 +18,8 @@ if __name__ == '__main__': sys.path.insert(0, str(Path(__file__).resolve().paren
 from web_search import bounded, source_url
 
 MAX_BYTES = 65536
-NETWORK_SECONDS = 4
+NETWORK_SECONDS = 55  # Shared turn deadline wins; never a fresh minute per phase.
+SUCCESS_STATES = frozenset({'ok', 'success', 'exito', 'éxito', 'completado', 'sin_respuesta_directa', 'sin_resultados'})
 ERRORS = frozenset({'configuration_missing', 'configuration_invalid', 'cancelled', 'timeout',
     'connection_failed', 'unauthorized', 'rate_limited', 'http_error', 'invalid_response',
     'empty_response', 'response_too_large', 'service_error', 'invalid_query'})
@@ -66,15 +67,24 @@ def normalize(value, pregunta):
     if not isinstance(value, dict): raise InternetSearchError('invalid_response')
     estado = value.get('estado')
     if not isinstance(estado, str): raise InternetSearchError('invalid_response')
-    if estado.casefold() not in {'ok', 'success', 'exito', 'éxito', 'completado'}:
+    state = estado.casefold()
+    if state not in SUCCESS_STATES:
         raise InternetSearchError('service_error')
     # The echoed question is optional, but if supplied it must be the actual one.
     if 'pregunta' in value and value['pregunta'] != pregunta: raise InternetSearchError('invalid_response')
-    respuesta = text(value.get('respuesta', ''), 12000)
+    raw_answer = value.get('respuesta', '')
+    if raw_answer is None and state in {'sin_respuesta_directa', 'sin_resultados'}: raw_answer = ''
+    respuesta = text(raw_answer, 12000)
     contexto = text(value.get('contexto_para_ia', ''), 16000)
-    if not respuesta and not contexto: raise InternetSearchError('empty_response')
     fuentes = value.get('fuentes', [])
     if not isinstance(fuentes, list) or len(fuentes) > 50: raise InternetSearchError('invalid_response')
+    if state == 'sin_resultados':
+        if respuesta or fuentes: raise InternetSearchError('invalid_response')
+        # Absence of results is not provider failure. Discard empty-source boilerplate
+        # and preserve this state through the subprocess pipe and Android fallback.
+        return {'estado': state, 'respuesta': '', 'contexto_para_ia': '', 'fuentes': []}
+    if state == 'sin_respuesta_directa' and respuesta: raise InternetSearchError('invalid_response')
+    if not respuesta and not contexto: raise InternetSearchError('empty_response')
     rows, seen = [], set()
     for item in fuentes:
         if isinstance(item, str): item = {'url': item}
@@ -85,11 +95,15 @@ def normalize(value, pregunta):
         if not valid or valid in seen: continue
         url = valid  # Keep the validated canonical target, never the redirect wrapper.
         title = text(item.get('title', item.get('titulo', urlsplit(url).hostname)), 2000)
-        excerpt = text(item.get('excerpt', item.get('contenido', item.get('content', item.get('extracto', '')))), 16000)
+        excerpt = ''
+        for name in ('excerpt', 'fragmento', 'contenido', 'content', 'extracto'):
+            if name in item:
+                excerpt = text(item[name], 16000); break
         rows.append({'url': url, 'title': bounded(title, 120), 'excerpt': bounded(excerpt, 350)})
         seen.add(url)
         if len(rows) == 3: break
-    return {'respuesta': bounded(respuesta, 1000), 'contexto_para_ia': bounded(contexto, 1600), 'fuentes': rows}
+    return {'estado': state if state == 'sin_respuesta_directa' else 'ok',
+            'respuesta': respuesta, 'contexto_para_ia': bounded(contexto, 1600), 'fuentes': rows}
 
 
 def _http(host, path, token, pregunta):
@@ -151,7 +165,7 @@ def buscar_en_internet(pregunta, deadline, cancelled=None, *, environ=None):
         if not isinstance(value, dict): raise InternetSearchError('invalid_response')
         if 'error' in value: raise InternetSearchError(value['error'])
         # Verify pipe shape without persisting or exporting the raw response.
-        return normalize(dict(value, estado='ok'), pregunta)
+        return normalize(dict(value, estado=value.get('estado', 'ok')), pregunta)
     except InternetSearchError:
         raise
     except (OSError, ValueError, TypeError, RecursionError):

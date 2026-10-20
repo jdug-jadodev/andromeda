@@ -39,13 +39,13 @@ class ConversationFlow:
                              and cls.control_text(final_question[-1]) in cls.OFFERS)
 
     @classmethod
-    def with_offer(cls, answer):
+    def with_offer(cls, answer, maximum=700):
         """Explicit UX footer, not another generation or a replacement answer."""
-        if len(answer.encode('utf-16-le')) // 2 > 700: raise ValueError('Oversized speech')
+        if len(answer.encode('utf-16-le')) // 2 > maximum: raise ValueError('Oversized speech')
         if cls.direct_offer(answer): return answer
         separator = ' ' if answer.endswith(('.', '!', '?', '…')) else '. '
         result = answer + separator + cls.QUESTION
-        if len(result.encode('utf-16-le')) // 2 > 700:
+        if len(result.encode('utf-16-le')) // 2 > maximum:
             raise ValueError('Reply plus follow-up exceeds speech limit')
         return result
 

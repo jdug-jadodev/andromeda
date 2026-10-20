@@ -49,7 +49,13 @@ def conversational_reply(message, finish_reason):
         raise ValueError('Incomplete or tool-shaped reply')
     parsed = parse_native_response(message.get('content') or '', [])
     if parsed['kind'] != 'reply': raise ValueError('Non-conversational output')
-    text = parsed['text']; plain = normalized(text)
+    text = parsed['text']
+    reject_unsupported_claims(text)
+    return text
+
+
+def reject_unsupported_claims(text):
+    plain = normalized(text)
     patterns = [
         r'\b(?:estoy|estamos)\s+(?:(?:ya|ahora)\s+)?(?:creando|poniendo|programando|activando|iniciando|cancelando|apagando|encendiendo|buscando|consultando)\b',
         r'\b(?:he|hemos|ya|acabo de) (?:\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\b',
@@ -58,7 +64,6 @@ def conversational_reply(message, finish_reason):
     ]
     if any(re.search(pattern, plain) for pattern in patterns):
         raise ValueError('Unsupported action/current-data claim')
-    return text
 
 
 def now_ms():
@@ -67,7 +72,7 @@ def now_ms():
 
 def send_event(conn, event):
     data = json.dumps(event, ensure_ascii=True).encode()
-    if len(data) > 16384: raise ValueError('Oversized event')
+    if len(data) > 65536: raise ValueError('Oversized event')
     conn.sendall(struct.pack('!I', len(data)) + data)
 
 
@@ -140,7 +145,9 @@ class ShortMemory:
     def messages(self, text, activity_ms=None):
         if self.clock() - self.last_human >= 3600000: self.pairs.clear()
         self.last_human = self.clock() if activity_ms is None else activity_ms
-        return [{'role': 'system', 'content': SYSTEM}] + [copy.deepcopy(m) for pair in self.pairs for m in pair] + [
+        # Typed remote data is NEVER included in native action-selection chat.
+        return [{'role': 'system', 'content': SYSTEM}] + [{'role': m['role'], 'content': m['content']}
+            for pair in self.pairs for m in pair if not m.get('web_followup')] + [
             {'role': 'user', 'content': text}]
 
     def commit(self, text, answer):
@@ -151,10 +158,24 @@ class ShortMemory:
         self.pairs.append([{'role': 'user', 'content': text}])
         self.trim()
 
+    def commit_web(self, text, answer):
+        from worker_answers import validate_service_answer
+        from web_search import current_query
+        current_query(text)
+        validate_service_answer(answer)
+        self.pairs.append([{'role': 'user', 'content': text, 'web_answer': answer}])
+        self.trim()
+
+    def commit_followup(self, text, answer):
+        conversational_reply({'content': answer}, 'stop')
+        self.pairs.append([{'role': 'user', 'content': text},
+                           {'role': 'assistant', 'content': answer, 'web_followup': True}])
+        self.trim()
+
     def trim(self):
-        units = sum(text_units(m['content']) for group in self.pairs for m in group)
+        units = sum(text_units(m['content']) + text_units(m.get('web_answer', '')) for group in self.pairs for m in group)
         while len(self.pairs) > MAX_STORED_TURNS or units > MAX_TEXT_UNITS:
-            units -= sum(text_units(m['content']) for m in self.pairs.pop(0))
+            units -= sum(text_units(m['content']) + text_units(m.get('web_answer', '')) for m in self.pairs.pop(0))
 
     def restore(self, context):
         """Authenticated, bounded app RAM snapshot; never a prompt/system message."""
@@ -169,19 +190,26 @@ class ShortMemory:
         if last and now - last >= 3600000: raise ContextExpired('Context expired')
         restored, identifiers, previous, units = [], set(), 0, 0
         for turn in turns:
-            if not isinstance(turn, dict) or not {'id', 'user', 'human_ms'} <= set(turn) <= {'id', 'user', 'human_ms', 'assistant'}: invalid()
+            if not isinstance(turn, dict) or not {'id', 'user', 'human_ms'} <= set(turn) <= {'id', 'user', 'human_ms', 'assistant', 'web_answer', 'web_followup'}: invalid()
+            if sum(key in turn for key in ('assistant', 'web_answer', 'web_followup')) > 1: invalid()
             turn_id, user, at = turn['id'], turn['user'], turn['human_ms']
             if not isinstance(turn_id, str) or not re.fullmatch('[0-9a-f]{32}', turn_id) or turn_id in identifiers: invalid()
             if not isinstance(user, str) or not user.strip() or text_units(user) > 250 or '<|' in user: invalid()
             if type(at) is not int or not 0 < at <= last or at < previous: invalid()
             identifiers.add(turn_id); previous = at
             group = [{'role': 'user', 'content': user}]
-            if 'assistant' in turn:
-                answer = turn['assistant']
+            if 'web_answer' in turn:
+                from worker_answers import validate_service_answer
+                from web_search import current_query
+                current_query(user)
+                validate_service_answer(turn['web_answer'])
+                group[0]['web_answer'] = turn['web_answer']
+            if 'assistant' in turn or 'web_followup' in turn:
+                answer = turn.get('assistant', turn.get('web_followup'))
                 if not isinstance(answer, str) or conversational_reply({'content': answer}, 'stop') != answer: invalid()
                 if text_units(answer) > 700: invalid()
-                group.append({'role': 'assistant', 'content': answer})
-            units += sum(text_units(m['content']) for m in group)
+                group.append(dict(role='assistant', content=answer, **({'web_followup': True} if 'web_followup' in turn else {})))
+            units += sum(text_units(m['content']) + text_units(m.get('web_answer', '')) for m in group)
             if units > MAX_TEXT_UNITS: invalid()
             restored.append(group)
         if turns and previous != last: invalid()
@@ -232,6 +260,8 @@ class OwnedInference:
 
 
 class ConversationModel:
+    response_start_ms = 30000
+    compute_ms = 22000
     def __init__(self, key_path, owned=None, clock=now_ms):
         self.key = Path(key_path).read_text().strip()
         if len(self.key) < 32: raise ValueError('Missing inference credential')
@@ -245,7 +275,7 @@ class ConversationModel:
     def post(self, path, body, deadline):
         if self.cancelled.is_set() or self.clock() >= deadline: raise TimeoutError()
         connection = http.client.HTTPConnection('127.0.0.1', 11435,
-            timeout=max(.1, min(22, (deadline - self.clock()) / 1000)))
+            timeout=max(.1, min(self.compute_ms / 1000, (deadline - self.clock()) / 1000)))
         self.http = connection
         try:
             connection.request('POST', path, json.dumps(body, ensure_ascii=True).encode(),
@@ -274,11 +304,14 @@ class ConversationModel:
         # proposal-only subclasses can override parsing without owning an executor.
         return conversational_reply(message, finish_reason)
 
+    def turn_deadline(self, speech_end, session_end):
+        return min(self.clock() + self.compute_ms, speech_end + self.response_start_ms - 3500, session_end - 1500)
+
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
         self.context_metrics = {}
-        deadline = min(self.clock() + 22000, speech_end + 26500, session_end - 1500)
+        deadline = self.turn_deadline(speech_end, session_end)
         messages = self.memory.messages(text, activity_ms=speech_end)
         available_pairs = sum(len(group) == 2 for group in self.memory.pairs)
         available_turns = len(self.memory.pairs)
@@ -331,6 +364,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     if detector is None or limit not in (90, 300) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
     SetLogLevel(-1)
+    response_start_ms = 60000 if assistant_tools else 30000
     pump = FramePump(conn)
     session_id = uuid.uuid4().hex
     context_id = context_id or uuid.uuid4().hex
@@ -411,7 +445,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                       'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web'] if assistant_tools else ['create_timer'] if timer_trial else [],
                       'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
-                     'response_start_ms': 30000, 'input_source': source, 'context_version': 1,
+                      'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
+                       **({'web_response_mode': 'worker_first_v1'} if assistant_tools else {}),
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
                        'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
                        'voice_entry': entry is not None, 'speech_interrupt': True})
@@ -457,7 +492,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         timer_response(response)
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
-                elif state == 'speech' and current > turn['deadline_ms'] + 20000: return
+                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') == 'service_answer' else 20000): return
             for kind, data in pump.poll():
                 if kind == 3:
                     control = json.loads(data); action = control.get('action')
@@ -485,7 +520,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'speech_end_estimated': True, 'useful_audio_verified': False,
                                     'actions_executed': turn.get('actions_executed', 0)}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
-                            if turn.get('timer_control'):
+                            if (turn.get('web_answer') or {}).get('mode') == 'service_answer':
+                                model.memory.commit_web(turn['text'], turn['web_answer']['answer_es'])
+                            elif turn.get('timer_control') == 'web_followup':
+                                model.memory.commit_followup(turn['text'], turn['answer'])
+                            elif turn.get('timer_control'):
                                 model.memory.unanswered(turn['text'])
                             elif not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
                             flow.spoken(turn['answer'], offered_more=turn['offered_more'])
@@ -531,11 +570,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     speech_end = timeline.speech_end(result)
                     head = text.split(maxsplit=1)
                     if len(head) == 2 and words(head[0]) == words(SETTINGS['wake_word']): text = head[1]
-                    if now_ms() >= speech_end + 26500: return
+                    if now_ms() >= speech_end + response_start_ms - 3500: return
                     sequence += 1
                     if sequence > 24: return
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
-                             'deadline_ms': speech_end + 30000, 'text': text}
+                             'deadline_ms': speech_end + response_start_ms, 'text': text}
                     if assistant_tools:
                         turn.update(calendar_anchor_ms=int(time.time() * 1000), calendar_boot_ms=now_ms())
                     route = entry.route(text) if entry is not None else {'kind': 'model'}
@@ -627,6 +666,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                     try:
                         with context.wrap_socket(raw, server_side=True) as conn:
                             hello = read_hello(conn, authentication_end)
+                            if assistant_tools and hello.get('web_response_mode') != 'worker_first_v1': continue
                             supplied = hello.get('token', '')
                             if (hello.get('protocol') != (9 if assistant_tools else 8 if timer_trial else PROTOCOL)
                                     or hello.get('mode') != ('assistant_tools' if assistant_tools else 'timer_trial' if timer_trial else 'conversation_only')

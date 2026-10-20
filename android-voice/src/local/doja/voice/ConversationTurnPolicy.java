@@ -7,8 +7,12 @@ final class ConversationTurnPolicy {
     private boolean scheduled, started, ended;
     private String closeReason = "";
     synchronized boolean begin(String value, long seq, long end, long expires, long now) {
+        return begin(value, seq, end, expires, now, 30000);
+    }
+    synchronized boolean begin(String value, long seq, long end, long expires, long now, long responseMs) {
         if (!id.isEmpty() || value == null || !value.matches("[0-9a-f]{32}") || seq <= sequence
-                || end <= 0 || end > Long.MAX_VALUE - 30000 || expires != end + 30000
+                || (responseMs != 30000 && responseMs != 60000)
+                || end <= 0 || end > Long.MAX_VALUE - responseMs || expires != end + responseMs
                 || end > now + 100 || now >= expires) return false;
         id = value; sequence = seq; speechEnd = end; deadline = expires;
         scheduled = started = ended = false; closeReason = ""; return true;

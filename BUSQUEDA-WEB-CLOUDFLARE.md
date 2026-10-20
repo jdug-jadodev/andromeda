@@ -2,14 +2,108 @@
 
 ## Estado y alcance
 
-Integración en el repositorio, **no desplegada en el Moto ni probada contra tu
-Worker real**. No se ha recibido URL/token ni se han hecho consultas externas.
-TV pausada. No se modifica ni se crea un backend Cloudflare/Tavily.
+**Continuación corregida e instalada con autorización, sin reinstalar la app.**
+Solo un módulo backend cambia; APK24/UID/proceso/datos conservados. La continuación
+conversacional entra al LFM local sin herramientas antes del selector; las posibles
+órdenes nuevas conservan selección nativa/validadores. No búsqueda implícita ni
+ejecución por clasificador, y los datos web/derivados no entran al prompt nativo.
 
-La aplicación instalada era código 22. **No actualizar únicamente Python:** la
-nueva síntesis necesita también el validador Android del candidato código 23.
-La instalación coordinada se acuerda aparte; reemplazar la app puede perder las
-conversaciones/diagnósticos que estén solo en RAM. No se cambian ASR, TTS,
+Prueba fresca con respuesta pública guardada: primera respuesta completa en3113ms,
+continuación local en25545ms/308 tokens, cero nuevas consultas.351 tests Python
+aprobados/1 omitido Windows; ambos recorridos pasan con LFM real. Sin micrófono,
+audio o acuse TTS real; no prueba lectura audible completa ni latencia con HTTP.
+Teléfono cerrado y datos/recibos/SSH/web conservados. Estado definitivo:
+`artifacts/android-voice/worker-followup-route-fix-v1/final-state.json`.
+Las notas de continuación bloqueada que siguen describen el fallo anterior.
+
+**Actualización instalada: APK24 y siete módulos, con respaldo y datos/UID
+conservados.** Android real sin audio pasa contrato de lectura Worker y SQLite
+aislada. LFM real selecciona `search_web()` y entrega completa la respuesta pública
+guardada (602 unidades/tres fuentes) en3159ms, **sin segundo resumen local**.
+No incluye búsqueda nueva o reproducción; todavía no certifica lectura audible.
+
+**Continuación integrada NO aprobada:** el modelo selecciona búsqueda otra vez y
+la guardia rechaza por faltar petición explícita (`web_explicit_request_required`);
+no consulta al Worker ni llega a la generación local de continuación. Se detiene
+sin reintento automático. Próximo: corregir ese enrutamiento con autorización,
+manteniendo selección/guardias para nuevas órdenes; no permitir búsquedas implícitas.
+Teléfono quedó sin servicios/modelo/puertos de voz, datos/recibos/SSH/web intactos.
+Cero audio/micrófono/consultas nuevas. Evidencia definitiva:
+`artifacts/android-voice/worker-first-code24-install/final-state.json` y `findings.md`.
+
+### Preparación histórica del candidato24 (posteriormente instalado arriba)
+
+**Cambio solicitado: Worker primero, modelo local al continuar.** Candidato
+APK24/`0.11.7-worker-first` preparado, **no instalado**. El Moto sigue en23 según
+la última verificación. Sustituye la reformulación inicial lenta por lectura de
+`respuesta` del Worker; no lee `contexto_para_ia` ni añade otra generación local.
+Después de lectura completa, una continuación sí usa el LFM local aislado, sin
+herramientas ni otra consulta salvo petición explícita nueva validada nativamente.
+
+Espera máxima de inicio **60s absolutos**, cómputo≤55s/red≤55s compartidos, reserva
+1500ms: no se suman plazos por fase. Lectura de la respuesta Worker hasta60s o fin
+de sesión; resto de salidas/obligaciones conserva sus límites. Respuesta completa
+normalizada hasta2000 unidades UTF-16, sin el recorte anterior a1000. Si excede el
+límite, avisa en vez de presentar un fragmento como completo. No puede prometerse
+que cualquier texto termine en60s; una lectura cortada no se confirma como completa.
+
+Datos Worker y respuestas derivadas en RAM tipada/≤1h, nunca instrucciones al
+selector de acciones; siguen presupuesto5700/24 y validación de petición actual.
+Modo nuevo `service_answer`: «El servicio web responde: … Fuentes en Opciones.».
+No es cita literal de páginas ni respuesta generada por LFM. Sin respuesta directa
+se informa, no se rellena automáticamente a partir de contexto.
+
+347 tests Python/1 omitido Windows,897 aserciones JVM y build APK24 pasan sin
+teléfono/modelo/audio/proveedor real. Necesita actualización coordinada APK+siete
+módulos, negociación `worker_first_v1`, respaldo/preflight y consentimiento de
+pérdida RAM antes de reinstalar. No cambiar únicamente Python sobre cliente23.
+Evidencia/manifiesto `artifacts/android-voice/worker-first-v1/`. El resto de esta
+sección describe la integración23 instalada; la ruta antigua de resumen inicial
+que aparece después es histórica, no el flujo del candidato24.
+
+Integración **desplegada en el Moto con APK23/backend/launcher coordinados**,
+con autorización de pérdida de memoria RAM, respaldo y sin borrar datos/UID.
+**Aún no da una respuesta útil dentro del plazo en el control local:** el LFM
+selecciona `search_web()` correctamente, pero la síntesis de la respuesta guardada
+termina `deadline` a20,524s; síntesis aislada también a20,525s. Entrada728 tokens,
+sin ampliar límites ni intentar otra consulta. Configuración/guardia JSON Android
+y regresión SQLite aislada pasan; no es aceptación de voz/UI. Evidencia definitiva:
+`artifacts/android-voice/cloudflare-code23-install/final-state.json` y `findings.md`.
+
+Configuración privada
+creada allí por el usuario, sin copiarla al PC. Tras un primer401, se compara
+con consentimiento únicamente ACCESS_TOKEN del `.env` del proyecto: coincide
+con el token del Moto. La URL oficial confirmada también coincide; no se cambia.
+
+**Autenticación resuelta:** con autorización posterior explícita se sincroniza
+solo ACCESS_TOKEN del Worker existente `andromeda-web` en la cuenta verificada
+del subdominio `jhonnathan-dev`. No se modifica/sube código ni Tavily, ni se
+crean servicios. Una sola consulta posterior devuelve **HTTP200 en3044ms y tres
+fuentes**, con TLS/esquema/normalización aprobados. Total consultas reales: dos
+(401 y200), sin retry automático. Se conserva fixture público privado en el
+Moto para no repetir proveedor durante pruebas locales. El control LFM posterior
+sí alcanzó generación, pero agotó su presupuesto sin respuesta útil. Falta resolver
+esa latencia antes de aceptación de voz/UI. TV sigue pausada.
+
+**Correspondencia de autenticación confirmada en código:**
+
+```text
+Moto: WEB_SEARCH_TOKEN = mismo valor que ACCESS_TOKEN del Worker
+HTTP: Authorization: Bearer <ese valor>
+Cloudflare: ACCESS_TOKEN (no renombrar para adaptarlo al cliente)
+```
+
+No es un token administrativo de Cloudflare ni `TAVILY_API_KEY`. La comparación
+del Worker es exacta. El valor anterior de producción no se pudo ni intentó leer;
+la sincronización posterior fue una sola PUT autorizada, confirmada por API y
+por el200 del ensayo. Otros clientes con el secreto anterior podrían necesitar
+actualizarlo. No volver a cambiar secretos bajo la autorización ya consumida.
+
+La aplicación instalada ahora es código23. **No actualizar únicamente Python
+sobre un cliente22:** la síntesis necesita también el validador Android23.
+La instalación coordinada ya se autorizó/ejecutó una vez; no repetirla. Cualquier
+nuevo reemplazo debe advertir pérdida de conversaciones/diagnósticos solo RAM.
+No se cambian ASR, TTS,
 temporizadores, agenda, control de dispositivos, modelo o límites de voz.
 
 ## Ruta de ejecución
@@ -25,7 +119,8 @@ temporizadores, agenda, control de dispositivos, modelo o límites de voz.
    `Authorization: Bearer …`. No envía historial, datos de agenda, audio ni
    argumentos redactados por el modelo. **`TAVILY_API_KEY` no se lee ni se usa.**
 4. `internet_answers.py` entrega `respuesta` y `contexto_para_ia` acotados a
-   **llama.cpp local**, sin historia, token, URLs ni herramientas. Pide una
+   **llama.cpp local**, sin historia, token ni herramientas. Las URLs incluidas
+   dentro del contexto son texto inerte: no se visitan ni autorizan acciones. Pide una
    respuesta española breve (≤64 tokens/32 palabras). Verifica el presupuesto
    real de entrada ≤1536 tokens y conserva el plazo original de cómputo de 22 s,
    con 1500 ms reservados para el actor. No amplía contextos/plazos.
@@ -67,26 +162,41 @@ Ejemplo público de fixture, **no respuesta capturada de tu servicio**:
 }
 ```
 
-- Éxito: `estado` string `ok`, `success`, `exito`, `éxito` o `completado`.
-  Otros estados se consideran fallo del servicio; no se hablan mensajes crudos.
+- Éxito con explicación: `estado` string `ok` (`success`, `exito`, `éxito` o
+  `completado` también se admiten para compatibilidad).
+- El Worker real también devuelve `sin_respuesta_directa`, `respuesta: null` y
+  fuentes: se conservan los fragmentos/contexto para formulación local. Si los
+  fragmentos están vacíos, no se usa la pregunta/URL como evidencia inventada.
+- `sin_resultados` con respuesta nula y fuentes vacías es ausencia de resultados,
+  no fallo de proveedor: no se invoca el modelo para rellenarlos de memoria.
+  Estados contradictorios o desconocidos se rechazan.
 - `pregunta` opcional; si está presente debe ser idéntica a la enviada.
-- `respuesta` y `contexto_para_ia`: strings, al menos uno no vacío. No se
-  serializan objetos arbitrarios como si fueran instrucciones de contexto.
+- `respuesta` y `contexto_para_ia`: strings, al menos uno no vacío salvo el caso
+  explícito sin resultados; `respuesta` puede ser null en los dos estados
+  anteriores. No se serializan objetos arbitrarios como instrucciones de contexto.
 - `fuentes`: lista de URLs string o de objetos `url`, título opcional
-  `title`/`titulo`, extracto opcional `excerpt`/`contenido`/`content`/`extracto`.
+  `title`/`titulo`, extracto opcional `fragmento` (Worker real),
+  `excerpt`/`contenido`/`content`/`extracto`.
   No se inventan extractos a partir de `respuesta` para hacerlos pasar por citas.
 - Sin fuentes válidas, no se anuncia una respuesta verificada. Campos adicionales
   se ignoran; claves JSON duplicadas, controles y delimitadores de roles se rechazan.
 
-Los valores exactos de `estado` y las formas de `fuentes`/`contexto_para_ia` no
-venían especificados por completo. Si tu contrato real usa otra forma, adaptar
-**este cliente**, no tu Worker. Basta un JSON de ejemplo público/sin secretos
-para contrastarlo; no hace falta compartir token, conversaciones ni consultas
-privadas. Hasta ese contraste no se declara compatibilidad real validada.
+El código real de `andromeda-web/src/index.js` se contrastó con el cliente. Las
+pruebas opcionales `tests/test_cloudflare_worker_contract.py` ejecutan ese Worker
+local con upstream simulado, claves ficticias y sin entorno privado heredado.
+Sus tres estados reales recorren normalización → adapter nativo → síntesis
+simulada → actor. No se usa Wrangler, no se lee `.env`, no se consulta Tavily ni
+se modifica ese proyecto. Esto prueba contrato de código, **no secretos ni
+compatibilidad efectiva con el despliegue remoto**. La consulta200 posterior sí
+comprueba autenticación/contrato HTTP, pero no la formulación LFM o voz.
+
+El Worker permite hasta 18 s para su upstream; el cliente sigue limitado a 4 s
+de red y al cómputo total original. No se amplían tiempos sin medir/acordar la
+latencia real una vez resuelta la autenticación.
 
 ## Dónde poner el `.env` en el Moto
 
-**Tras desplegar el candidato completo**, el arranque existente seguirá pasando
+**Con el candidato completo ya instalado**, el arranque existente sigue pasando
 por `env -i`. El wrapper `with_web_search_env.py` lee el archivo privado después,
 dentro de Debian y solo para `doja_stream.py` en modo `tools`. No carga secretos
 para el calentamiento ni para el proceso llama-server.
@@ -175,7 +285,7 @@ responsabilidad del wrapper de arranque, no del modelo.
   Fuentes y conversación siguen en RAM con sus límites/expiración existentes.
   El código no controla los logs/retención de tu Worker o Tavily.
 
-## Pruebas y despliegue pendiente
+## Pruebas y despliegue
 
 ```sh
 python -m unittest discover -s tests
@@ -188,7 +298,7 @@ Python → Java real con fixtures públicos. Sin servicio real, inferencia LFM,
 voz ni dispositivo. Las comprobaciones POSIX de permisos requieren Linux; no
 deben confundirse con una validación real del filesystem Android en Windows.
 
-Para un despliegue posterior coordinado:
+La instalación ya realizada comprendió estos destinos; no es una orden de repetirla:
 
 - Nuevos módulos `internet_search.py`, `internet_answers.py`, `web_search_env.py`,
   `with_web_search_env.py`, `check_web_search_config.py` junto al backend.
@@ -196,6 +306,8 @@ Para un despliegue posterior coordinado:
   `start-andromeda-conversation.sh` y el APK candidato 23 con `WebAnswerPolicy`.
 - Mantener los demás módulos/dependencias actuales y los permisos del backend.
   No copiar todo el repositorio encima ni instalar paquetes nuevos.
-- Configurar el archivo privado, contrastar contrato y hacer una sola consulta
-  pública real acordada, después validar selección nativa LFM y respuesta/fuentes.
-  Voz/latencia audible y aceptación humana requieren una ventana aparte.
+- Configuración privada/contrato/consulta pública200 ya comprobados en la fase
+  anterior. La selección nativa LFM posterior pasa, pero la síntesis agota el
+  plazo aun reutilizando la respuesta guardada. No otra consulta automática.
+  Próximo trabajo: medir/reducir el coste de síntesis sin ampliar límites; voz,
+  fuentes visibles y latencia audible útil siguen pendientes y se acuerdan aparte.

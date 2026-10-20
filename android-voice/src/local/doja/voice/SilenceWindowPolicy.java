@@ -12,8 +12,11 @@ final class SilenceWindowPolicy {
     private boolean consumed, closed;
     private final Set<String> seen = new HashSet<>();
     synchronized boolean begin(String value, long deadline, long now) {
+        return begin(value, deadline, now, 30000);
+    }
+    synchronized boolean begin(String value, long deadline, long now, long maximumMs) {
         if (closed || value == null || value.isEmpty() || value.length() > 80 || seen.contains(value) || seen.size() >= 32
-                || deadline <= now || deadline - now > 30000) return false;
+                || (maximumMs != 30000 && maximumMs != 60000) || deadline <= now || deadline - now > maximumMs) return false;
         seen.add(value);
         id = value; expires = deadline; consumed = false; return true;
     }

@@ -322,18 +322,19 @@ class AssistantToolsTests(unittest.TestCase):
             failed = model.interpret_result(native('search_web'), 'tool_calls', 'busca en Internet nebulosas')
         self.assertEqual(failed['sources'], []); self.assertIn('no estuvo disponible', failed['text'])
 
-    def test_web_summary_reserves_original_actor_budget_and_preserves_sources(self):
+    def test_worker_reading_reserves_actor_budget_without_second_inference(self):
         model = self.model(); rows = [{'url': 'https://example.org/a', 'title': 'Público', 'excerpt': 'Extracto público.'}]
-        summary = {'text': 'Según la síntesis web: Una respuesta pública en español. Fuentes en Opciones.', 'status': 'service_summary', 'source_index': -1, 'input_tokens': 140,
+        summary = {'text': 'El servicio web responde: Una respuesta pública en español. Fuentes en Opciones.', 'status': 'service_answer', 'source_index': -1, 'input_tokens': 0,
                    'evidence': '', 'answer_es': 'Una respuesta pública en español.'}
-        with patch('assistant_tools_model.buscar_en_internet', return_value=service(rows)), patch('assistant_tools_model.internet_answer', return_value=summary) as answer:
+        with patch('assistant_tools_model.buscar_en_internet', return_value=service(rows)), patch('assistant_tools_model.worker_answer', return_value=summary) as answer:
             result = model.interpret_result(native('search_web'), 'tool_calls', 'busca en Internet nebulosas')
         self.assertIs(result['sources'], rows); self.assertEqual(result['text'], summary['text'])
-        self.assertEqual(answer.call_args.args[4], model.work_deadline - 1500)
-        self.assertEqual(model.context_metrics['web_answer_status'], 'service_summary')
+        self.assertEqual(answer.call_args.args[2], model.work_deadline - 1500)
+        self.assertEqual(model.context_metrics['web_answer_status'], 'service_answer')
         self.assertEqual(result['web_answer']['version'], 1)
         self.assertEqual(result['web_answer']['evidence'], summary['evidence'])
-        self.assertEqual(model.context_metrics['web_answer_input_tokens'], 140)
+        self.assertEqual(model.context_metrics['web_answer_input_tokens'], 0)
+        model.post.assert_not_called()
         self.assertNotIn('extracto', json.dumps(model.context_metrics))
 
     def test_actor_agenda_only_speaks_success_after_receipt_then_closes(self):
@@ -377,7 +378,7 @@ class AssistantToolsTests(unittest.TestCase):
         model.post = Mock(side_effect=post)
         with patch('assistant_tools_model.buscar_en_internet', return_value=service(rows)):
             result = model.interpret_result(native('search_web'), 'tool_calls', 'busca en Internet nebulosas')
-        self.assertEqual(result['web_answer']['mode'], 'service_summary')
+        self.assertEqual(result['web_answer']['mode'], 'service_answer')
         harness = fixture.ConversationVoiceTests()
         events, _ = harness.run_session(harness.utterance() + [(101000, harness.ack_last)],
             transcripts=['busca en Internet nebulosas'], answer=result, assistant_tools=True)

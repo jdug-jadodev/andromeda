@@ -3,6 +3,7 @@ import copy
 import json
 import time
 import re
+import threading
 
 from agenda_requests import current_event, AgendaValidationError
 from conversation_voice import ConversationModel, conversational_reply
@@ -11,7 +12,7 @@ from timer_proposals import selected_timer_seconds, TimerValidationError
 from web_search import WEB_QUERY_REASONS, WebQueryValidationError, current_query
 from web_answers import contract as web_contract
 from internet_search import buscar_en_internet, InternetSearchError
-from internet_answers import answer as internet_answer
+from worker_answers import answer as worker_answer, followup, latest_web
 
 
 def tool(name, description, *arguments):
@@ -54,6 +55,8 @@ def native_call(message, finish):
 
 class AssistantToolsModel(ConversationModel):
     anchor_wall = anchor_boot = 0
+    response_start_ms = 60000
+    compute_ms = 55000
     @staticmethod
     def payload(messages, maximum=96):
         messages = copy.deepcopy(messages); messages[0]['content'] = SYSTEM
@@ -66,8 +69,41 @@ class AssistantToolsModel(ConversationModel):
         return result
 
     def start(self, text, speech_end, session_end):
-        self.work_deadline = min(self.clock() + 22000, speech_end + 26500, session_end - 1500)
+        if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
+        self.work_deadline = self.turn_deadline(speech_end, session_end)
+        web = latest_web(self.memory)
+        if web and not self.requires_native_selection(text):
+            # A read-only continuation must not revisit the tool selector. This
+            # gate grants NOTHING: any possible new command keeps the original
+            # native selection + whole-current-request validators/executor.
+            self.cancelled.clear(); self.done.clear(); self.result = self.error = None
+            self.memory.messages(text, activity_ms=speech_end)
+            history = [{'user': group[0]['content'], 'assistant': group[1]['content'] if len(group) == 2 else ''}
+                       for group in self.memory.pairs[-4:] if 'web_answer' not in group[0]]
+            self.context_metrics = {'tools_model_choice': 'text', 'tools_selected_tool': 'none',
+                'tools_model_kind': 'reply', 'tools_validation': 'local_web_followup',
+                'tools_web_attempted': False, 'input_token_budget': 1536}
+            deadline = self.work_deadline
+            def work():
+                try:
+                    result = followup(text, web, history, self.post, self.clock, deadline - 1500, self.cancelled)
+                    if not self.cancelled.is_set(): self.result = result
+                except Exception as error: self.error = type(error).__name__
+                finally: self.done.set()
+            self.thread = threading.Thread(target=work, daemon=True, name='read-only-web-followup')
+            self.thread.start()
+            return deadline
         return super().start(text, speech_end, session_end)
+
+    @staticmethod
+    def requires_native_selection(text):
+        # Conservative exclusion from the read-only path, NOT a tool router,
+        # data parser or execution authorization. Quotes/negations still go to
+        # the unchanged native/current-request guards, never an inferred action.
+        return bool(re.search(r'\b(?:busca|busques|buscar|consulta|consultes|investiga|investigues|'
+            r'pon|ponme|pongas|crea|crees|crear|programa|programes|inicia|inicies|'
+            r'recuerdame|recuerdes|alarma|alarmas|recordatorio|recordatorios|temporizador|temporizadores|'
+            r'timer|cuenta atras|cancela|canceles|apaga|enciende)\b', normalized(text)))
 
     def interpret_result(self, message, finish_reason, human):
         selected, validation, web_attempted = 'none', 'invalid_native_call', False
@@ -102,9 +138,9 @@ class AssistantToolsModel(ConversationModel):
                     web_attempted = True  # Search attempted, not proof that a provider received a request.
                     result = buscar_en_internet(query, time.monotonic() + max(0, remaining - 1.5), self.cancelled)
                     rows = result['fuentes']
-                    # Keep time for the actor to consume even a timeout/fallback
-                    # before the ORIGINAL compute deadline. Never renew a turn.
-                    response = internet_answer(query, result, self.post, self.clock, self.work_deadline - 1500, self.cancelled)
+                    # Worker-first: no second LFM pass, no context read aloud,
+                    # no truncation disguised as the service's full answer.
+                    response = worker_answer(result, self.clock, self.work_deadline - 1500, self.cancelled)
                     self.context_metrics.update(web_answer_status=response['status'], web_answer_source_index=response['source_index'],
                                                 web_answer_input_tokens=response['input_tokens'])
                     return finish({'kind': 'web_result', 'text': response['text'], 'sources': rows,
@@ -121,5 +157,14 @@ class AssistantToolsModel(ConversationModel):
         plain = normalized(human)
         if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
             return finish({'kind': 'tools_rejected'}, 'missing_native_call')
-        try: return finish({'kind': 'reply', 'text': conversational_reply(message, finish_reason)}, 'reply')
+        try:
+            plain_reply = conversational_reply(message, finish_reason)
+            memory = getattr(self, 'memory', None)
+            web = latest_web(memory) if memory is not None else None
+            if web:
+                history = [{'user': group[0]['content'], 'assistant': group[1]['content'] if len(group) == 2 else ''}
+                           for group in memory.pairs[-4:] if 'web_answer' not in group[0]]
+                return finish(followup(human, web, history, self.post, self.clock,
+                    self.work_deadline - 1500, self.cancelled), 'local_web_followup')
+            return finish({'kind': 'reply', 'text': plain_reply}, 'reply')
         except ValueError: return finish({'kind': 'tools_rejected'}, 'unsupported_reply') # Reject unsupported claims, including misleading negative prose, without execution.

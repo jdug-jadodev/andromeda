@@ -44,7 +44,8 @@ final class ConversationChannel {
         JSONArray turns = new JSONArray();
         for (ConversationMemory.Turn turn : snapshot.turns) {
             JSONObject item = new JSONObject().put("id", turn.id).put("user", turn.user).put("human_ms", turn.humanMs);
-            if (turn.assistant != null) item.put("assistant", turn.assistant);
+            if (turn.assistant != null) item.put(turn.webFollowup ? "web_followup" : "assistant", turn.assistant);
+            if (turn.webAnswer != null) item.put("web_answer", turn.webAnswer);
             turns.put(item);
         }
         return new JSONObject().put("version", 1).put("id", snapshot.conversationId)
@@ -66,6 +67,12 @@ final class ConversationChannel {
     }
     synchronized boolean answer(String turnId, String text, long now) {
         return !cancelled && (lease == null ? voiceEntry : memory.answer(lease, turnId, text, now));
+    }
+    synchronized boolean webAnswer(String turnId, String text, long now) {
+        return !cancelled && lease != null && memory.webAnswer(lease, turnId, text, now);
+    }
+    synchronized boolean webFollowup(String turnId, String text, long now) {
+        return !cancelled && lease != null && memory.answer(lease, turnId, text, now, true);
     }
     synchronized boolean end(String turnId, long now) { return !cancelled && (lease == null ? voiceEntry : memory.end(lease, turnId, now)); }
     synchronized void close() { cancelled = true; memory.release(lease); }

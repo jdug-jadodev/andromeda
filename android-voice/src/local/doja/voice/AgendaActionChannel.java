@@ -76,6 +76,11 @@ final class AgendaActionChannel {
             if (accepted != null || timerAccepted || count != 0 || !event.optString("close_reason").isEmpty() || !event.optBoolean("offered_more")) throw new IOException("Web cannot authorize/close an action");
             WebSources.remember(WebSources.validate(human, event), SystemClock.elapsedRealtime()); return true;
         }
+        if (control.equals("web_followup")) {
+            if (accepted != null || timerAccepted || count != 0 || !event.optString("close_reason").isEmpty()
+                    || !event.optBoolean("offered_more") || event.has("web_answer")) throw new IOException("Follow-up cannot authorize an action");
+            return true;
+        }
         if (accepted != null) throw new IOException("Agenda result omitted");
         return false; // Existing timer channel validates timer/ordinary responses.
     }

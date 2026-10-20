@@ -44,6 +44,17 @@ final class WebAnswerPolicy {
         Set<String> anchors = words(answer); anchors.retainAll(words("es son se y el los las una puede estan hay"));
         check(spanish >= 2 && english <= Math.max(2, spanish) && !anchors.isEmpty());
     }
+    static void validateServiceAnswer(String answer) {
+        check(answer != null && !answer.trim().isEmpty() && answer.length() <= 2000 && !answer.contains("<|"));
+        check(!Pattern.compile("[<>{}`\\x00-\\x1f\\x7f]").matcher(answer).find());
+        String folded = plain(answer);
+        check(!Pattern.compile("ignore (?:all |the )?(?:previous |above )?instructions|disregard|system prompt|tool_calls|crea una alarma|create an? alarm|ignora (?:las |todas las )?instrucciones").matcher(folded).find());
+        check(!Pattern.compile("\\b(?:estoy|estamos)\\s+(?:(?:ya|ahora)\\s+)?(?:creando|poniendo|programando|activando|iniciando|cancelando|apagando|encendiendo|buscando|consultando)\\b|\\b(?:he|hemos|ya|acabo de) (?:\\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\\b|\\b(?:temporizador|alarma|recordatorio)\\b.{0,45}\\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|list[oa])\\b|\\b(?:te avisare|te recordare|sonara en|voy a (?:poner|crear|programar|activar|cancelar)|timer (?:set|started)|alarm (?:set|scheduled))\\b").matcher(folded).find());
+        int spanish = 0, english = 0; Matcher matcher = Pattern.compile("[a-z]+").matcher(folded);
+        while (matcher.find()) { if (ES.contains(matcher.group())) spanish++; if (EN.contains(matcher.group())) english++; }
+        Set<String> anchors = words(answer); anchors.retainAll(words("es son se y el los las una puede estan hay"));
+        check(spanish >= 2 && english <= Math.max(2, spanish) && !anchors.isEmpty());
+    }
     static String validate(String mode, int index, String evidence, String answer, List<String> hosts, List<String> excerpts, String spoken) {
         check(mode != null && evidence != null && answer != null && spoken != null && hosts.size() == excerpts.size() && hosts.size() <= 3);
         String body;
@@ -58,6 +69,10 @@ final class WebAnswerPolicy {
             String host = hosts.get(index);
             body = host.length() > 48 ? answer + " Fuente en Opciones." : "Según el extracto de " + host + ": " + answer;
             check(body.length() <= 300);
+        } else if ("service_answer".equals(mode)) {
+            check(index == -1 && evidence.isEmpty() && !hosts.isEmpty());
+            validateServiceAnswer(answer);
+            body = "El servicio web responde: " + answer + " Fuentes en Opciones.";
         } else if ("service_summary".equals(mode)) {
             // A separate mode, never relabelled as quoted/translated evidence.
             // The service lists sources; Android does not independently fetch them.
@@ -76,6 +91,7 @@ final class WebAnswerPolicy {
                 check(!hosts.isEmpty());
                 switch (mode) {
                     case "insufficient_evidence": body = "No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones."; break;
+                    case "answer_too_long": body = "La respuesta del servicio es demasiado extensa para esta lectura acotada. No la he recortado. Puedes revisar las fuentes en Opciones."; break;
                     case "insufficient_budget": case "deadline": body = "Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones."; break;
                     case "cancelled": case "input_budget": case "invalid_response": case "speech_budget": case "local_model_unavailable":
                         body = "No pude obtener de esos extractos una respuesta fiable en español. Las fuentes están en Opciones."; break;

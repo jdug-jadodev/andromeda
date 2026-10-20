@@ -32,6 +32,8 @@ public class VoiceService extends Service {
     volatile boolean running, speaking, ttsReady;
     volatile String activeSpeechId = "";
     volatile String activeSpeechText = "";
+    String activeWebAnswer = "";
+    int activePlaybackMs = 20000;
     int speechGeneration;
     SpeechDiagnostics.Window speechDiagnostic;
     volatile String lastError = "";
@@ -94,7 +96,7 @@ public class VoiceService extends Service {
                         }
                         state(activeSpeechText + (conversationOnly && !timerTrial && !assistantTools ? " · sin acciones" : ""), FaceState.SPEAKING, null);
                         if (silenceListener != null) silenceListener.begin(id,
-                            Math.min(expiresAt, SystemClock.elapsedRealtime() + 20000),
+                            Math.min(expiresAt, SystemClock.elapsedRealtime() + activePlaybackMs),
                             () -> running && speaking && id.equals(activeSpeechId), () -> interruptSpeech(id));
                     }
                 });
@@ -397,7 +399,7 @@ public class VoiceService extends Service {
     }
     JSONObject readEvent(DataInputStream input) throws Exception {
         int length = input.readInt();
-        if (length < 1 || length > 16384) throw new IOException("Evento inválido");
+        if (length < 1 || length > 65536) throw new IOException("Evento inválido");
         byte[] data = new byte[length]; input.readFully(data);
         return new JSONObject(new String(data, StandardCharsets.UTF_8));
     }
@@ -425,7 +427,7 @@ public class VoiceService extends Service {
                     contextChannel.verify(event);
                     if ("thinking".equals(type)) {
                         String id = event.optString("turn_id"); long deadline = event.optLong("deadline_ms");
-                        if (!conversationTurn.begin(id, event.optLong("turn_seq"), event.optLong("speech_end_ms"), deadline, SystemClock.elapsedRealtime()))
+                        if (!conversationTurn.begin(id, event.optLong("turn_seq"), event.optLong("speech_end_ms"), deadline, SystemClock.elapsedRealtime(), assistantTools ? 60000 : 30000))
                             throw new IOException("Turno duplicado o fuera de plazo");
                         contextChannel.human(event, SystemClock.elapsedRealtime());
                         if (timerTrial || assistantTools) timerChannel.human(event);
@@ -498,9 +500,13 @@ public class VoiceService extends Service {
                             event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime(),
                              event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && "agenda_result".equals(event.optString("timer_control"))))) return;
                 message = event.getString("text");
-                if (message.isEmpty() || message.length() > 700) throw new IOException("Respuesta inválida");
+                boolean workerRead = assistantTools && "web".equals(event.optString("timer_control"))
+                    && event.optJSONObject("web_answer") != null && "service_answer".equals(event.getJSONObject("web_answer").optString("mode"));
+                if (message.isEmpty() || message.length() > (workerRead ? 2100 : 700)) throw new IOException("Respuesta inválida");
                 if (assistantTools) { if (!agendaChannel.speech(event)) timerChannel.validateSpeech(event); }
                 else if (timerTrial) timerChannel.validateSpeech(event);
+                activeWebAnswer = workerRead ? event.getJSONObject("web_answer").getString("answer_es") : "";
+                activePlaybackMs = workerRead ? 60000 : 20000;
                 activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
             } else switch (event.optString("type")) {
                 case "timer":
@@ -534,7 +540,7 @@ public class VoiceService extends Service {
         }
         main.postDelayed(() -> { if (SpeechDiagnostics.timeoutApplies(speaking, speechGeneration, generation, !id.isEmpty() && id.equals(activeSpeechId))) {
             tts.stop(); state("Voz detenida por límite de reproducción", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.PLAYBACK_LIMIT);
-        } }, conversationOnly ? 20000 : 12000);
+        } }, conversationOnly ? Math.min(activePlaybackMs, Math.max(0, expiresAt - SystemClock.elapsedRealtime())) : 12000);
     }
     void finishSpeech() {
         finishSpeech(false);
@@ -555,7 +561,9 @@ public class VoiceService extends Service {
         if (speechDiagnostic != null) speechDiagnostic.finish(speechInterrupted ? SpeechDiagnostics.End.INTERRUPTED : reason, SystemClock.elapsedRealtime());
         if (conversationOnly && !activeSpeechId.isEmpty()) {
             if (completed && running && conversationTurn.speechStarted(activeSpeechId) && contextChannel != null) {
-                if (activeTimerControl.isEmpty()) contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
+                if (!activeWebAnswer.isEmpty()) contextChannel.webAnswer(activeSpeechId, activeWebAnswer, SystemClock.elapsedRealtime());
+                else if ("web_followup".equals(activeTimerControl)) contextChannel.webFollowup(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
+                else if (activeTimerControl.isEmpty()) contextChannel.answer(activeSpeechId, activeSpeechText, SystemClock.elapsedRealtime());
             }
             if (!conversationTurn.finishSpeech(activeSpeechId, completed)) {
                 speaking = true; activeSpeechId = "";
@@ -573,7 +581,7 @@ public class VoiceService extends Service {
             } }, 2000);
             return;
         }
-        resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = ""; activeTimerControl = "";
+        resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = ""; activeTimerControl = ""; activeWebAnswer = "";
         if (running) {
             if (!conversationOnly) control("tts_done");
             if (uiState != FaceState.ERROR) state(conversationOnly ? "Reanudando micrófono · continúa sin repetir Andrómeda" : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
@@ -603,7 +611,7 @@ public class VoiceService extends Service {
         if (contextChannel != null) contextChannel.close();
         if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
         ConversationContexts.scheduleExpiry();
-        lastTranscript = ""; activeSpeechId = activeSpeechText = "";
+        lastTranscript = ""; activeSpeechId = activeSpeechText = activeWebAnswer = "";
         expiresAt = 0;
         controls.shutdownNow();
         closeConnectionAsync();

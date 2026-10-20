@@ -28,11 +28,14 @@ class AssistantToolsTrial:
         self.consumed = set()
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind'] == 'reply' and result.get('web_followup') is True:
+            return {'text': ConversationFlow.with_offer(result['text']), 'timer_control': 'web_followup', 'offered_more': True}
         if result['kind'] in {'timer_proposal', 'timer_rejected', 'reply'}:
             return self.timer.model_result(result, turn, session, context, session_end)
         if result['kind'] == 'tools_rejected': return {'text': REJECTION, 'timer_control': 'rejected'}
         if result['kind'] == 'web_result':
-            return {'text': ConversationFlow.with_offer(result['text']), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True,
+            direct = result.get('web_answer', {}).get('mode') == 'service_answer'
+            return {'text': ConversationFlow.with_offer(result['text'], maximum=2100 if direct else 700), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True,
                     **({'web_answer': result['web_answer']} if 'web_answer' in result else {})}
         if result['kind'] != 'agenda_proposal' or self.inflight is not None or turn['id'] in self.consumed or len(self.consumed) >= 24:
             raise ValueError('Invalid agenda proposal state')

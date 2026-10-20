@@ -20,14 +20,14 @@ SPANISH = set('el la los las un una de del es son en que y se para por como con 
 ENGLISH = set('the is are this that with from which and an of it as for to'.split())
 QUERY_STOP = SPANISH | {'busca', 'internet', 'web', 'consulta', 'investiga', 'informacion', 'sobre'}
 FALLBACK = 'No pude obtener de esos extractos una respuesta fiable en español. Las fuentes están en Opciones.'
-MODES = frozenset({'quoted', 'translated', 'service_summary', 'no_results', 'insufficient_evidence', 'insufficient_budget',
+MODES = frozenset({'quoted', 'translated', 'service_summary', 'service_answer', 'answer_too_long', 'no_results', 'insufficient_evidence', 'insufficient_budget',
     'cancelled', 'deadline', 'input_budget', 'invalid_response', 'speech_budget', 'local_model_unavailable', 'provider_unavailable'})
 
 
 def contract(result):
     mode = result['status']
     if mode not in MODES: raise ValueError('Unknown web answer mode')
-    success = mode in {'quoted', 'translated', 'service_summary'}
+    success = mode in {'quoted', 'translated', 'service_summary', 'service_answer'}
     return {'version': 1, 'mode': mode, 'source_index': result['source_index'] if success else -1,
             'evidence': result['evidence'] if success else '', 'answer_es': result['answer_es'] if success else ''}
 
