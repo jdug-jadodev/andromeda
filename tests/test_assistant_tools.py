@@ -239,6 +239,16 @@ class AssistantToolsTests(unittest.TestCase):
         self.assertEqual(model.context_metrics['tools_validation'], 'reply')
         self.assertFalse(model.context_metrics['tools_web_attempted'])
 
+    def test_worker_provider_error_codes_reach_metrics_without_credentials_or_inference(self):
+        from internet_search import InternetSearchError
+        model = self.model()
+        for code in ('configuration_missing', 'configuration_invalid', 'unauthorized', 'rate_limited', 'timeout', 'empty_response'):
+            with patch('assistant_tools_model.buscar_en_internet', side_effect=InternetSearchError(code)) as search:
+                result = model.interpret_result(native('search_web'), 'tool_calls', 'busca en Internet nebulosas')
+            self.assertEqual(model.context_metrics['web_provider_status'], code)
+            self.assertEqual(result['web_answer']['mode'], 'provider_unavailable'); self.assertEqual(result['sources'], [])
+            search.assert_called_once(); model.post.assert_not_called()
+
     def test_real_worker_preserves_budget_metrics_and_content_free_tool_diagnostics(self):
         private_marker = 'MARCADOR_NO_EXPORTAR'
         with tempfile.TemporaryDirectory() as directory:

@@ -82,7 +82,8 @@ def normalize(value, pregunta):
         url = item.get('url', '')
         try: valid = source_url(url) if isinstance(url, str) else None
         except ValueError: valid = None
-        if not valid or url in seen: continue
+        if not valid or valid in seen: continue
+        url = valid  # Keep the validated canonical target, never the redirect wrapper.
         title = text(item.get('title', item.get('titulo', urlsplit(url).hostname)), 2000)
         excerpt = text(item.get('excerpt', item.get('contenido', item.get('content', item.get('extracto', '')))), 16000)
         rows.append({'url': url, 'title': bounded(title, 120), 'excerpt': bounded(excerpt, 350)})

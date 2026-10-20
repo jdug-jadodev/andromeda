@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -94,6 +95,12 @@ class InternetSearchTests(unittest.TestCase):
         self.assertEqual(len(result['fuentes'][2]['title']), 120); self.assertEqual(len(result['fuentes'][2]['excerpt']), 350)
         self.assertEqual(internet.normalize(dict(RAW, fuentes=[]), QUERY)['fuentes'], [])
 
+    def test_unwrapped_sources_store_only_validated_canonical_https_target(self):
+        value = dict(RAW, fuentes=['//duckduckgo.com/l/?uddg=https%3A%2F%2Fscience.example.org%2Fa',
+                                  'https://science.example.org/a'])
+        rows = internet.normalize(value, QUERY)['fuentes']
+        self.assertEqual(len(rows), 1); self.assertEqual(rows[0]['url'], 'https://science.example.org/a')
+
     def process(self, value):
         process = Mock(); process.returncode = 0; process.poll.return_value = 0
         process.communicate.return_value = (json.dumps(value).encode(), None)
@@ -132,6 +139,18 @@ class InternetSearchTests(unittest.TestCase):
         with patch('internet_search.subprocess.Popen', side_effect=OSError('private token')), self.assertRaises(internet.InternetSearchError) as error:
             internet.buscar_en_internet(QUERY, time.monotonic()+4, environ=ENV)
         self.assertEqual(str(error.exception), 'connection_failed')
+
+    def test_worker_sanitizes_tls_connectivity_timeout_protocol_and_malformed_json_errors(self):
+        request = json.dumps({'host': 'example.org', 'path': '/preguntar', 'token': 'public-dummy-token', 'pregunta': QUERY}).encode()
+        for exception, code in [(TimeoutError('private detail'), 'timeout'), (internet.ssl.SSLError('private detail'), 'connection_failed'),
+                (OSError('private detail'), 'connection_failed'), (internet.http.client.HTTPException('private detail'), 'connection_failed'),
+                (json.JSONDecodeError('private detail', 'private body', 0), 'invalid_response')]:
+            output = io.BytesIO()
+            with patch.object(sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(request))), \
+                    patch.object(sys, 'stdout', SimpleNamespace(buffer=output)), patch('internet_search._http', side_effect=exception):
+                internet._worker()
+            self.assertEqual(json.loads(output.getvalue()), {'error': code})
+            self.assertNotIn(b'private', output.getvalue())
 
     def launch_fixture(self, source):
         real_popen = subprocess.Popen

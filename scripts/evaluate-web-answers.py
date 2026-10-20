@@ -1,7 +1,8 @@
-"""Public simulated search sources + real local LFM. No web/audio/app/executor.
+"""LEGACY literal/translation fixtures + real local LFM. No web/audio/app/executor.
 
 Fixed semantic cases, not a general grounding or Spanish-language certificate.
 Each turn retains its original 22 s budget, including native selection + summary.
+Not a test of the new Cloudflare service_summary answer mode.
 """
 import json
 from pathlib import Path
@@ -14,6 +15,7 @@ import assistant_tools_model as adapter
 from conversation_flow import ConversationFlow
 from conversation_voice import ShortMemory, now_ms, text_units
 from doja_intents import normalized
+from web_answers import answer as legacy_answer
 
 
 def source(title, excerpt, host='science.example.org'):
@@ -60,8 +62,9 @@ def main():
         return response
     model.post = post
     def provider(query, *_):
-        calls.append(query); return fixtures
-    adapter.search = provider
+        calls.append(query); return {'respuesta': '', 'contexto_para_ia': '', 'fuentes': fixtures}
+    adapter.buscar_en_internet = provider
+    adapter.internet_answer = lambda query, result, *args: legacy_answer(query, result['fuentes'], *args)
     try:
         for current, query, fixtures, expected, groups in CASES:
             calls.clear(); model.memory = ShortMemory()

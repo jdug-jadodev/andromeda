@@ -62,5 +62,11 @@ class PublicWebAsrTests(unittest.TestCase):
         self.assertFalse(public.correct_result({'kind': 'timer_proposal', 'seconds': True}, {'kind': 'timer_proposal', 'seconds': 1}))
         self.assertEqual(len(public.REGRESSIONS), 9)
 
+    def test_public_diagnostics_stub_the_current_provider_not_an_unused_legacy_name(self):
+        for filename in ('evaluate-web-asr.py', 'evaluate-assistant-tools.py', 'evaluate-web-answers.py'):
+            source = (ROOT/'scripts'/filename).read_text(encoding='utf-8')
+            self.assertIn('adapter.buscar_en_internet = ', source)
+            self.assertNotIn('adapter.search = ', source)
+
 
 if __name__ == '__main__': unittest.main()

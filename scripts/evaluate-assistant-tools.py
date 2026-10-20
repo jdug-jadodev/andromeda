@@ -57,7 +57,9 @@ def correct_fields(identity, result, anchor):
 def main():
     if len(sys.argv) != 2: raise ValueError('Inference key path required')
     model = adapter.AssistantToolsModel(sys.argv[1]); end = now_ms() + 200000
-    adapter.search = lambda *args, **kwargs: [{'title': 'Public synthetic source', 'url': 'https://example.org/public', 'excerpt': 'Extracto público simulado para probar selección, no una búsqueda real.'}]
+    adapter.buscar_en_internet = lambda *args, **kwargs: {'respuesta': 'Extracto público simulado para probar selección, no una búsqueda real.',
+        'contexto_para_ia': '', 'fuentes': [{'title': 'Public synthetic source', 'url': 'https://example.org/public',
+        'excerpt': 'Extracto público simulado para probar selección, no una búsqueda real.'}]}
     failed = []
     try:
         began = now_ms(); model.prepare()

@@ -99,6 +99,16 @@ public final class AgendaInstrumentation extends Instrumentation {
             try { WebSources.validate("busca en Internet nebulosas", extra); } catch (Exception expected) { extraRejected = true; }
             check(extraRejected, "Extra source-binding field accepted");
             result.putBoolean("typed_web_answer_guard", true);
+            JSONObject synthesis = new JSONObject(qualified.toString());
+            synthesis.getJSONObject("web_answer").put("mode", "service_summary").put("source_index", -1).put("evidence", "");
+            synthesis.getJSONArray("sources").getJSONObject(0).put("excerpt", "");
+            synthesis.put("text", "Según la síntesis web: " + translated + " Fuentes en Opciones. ¿Necesitas algo más?");
+            check(WebSources.validate("busca en Internet nebulosas", synthesis).contains("https://example.org/public"), "Service synthesis rejected");
+            JSONObject falseQuote = new JSONObject(synthesis.toString()); falseQuote.getJSONObject("web_answer").put("mode", "quoted");
+            boolean falseQuoteRejected = false;
+            try { WebSources.validate("busca en Internet nebulosas", falseQuote); } catch (Exception expected) { falseQuoteRejected = true; }
+            check(falseQuoteRejected, "Service synthesis accepted as a literal page quote");
+            result.putBoolean("service_summary_web_guard", true);
             check(timers.equals(TimerStore.prefs(context).getAll()) && receipts.equals(TimerStore.actionReceipts(context).getAll()), "Real timer data changed");
             result.putBoolean("passed", true); result.putBoolean("android_sqlite", true); result.putBoolean("real_scheduler", false);
             result.putBoolean("microphone_opened", false); result.putBoolean("audio_played", false); result.putBoolean("llm_started", false);

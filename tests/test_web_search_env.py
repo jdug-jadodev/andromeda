@@ -1,4 +1,7 @@
 import os
+import contextlib
+import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -9,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'backend'))
 import web_search_env as env
 import with_web_search_env as launcher
+import check_web_search_config as checker
 
 PUBLIC = 'WEB_SEARCH_URL=https://search.example.org\nWEB_SEARCH_TOKEN=public-dummy-token\n'
 
@@ -74,6 +78,17 @@ class WebSearchEnvTests(unittest.TestCase):
         self.assertIn('debian_user /opt/doha-voice/pilot/with_web_search_env.py "$@"', script)
         self.assertEqual(script.count('voice_user /opt/doha-voice/pilot/doja_stream.py'), 2)
         self.assertNotIn('WEB_SEARCH_TOKEN=', script)
+
+    def test_offline_checker_reports_only_status_not_values_and_never_calls_network(self):
+        for ok, exception, expected in [(True, None, 'ready'), (False, None, 'configuration_invalid'),
+                (True, checker.InternetSearchError('configuration_missing'), 'configuration_missing')]:
+            output = io.StringIO()
+            with patch('check_web_search_config.configure', return_value=ok), \
+                    patch('check_web_search_config.configuration', side_effect=exception) as validate, contextlib.redirect_stdout(output):
+                result = checker.main()
+            self.assertEqual(result, 0 if expected == 'ready' else 1)
+            self.assertEqual(json.loads(output.getvalue()), {'web_search_configuration': expected, 'network_requests': 0})
+            if not ok: validate.assert_not_called()
 
 
 if __name__ == '__main__': unittest.main()

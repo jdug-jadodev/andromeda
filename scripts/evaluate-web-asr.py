@@ -117,8 +117,8 @@ def main():
     phase = 'text_control'; calls = []; captured = {}
     def simulated_search(query, *_):
         calls.append({'phase': phase, 'query': query})
-        return [dict(PUBLIC_SOURCE)]
-    adapter.search = simulated_search  # No real provider can be reached by this copy.
+        return {'respuesta': PUBLIC_SOURCE['excerpt'], 'contexto_para_ia': '', 'fuentes': [dict(PUBLIC_SOURCE)]}
+    adapter.buscar_en_internet = simulated_search  # Patch the actual current adapter, never contact a provider.
     original = model.interpret_result
     def capture(message, finish, request):
         result = original(message, finish, request)
