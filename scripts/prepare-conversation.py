@@ -36,6 +36,7 @@ while True:
 model = model_type(key_path)
 if guided_agenda: model.enable_agenda_dialogue()
 if alarm_lifecycle: model.enable_alarm_lifecycle()
+if guided_agenda: model.enable_confirmed_volume()
 if assistant_tools:
     from conversation_voice import now_ms, SYSTEM
     body = model.payload([{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1)

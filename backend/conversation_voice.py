@@ -72,6 +72,118 @@ def now_ms():
     return int(time.clock_gettime(time.CLOCK_BOOTTIME) * 1000)
 
 
+def protocol_technical(error):
+    """Fixed numeric locations, never exception messages, frame locals or data."""
+    sources=('conversation_voice.py','assistant_tools_trial.py','phone_volume.py','timer_trial.py',
+        'timer_proposals.py','agenda_dialogue.py','agenda_requests.py','continuous_voice.py','alarm_deletion.py')
+    frames=[]; trace=error.__traceback__
+    while trace is not None:
+        name=Path(trace.tb_frame.f_code.co_filename).name
+        if name in sources: frames.append({'source':sources.index(name)+1,'line':trace.tb_lineno})
+        trace=trace.tb_next
+    return {'version':1,'at_ms':now_ms(),'error':1 if isinstance(error,ValueError) else 2 if isinstance(error,OSError) else 3,
+            'frames':frames[-8:]}
+
+
+def record_protocol_technical(inference_key,value):
+    from resident_runtime import private_directory
+    directory=private_directory(Path(inference_key).parent)
+    try:
+        raw=json.dumps(value,allow_nan=False).encode('ascii')
+        if len(raw)>4096: return
+        fd=os.open('voice_fault.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+        with os.fdopen(fd,'wb') as stream: stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    finally: os.close(directory)
+
+
+TOOLS_TECHNICAL_ENUMS = {
+    'choice': ('text', 'native'),
+    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'),
+    'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
+               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start'),
+    'validation': ('invalid_native_call', 'missing_native_call', 'unsupported_reply', 'volume_request_rejected',
+                   'agenda_request_rejected', 'timer_request_rejected', 'accepted', 'reply', 'agenda_question',
+                   'web_query_rejected', 'web_results', 'web_no_results', 'web_provider_unavailable',
+                   'local_web_followup', 'web_invalid_request', 'web_explicit_request_required',
+                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question'),
+    'generation_error': ('TimeoutError', 'ValueError', 'OSError', 'RuntimeError', 'KeyError', 'TypeError'),
+}
+TOOLS_TECHNICAL_KEYS = frozenset({'version', 'at_ms', 'sequence', 'phase', 'elapsed_ms', 'choice', 'tool',
+    'result', 'validation', 'generation_error', 'input_tokens', 'history_turns', 'web_attempted'})
+
+
+def tools_technical(metrics, sequence, phase, elapsed_ms, generation_error=None):
+    """Last decision stage only: fixed numbers, never audio/text, arguments, IDs or hashes.
+
+    phase1 = model finished BEFORE controller/executor; phase2 = compute timeout.
+    This is diagnostic evidence, NOT an Android receipt or an authorization path.
+    """
+    if (not isinstance(metrics, dict) or type(sequence) is not int or not 1 <= sequence <= 64
+            or type(phase) is not int or phase not in (1, 2)):
+        raise ValueError('Invalid tools technical scope')
+    def code(name, value):
+        values = TOOLS_TECHNICAL_ENUMS[name]
+        return values.index(value) + 1 if type(value) is str and value in values else 0
+    def bounded(value, maximum):
+        return value if type(value) is int and 0 <= value <= maximum else -1
+    return {'version': 1, 'at_ms': now_ms(), 'sequence': sequence, 'phase': phase,
+        'elapsed_ms': bounded(elapsed_ms, 600000),
+        'choice': code('choice', metrics.get('tools_model_choice')),
+        'tool': code('tool', metrics.get('tools_selected_tool')),
+        'result': code('result', metrics.get('tools_model_kind')),
+        'validation': code('validation', metrics.get('tools_validation')),
+        'generation_error': code('generation_error', generation_error),
+        'input_tokens': bounded(metrics.get('input_tokens'), 1536),
+        'history_turns': bounded(metrics.get('history_turns_available'), MAX_STORED_TURNS),
+        'web_attempted': int(metrics['tools_web_attempted']) if type(metrics.get('tools_web_attempted')) is bool else -1}
+
+
+def record_tools_technical(work, value):
+    """Atomic single private receipt, bounded independently from discarded stdout."""
+    import stat
+    from resident_runtime import private_directory
+    if (not isinstance(value, dict) or set(value) != TOOLS_TECHNICAL_KEYS
+            or any(type(number) is not int or not -1 <= number < 10**12 for number in value.values())
+            or value['version'] != 1 or value['phase'] not in (1, 2)
+            or not 1 <= value['sequence'] <= 64 or not 0 < value['at_ms'] < 10**12
+            or any(not 0 <= value[key] <= len(enum) for key, enum in TOOLS_TECHNICAL_ENUMS.items())
+            or not -1 <= value['input_tokens'] <= 1536 or not -1 <= value['history_turns'] <= MAX_STORED_TURNS
+            or not -1 <= value['web_attempted'] <= 1 or not -1 <= value['elapsed_ms'] <= 600000):
+        raise ValueError('Invalid tools technical receipt')
+    directory = private_directory(work); inode = None
+    temporary, name = 'voice_tools_health.new', 'voice_tools_health.json'
+    try:
+        try: old = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError: pass
+        else:
+            if (not stat.S_ISREG(old.st_mode) or old.st_uid != os.geteuid()
+                    or stat.S_IMODE(old.st_mode) != 0o600 or old.st_nlink != 1 or old.st_size > 4096):
+                raise ValueError('Unknown tools technical file')
+        raw = json.dumps(value, allow_nan=False).encode('ascii')
+        if len(raw) > 4096: raise ValueError('Oversized tools technical receipt')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        with os.fdopen(fd, 'wb') as stream:
+            inode = os.fstat(stream.fileno()).st_ino
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory); inode = None; os.fsync(directory)
+    finally:
+        try:
+            if inode is not None and os.stat(temporary, dir_fd=directory, follow_symlinks=False).st_ino == inode:
+                os.unlink(temporary, dir_fd=directory)
+        finally: os.close(directory)
+
+
+def observe_tools_technical(model, sequence, speech_end, phase):
+    # Only serve() assigns this internal path. Never derived from wire, model or
+    # human text. Missing diagnostics must not break an otherwise valid request.
+    work = getattr(model, 'technical_work', None)
+    if not isinstance(work, Path): return
+    try:
+        record_tools_technical(work, tools_technical(model.context_metrics, sequence, phase,
+            now_ms() - speech_end, model.error))
+    except (OSError, ValueError, TypeError): pass
+
+
 def send_event(conn, event):
     data = json.dumps(event, ensure_ascii=True).encode()
     if len(data) > 65536: raise ValueError('Oversized event')
@@ -371,13 +483,14 @@ class ConversationModel:
         self.cancel_generation()
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False):
     from vosk import KaldiRecognizer, SetLogLevel
     from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
         MAX_EPOCH_TURNS, STREAM_START_MS, STREAM_IDLE_MS, VOICE_POLICY, RESET_POLICY)
     if detector is None or limit not in ((0,) if continuous_voice else (90, 300)) or source not in {'microphone', 'synthetic_pcm'}:
         raise ValueError('Invalid conversation session')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
+    if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
     if continuous_voice and (not guided_agenda or timer_trial): raise ValueError('Continuous voice requires guided tools')
     if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
     SetLogLevel(-1)
@@ -401,7 +514,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     timers = None
     if assistant_tools:
         from assistant_tools_trial import AssistantToolsTrial
-        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda, maximum_sequence=MAX_EPOCH_TURNS if continuous_voice else 24,alarm_lifecycle=alarm_lifecycle)
+        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda, maximum_sequence=MAX_EPOCH_TURNS if continuous_voice else 24,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
     elif timer_trial:
         from timer_trial import TimerTrial
         timers = TimerTrial(now_ms)
@@ -487,7 +600,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                       'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                       'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
-                       **({'web_response_mode': 'worker_first_v2_medium', 'phone_volume_policy': 'absolute_media_v1'} if assistant_tools else {}),
+                        **({'web_response_mode': 'worker_first_v3_spanish', 'phone_volume_policy': 'confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'} if assistant_tools else {}),
                          **({'agenda_dialogue_policy': 'guided_agenda_v1', 'action_completion_policy': 'continue_v1'} if guided_agenda else {}),
                          **({'alarm_lifecycle_policy':'weekly_alarm_lifecycle_v1'} if alarm_lifecycle else {}),
                         **({'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,
@@ -511,15 +624,25 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             if state == 'listen' and current - activation >= 50000: reset()
             if turn is not None:
                 if state == 'thinking' and current >= turn['compute_end']:
+                    if assistant_tools: observe_tools_technical(model, sequence, turn['speech_end'], 2)
+                    if continuous_voice:
+                        # No executor was dispatched in thinking. Cancel the owned
+                        # generation; never retry it or recover a stuck cancellation.
+                        if not model.cancel_generation(): raise ContinuousVoiceFault('voice_cancellation_stuck')
+                        model.memory.unanswered(turn['text'])
+                        emit({'type':'error','reason':'deadline','turn_id':turn['id'],'recoverable':True,'actions_executed':0})
+                        flow.reset(); completed_turn(True); continue
                     emit({'type': 'error', 'reason': 'deadline', 'turn_id': turn['id']})
                     return  # finally stops this dedicated inference process.
                 if state == 'thinking' and model.done.is_set():
+                    if assistant_tools: observe_tools_technical(model, sequence, turn['speech_end'], 1)
                     print(json.dumps({'event': 'conversation_context', 'source': source,
                         'turn_seq': turn['seq'], **model.context_metrics}), flush=True)
                     if model.error or not model.result:
                         model.memory.unanswered(turn['text'])
-                        emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
-                        completed_turn(False)
+                        emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id'],
+                              **({'recoverable':True,'actions_executed':0} if continuous_voice else {})})
+                        flow.reset(); completed_turn(continuous_voice)
                     elif current < turn['deadline_ms'] - 1500:
                         try:
                             if timers is not None:
@@ -532,8 +655,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             conversational_reply({'content': answer}, 'stop')
                         except ValueError:
                             model.memory.unanswered(turn['text'])
-                            emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id']})
-                            completed_turn(False); continue
+                            emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id'],
+                                  **({'recoverable':True,'actions_executed':0} if continuous_voice else {})})
+                            flow.reset(); completed_turn(continuous_voice); continue
                         say(answer)
                     else: return
                 elif state == 'executing':
@@ -543,7 +667,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         timer_response(response)
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
-                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_excerpt'} else 20000): return
+                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation', 'service_excerpt'} else 20000): return
             for kind, data in pump.poll():
                 if continuous_voice:
                     last_input = now_ms(); stream_started = True
@@ -556,7 +680,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         old_session, old_context, nonce = session_id, context_id, pending_reset.nonce
                         model.memory = memory; context_id = chosen; session_id = uuid.uuid4().hex
                         entry = ConversationEntry(restored, chosen, now_ms) if voice_entry else None
-                        sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle)
+                        sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
                         pending_reset = None
                         accept_audio_after = now_ms() + 600
                         emit({'type': 'voice_context_ready', 'previous_session_id': old_session, 'previous_context_id': old_context,
@@ -586,7 +710,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = True
                         if not model.cancel_generation(): raise ContinuousVoiceFault('voice_cancellation_stuck')
                         if turn is not None and not turn.get('administrative'): model.memory.unanswered(turn['text'])
-                        timers.close(); timers = AssistantToolsTrial(now_ms,guided_agenda=True,maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle)
+                        timers.close(); timers = AssistantToolsTrial(now_ms,guided_agenda=True,maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
                         turn = recognizer = timeline = None; preroll.clear(); detector.reset(); flow.reset()
                         model.result = model.error = None; model.context_metrics.clear(); state = 'yield'
                         emit({'type':'state','state':'audio_yield'}); continue
@@ -618,7 +742,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                     'actions_executed': turn.get('actions_executed', 0)}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
                             if guided_agenda: timers.spoken(turn['id'], True)
-                            if (turn.get('web_answer') or {}).get('mode') == 'service_answer':
+                            if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation'}:
                                 model.memory.commit_web(turn['text'], turn['web_answer']['answer_es'])
                             elif (turn.get('web_answer') or {}).get('mode') == 'service_excerpt':
                                 model.memory.commit_web(turn['text'], turn['web_answer']['evidence'])
@@ -717,7 +841,16 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         continue  # Close only after farewell receipt/failure; never invoke LFM.
                     if assistant_tools: model.anchor_wall, model.anchor_boot = turn['calendar_anchor_ms'], turn['calendar_boot_ms']
                     if guided_agenda:
-                        response = timers.human(turn, session_id, context_id, session_end)
+                        try: response = timers.human(turn, session_id, context_id, session_end)
+                        except ValueError:
+                            if (not continuous_voice or timers.inflight or timers.timer.inflight
+                                    or timers.volume.inflight or timers.deletion.grant): raise
+                            # A stale/unheard form is not a malformed transport.
+                            # Nothing was dispatched; revoke the form, never retry it.
+                            timers.cancel(); flow.reset()
+                            model.memory.messages(text, activity_ms=speech_end); model.memory.unanswered(text)
+                            emit({'type':'error','reason':'invalid_request','turn_id':turn['id'],'recoverable':True,'actions_executed':0})
+                            completed_turn(True); continue
                         if response is not None:
                             model.memory.messages(text, activity_ms=speech_end)
                             timer_response(response); continue
@@ -725,8 +858,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     state = 'thinking'; recognizer = timeline = None; preroll.clear()
     except EOFError:
         return 'voice_peer_closed' if continuous_voice else None
-    except ValueError:
-        if continuous_voice: raise ContinuousVoiceFault('voice_protocol_error') from None
+    except ValueError as error:
+        if continuous_voice:
+            fault=ContinuousVoiceFault('voice_protocol_error'); fault.technical=protocol_technical(error)
+            raise fault from None
         raise
     finally:
         if timers is not None: timers.close()
@@ -750,11 +885,12 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False):
     from continuous_voice import ContinuousVoiceFault, END_REASONS
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
+    if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
     if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
     if continuous_voice and (not guided_agenda or resident is None or not resident.continuous_model or limit != 0):
         raise ValueError('Continuous voice requires explicit continuous model owner')
@@ -772,8 +908,10 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
     else: model_type = ConversationModel
     def make_model():
         value = model_type(inference_key,owned=resident.acquire()) if resident is not None else model_type(inference_key)
+        if assistant_tools and resident is not None: value.technical_work = Path(inference_key).parent
         if guided_agenda: value.enable_agenda_dialogue()
         if alarm_lifecycle: value.enable_alarm_lifecycle()
+        if confirmed_volume: value.enable_confirmed_volume()
         if continuous_voice: value.purge_cache = lambda: resident.purge_cache(value)
         return value
     model = make_model()
@@ -800,8 +938,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                     try:
                         with context.wrap_socket(raw, server_side=True) as conn:
                             hello = read_hello(conn, authentication_end)
-                            if assistant_tools and hello.get('web_response_mode') != 'worker_first_v2_medium': continue
-                            if assistant_tools and hello.get('phone_volume_policy') != 'absolute_media_v1': continue
+                            if assistant_tools and hello.get('web_response_mode') != 'worker_first_v3_spanish': continue
+                            if assistant_tools and hello.get('phone_volume_policy') != ('confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'): continue
                             if guided_agenda and (hello.get('agenda_dialogue_policy') != 'guided_agenda_v1' or hello.get('action_completion_policy') != 'continue_v1'): continue
                             if continuous_voice and (hello.get('voice_lifetime_policy') != 'continuous_voice_v1' or hello.get('dialogue_reset_policy') != 'client_fresh_v1'): continue
                             if alarm_lifecycle and hello.get('alarm_lifecycle_policy')!='weekly_alarm_lifecycle_v1': continue
@@ -837,9 +975,12 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             try:
                                 end_reason = session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
-                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}))
+                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}))
                             except ContinuousVoiceFault as fault:
                                 if not continuous_voice: raise
+                                if getattr(fault,'technical',None) is not None:
+                                    try: record_protocol_technical(inference_key,fault.technical)
+                                    except (OSError,ValueError): pass
                                 resident.monitor.reason = fault.reason; resident.shutdown(); return
                             if continuous_voice:
                                 if resident.monitor.reason == 'running':
@@ -855,6 +996,9 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                     except (OSError, EOFError, ValueError) as error:
                         # No credentials, frames or speech text in diagnostics.
                         if continuous_voice and authenticated:
+                            if isinstance(error,ValueError):
+                                try: record_protocol_technical(inference_key,protocol_technical(error))
+                                except (OSError,ValueError): pass
                             if resident.monitor.reason == 'running':
                                 resident.monitor.reason = 'voice_protocol_error' if isinstance(error,ValueError) else 'voice_peer_closed'
                             resident.shutdown(); return

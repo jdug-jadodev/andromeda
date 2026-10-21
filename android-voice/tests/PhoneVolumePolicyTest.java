@@ -57,6 +57,15 @@ public final class PhoneVolumePolicyTest {
         invalid(()->new PhoneVolumePolicy(A,B).claim(grant(50),"pon el volumen al 50",D,1,99900,190000,100000));
         invalid(()->new PhoneVolumePolicy(A,B).claim(grant(50),"pon el volumen al 50",C,2,99900,190000,100000));
         invalid(()->new PhoneVolumePolicy(A,B).claim(grant(50),"pon el volumen al 50",C,1,99900,190000,126500));
+        PhoneVolumePolicy.Grant late=new PhoneVolumePolicy.Grant(A,B,C,D,1,100000,139000,100);
+        invalid(()->new PhoneVolumePolicy(A,B).claim(late,"sube el volumen al cien",C,1,100000,400000,135000));
+        policy=new PhoneVolumePolicy(A,B,60000);
+        permit=policy.claim(late,"sube el volumen al cien",C,1,100000,400000,135000); media=new Media();
+        r=PhoneVolumePolicy.execute(permit,media,()->135001); check(r.status==PhoneVolumePolicy.Status.APPLIED && media.value==15 && media.writes==1);
+        final PhoneVolumePolicy fresh=new PhoneVolumePolicy(A,B,60000);
+        invalid(()->fresh.claim(new PhoneVolumePolicy.Grant(A,B,C,D,1,100000,156501,100),"sube el volumen al cien",C,1,100000,400000,155000));
+        invalid(()->fresh.claim(new PhoneVolumePolicy.Grant(A,B,C,D,1,100000,159001,100),"sube el volumen al cien",C,1,100000,400000,155000));
+        invalid(()->new PhoneVolumePolicy(A,B,90000));
         if(args.length>1) for(String line:Files.readAllLines(Paths.get(args[1]),StandardCharsets.UTF_8)) {
             String[] cells=line.split("\t");
             check(PhoneVolumePolicy.resultText(new PhoneVolumePolicy.Receipt(PhoneVolumePolicy.Status.valueOf(cells[0]),Integer.parseInt(cells[2])),Integer.parseInt(cells[1])).equals(cells[3]));

@@ -27,7 +27,9 @@ final class SilenceModels {
             if (!new File(directory, "am/final.mdl").isFile() || !new File(directory, "graph/HCLr.fst").isFile())
                 throw new IOException("Falta el ASR local de interrupción");
             LibVosk.vosk_set_log_level(-1); // Never log recognition/audio or model internals.
-            model = new Model(directory.getAbsolutePath());
+            try { model = new Model(InterruptionModelProfile.directory(directory).getAbsolutePath()); }
+            catch(IOException failure) { throw failure; }
+            catch(Exception failure) { throw new IOException("No se preparó el perfil de ASR local"); }
         }
         users++; return new Lease(model);
     }

@@ -67,14 +67,14 @@ final class VoiceConnection implements Closeable {
         try {
             socket.setSoTimeout(5000); socket.setTcpNoDelay(true);
             try { socket.connect(new InetSocketAddress("127.0.0.1", 11436), 1500); }
-            catch (java.net.ConnectException error) { throw new IOException("Motor local no preparado; hace falta preparar otra prueba. No es un fallo de Internet.", error); }
+            catch (java.net.ConnectException error) { throw new IOException("El motor local está apagado. Activar solo conecta la voz; no arranca el motor. No repetiré la conexión automáticamente.", error); }
             socket.startHandshake();
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
             JSONObject hello = new JSONObject().put("protocol", lifecycle ? 13 : continuousVoice ? 12 : guidedAgenda ? 11 : assistantTools ? 10 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
-            if (assistantTools) hello.put("web_response_mode", "worker_first_v2_medium").put("phone_volume_policy", "absolute_media_v1");
+            if (assistantTools) hello.put("web_response_mode", "worker_first_v3_spanish").put("phone_volume_policy", guidedAgenda?"confirmed_media_v3":"absolute_media_v1");
             if (guidedAgenda) hello.put("agenda_dialogue_policy", "guided_agenda_v1").put("action_completion_policy", "continue_v1");
             if (continuousVoice) hello.put("voice_lifetime_policy",ContinuousVoicePolicy.VOICE).put("dialogue_reset_policy",ContinuousVoicePolicy.RESET);
             if(lifecycle) hello.put("alarm_lifecycle_policy",AlarmSchedule.POLICY);
@@ -107,8 +107,8 @@ final class VoiceConnection implements Closeable {
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
                     || ready.optInt("response_start_ms") != (assistantTools ? 60000 : 30000) || ready.optInt("context_version") != 1
-                    || assistantTools && !"worker_first_v2_medium".equals(ready.optString("web_response_mode"))
-                    || assistantTools && !"absolute_media_v1".equals(ready.optString("phone_volume_policy"))
+                    || assistantTools && !"worker_first_v3_spanish".equals(ready.optString("web_response_mode"))
+                    || assistantTools && !(guidedAgenda?"confirmed_media_v3":"absolute_media_v1").equals(ready.optString("phone_volume_policy"))
                     || guidedAgenda && (!"guided_agenda_v1".equals(ready.optString("agenda_dialogue_policy")) || !"continue_v1".equals(ready.optString("action_completion_policy")))
                     || continuousVoice && !ContinuousVoicePolicy.ready(ready.optInt("protocol"),ready.optInt("seconds",-1),ready.optString("voice_lifetime_policy"),
                         ready.optString("dialogue_reset_policy"),ready.optLong("action_window_ms"),ready.optLong("stream_start_ms"),ready.optLong("stream_idle_ms"),lifecycle)

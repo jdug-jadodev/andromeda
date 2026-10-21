@@ -28,7 +28,8 @@ class PhoneVolumeTests(unittest.TestCase):
         self.assertEqual([tool['function']['name'] for tool in payload['tools']],
             ['create_timer','create_alarm','create_reminder','search_web','set_phone_volume'])
         spec=payload['tools'][-1]['function']
-        self.assertIn('a la mitad',spec['description']); self.assertIn('sin argumentos',spec['description'])
+        self.assertIn('a la mitad',spec['description']); self.assertIn('sin argumentos',spec['description'].lower())
+        self.assertIn('cien por ciento',spec['description']); self.assertIn('veinte por ciento',spec['description'])
         self.assertEqual(spec['parameters'],{'type':'object','properties':{}})
         self.assertEqual(payload['messages'][-1]['content'],self.turn()['text'])
 
@@ -66,6 +67,16 @@ class PhoneVolumeTests(unittest.TestCase):
             self.assertTrue(AssistantToolsModel.requires_native_selection(human))
         for claim in ('He bajado el volumen.', 'Volumen ajustado al 50 %.', 'Volumen al 50 %.'):
             with self.assertRaises(ValueError): reject_unsupported_claims(claim)
+
+    def test_new_explicit_volume_verbs_require_native_call_too(self):
+        for human in ('súbele el volumen al cien por ciento','bájale el volumen al veinte','suba el volumen al cien',
+                      'baje el volumen al veinte','ponle el volumen al cien'):
+            model=fixtures.AssistantToolsTests().model()
+            with patch('assistant_tools_model.current_volume') as parser:
+                self.assertEqual(model.interpret_result({'content':'De acuerdo.'},'stop',human)['kind'],'tools_rejected')
+                parser.assert_not_called()
+            self.assertEqual(model.context_metrics['tools_validation'],'missing_native_call')
+            self.assertTrue(AssistantToolsModel.requires_native_selection(human))
 
     def authorize(self):
         self.clock = [100000]; trial = VolumeTrial(lambda:self.clock[0]); turn = self.turn()
@@ -127,7 +138,7 @@ class PhoneVolumeTests(unittest.TestCase):
                 [('APPLIED',50,53),('APPLIED',0,0),('UNCHANGED',100,100),('LIMITED',100,73),('REJECTED',50,-1),('UNKNOWN',50,-1)]),encoding='utf-8')
             source=ROOT/'android-voice/src/local/doja/voice'
             run=subprocess.run(['javac','-encoding','UTF-8','-d',folder,str(source/'TimerRequestGuard.java'),
-                str(source/'PhoneVolumePolicy.java'),str(ROOT/'android-voice/tests/PhoneVolumePolicyTest.java')],capture_output=True,timeout=30)
+                str(source/'VolumeDialogue.java'),str(source/'PhoneVolumePolicy.java'),str(ROOT/'android-voice/tests/PhoneVolumePolicyTest.java')],capture_output=True,timeout=30)
             self.assertEqual(run.returncode,0,run.stderr.decode(errors='replace'))
             run=subprocess.run(['java','-cp',folder,'local.doja.voice.PhoneVolumePolicyTest',str(ROOT/'tests/phone_volume_cases.tsv'),str(fixture)],capture_output=True,timeout=20)
             self.assertEqual(run.returncode,0,run.stderr.decode(errors='replace'))

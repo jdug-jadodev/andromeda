@@ -2,7 +2,53 @@
 
 Fecha de revisión: 20 de octubre de 2026.
 
-## Estado vigente:30/13 instalado, modo continuo activado y observado
+**Vigente33/13 activo:** humano confirmó Detener accidental; instalación coordinada
+APK+5web/firma/UID/datos/sistema/baseagendaACTUAL2DELIVERED preservados. Nueva única
+activación explícita/Detener deja modelo y voz activos. ESrespuesta602 completa
+verificada, sin prefijo360. ENnativo43,3s omitió tarifa semestral: NO aceptado aunque
+pasen cifras/forma. No cortar sesión para arreglarlo. CandidatoLOCAL traduce entero
+en una pasada512tokens solo traductor/selector96 y1536/2048 intactos, rechaza elipsis/
+comentarios;469 Python467 pasan/2skips, no instalado/nativo. Estado actual
+`web-response-spanish-live-v1`; pendiente `web-translation-whole-candidate-v1`.
+Silencio/búsqueda automática pospuestos; estados apagados inferiores históricos.
+
+**Estado final observado:** el cliente cerró la sesión; modelo/servicios0 y control
+GLOBAL not_running. NO hubo stop/kill/restart/install ni escrituras del agente en
+el teléfono. Causa original no conservada (último recibo es CONNECT posterior).
+No reiniciar a ciegas; aclarar parada humana/error. Web33 sigue candidatoLOCAL.
+
+**Última instrucción:** no apagar/reiniciar modelo; humano prueba agenda. Silencio
+pendiente. Web33 solo LOCAL: leer respuestaJSON íntegraES y traducirEN sin tools/
+otra consulta, no resumir desde fragmentos ni decir que faltan fuentes si falla
+traducir.463 Python461 pasan/2skips, Java/build33 pasan. Backendactivo no recarga;
+NO instalar durante pruebas. `web-response-spanish-candidate-v1` es candidato,
+`spoken-silence-final-v1` conserva instalado32/dueño/PID. Búsqueda automática después.
+
+## Estado vigente:32/13; habla corregida, «silencio» humano sigue pendiente
+
+Humano confirma salida31 pero error al decir silencio. Recibo fase12/error8 no
+capturó motivo final (carrera, RECORDING); NO inventar causa.32 finaliza diagnóstico
+antes del fallo y añade11 números técnicos. Mismo Vosk/pesos/search/0,8; NNchunks6
+reduce picos sin ampliar frescura250ms/callback500ms.4 casos sintéticos nativos:
+2 órdenes aceptadas/negación y cita rechazadas, edad máxima165ms, sin mic/sonido/
+TLS/LFM/tools/instrumentación.454 Python:452 pasan/2skips y Java pasan. Mismafirma/
+UID/datos/agenda3/sistema y61backend. Referencia `artifacts/android-voice/spoken-silence-final-v1/`,
+activación explícita con Detener, no autorestart; falta silencio real→otra petición.
+
+### Hito anterior:31/13 y tres salidas completas, interrupción humana no probada
+
+Decode283ms causaba `STALE_AUDIO` al comenzar voz (entrada22ms). Preparación nueva
+con silencio público antes deTTS/captura y decodificador fresco por salida, sin
+parciales ni bajar frescura250ms. Tres salidas públicas completas: pico147ms y
+pre-arm376ms; no fallo de disponibilidad. Worker también corrige lectorproc que
+quedaba colgado: NUL/lectores1s+identidad estable UID/start/caps/exe,9 testsAndroid
+y cierre nativo real con0 lectores/claves.451 Python:449 pasan/2skips, Java pasa;
+APK31/UID/datos/recibos/sistema intactos. Nuevo dueño continuo explícito con Detener,
+sin reinicios/reconexiones/boot/renovaciones automáticos. Referencia vigente
+`artifacts/android-voice/decoder-warmup-final-v1/`. Aceptación humana de eco/silencio,
+web completa y herramientas/recibos pendiente. Hitos inferiores son historia.
+
+### Hito anterior: APK30 observado sin verificar decode durante TTS
 
 Reporte de error anterior: backend registra peer_closed, no fallo de recursos;
 sin recibo Android previo no se atribuye causa. APK28/29/30 autorizadas preservan

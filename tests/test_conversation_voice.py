@@ -170,7 +170,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None, continuous_voice=False, wake_on_pcm=False, initial_ms=100000, memory_setup=None,alarm_lifecycle=False):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None, continuous_voice=False, wake_on_pcm=False, initial_ms=100000, memory_setup=None,alarm_lifecycle=False,confirmed_volume=False):
         clock = [initial_ms]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
         model.cancel_generation.return_value = True
@@ -182,7 +182,7 @@ class ConversationVoiceTests(unittest.TestCase):
             model.done.clear()
             model.result = answers[len(model.observed_contexts)] if answers is not None else answer
             model.observed_contexts.append(model.memory.messages(text, activity_ms=speech_end))
-            if ready: model.done.set()
+            if (ready[len(model.observed_contexts)-1] if isinstance(ready,list) else ready): model.done.set()
             return clock[0]+23000 if continuous_voice else 123000
         model.start.side_effect = start
         detector = Mock(model=object()); detector.accept_pcm.return_value = wake_on_pcm
@@ -201,7 +201,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)), \
                 patch.object(voice.time, 'time', return_value=1792328400):
             voice.session(Mock(), detector, model, 0 if continuous_voice else 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
-                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda,continuous_voice=continuous_voice,alarm_lifecycle=alarm_lifecycle)
+                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda,continuous_voice=continuous_voice,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
         return events, model
 
     @staticmethod

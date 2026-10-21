@@ -1,6 +1,203 @@
 # Andrómeda: conversación dinámica, recordatorios y alarmas
 
-## Estado vigente: APK30/protocolo13, sesión continua activada; aceptación hablada pendiente
+## Vigente: fallo real localizado; APK35/volumen confirmado instalado
+
+El último pedido humano sí generó `set_phone_volume` nativo válido (5,044s,
+409tokens, historial0), pero `current_volume` devolvió rechazo literal: código
+tool7/result2/validation4. Android nunca recibió permiso/acción y siguió8/15.
+Ésta es evidencia del filtro Python, no falta de herramientas ni permisoAndroid.
+No se conserva ni se infiere la transcripción exacta. Referencia numérica:
+`artifacts/android-voice/dynamic-tools-diagnosis-live-v1/human-decision.json`.
+
+Se instaló coordinadamente APK35/`confirmed_media_v3` y7 archivos Python (6previos
+modificados+`volume_dialogue`nuevo;62totales), misma firma/UID10238/datos/sistema/
+media. La selección nativa de volumen ahora abre propuesta, no pasa por el viejo
+patrón de oración completa. Campos numéricos humanos reconstruidos Python/Android;
+si falta/ambigua cifra, pregunta. Siempre confirma recurso multimedia+porcentaje:
+solo un «sí» humano posterior a pregunta efectivamente terminada puede ejecutar.
+Corrección numérica exige pregunta nueva, no inventar porcentaje ni interpretar
+web/modelo/TTS como permiso. Una mutación por turno de confirmación, grant4s,
+caducidad5min/1hRAM, scopes/nonce/recibos/Android independiente conservados.
+La gramática antigua queda SOLO en modalidadlegacy no negociada por APK35 guiada.
+
+494Python491pasan/3skipsWindows; Java64nuevoformulario+175volumen y suitecompleta;
+build35v2 pasa. Son pruebas públicas/simuladas, NO aceptación de voz o Androidreal.
+Manifiestoactual `artifacts/android-voice/confirmed-volume-install-v1/installed.json`;
+nuevo dueño/matriz nativa/activación en `artifacts/android-voice/confirmed-volume-live-v1/`.
+Silencio/alarmas/traducciónEN aún no aceptados;512traductorLOCAL no instalado.
+GateLFMreal9/9 pasó: petición normal/cortés/otroorden/porciento/100/mitad/sincifra/
+desdeweb/trasrechazos,2,1–6s/≤476tokens y SIEMPRE pregunta correcta sin permisoAndroid.
+Prefijo39,2s<45s; erase4/segundoerase0 y preparaciónpública31,3s antes de activar.
+Activación explícita35/13 observada35s; a00:37:23UTC GLOBALrunning/monitorfresco,
+62hashes correctos/1recorderAndroid, sin recibo terminal nuevo. Volumen humano
+todavía no aceptado: prueba pide porcentaje→preguntaoída→sí→Android→otroturno.
+Observador3min final00:41:21UTC: sin decisión nueva/reciboAndroid, media8/15 y
+modelo+servicio activos. No inferir si hubo intento hablado; no declarar éxito
+ni reiniciar por ausencia de recibo. Evidencia `confirmed-volume-live-v1/human-volume-result.json`.
+Tras «¿y entonces?» se comprobó mismo35 activo/62hashes/1recorder/TLS; proceso
+backend avanza lecturas/CPU, sin decisión humana nueva ni recibo. No demuestra
+reconocimiento ni atasco de activación. Falta saber si nueva35 preguntó confirmación
+o no respondió. Sin otro despliegue/reinicio/acción; evidencia
+`artifacts/android-voice/confirmed-volume-route-check-v1/`.
+
+## Instrucción posterior: se autoriza cerrar la prueba; diagnóstico instalado
+
+Humano reitera que no hay uso real/obligaciones fiables y prioriza que funcione;
+esto permite parar la sesión de pruebas para corregirla, sin usarlo como permiso
+para borrar datos/agenda. Cierre normal del componenteAndroid confirmado con
+GLOBALnot_running,0procesos/servicios/puertos antes de instalar. El comandoam
+devolvió nonzero poradb pero sí cerró; se reconcilió por lecturas independientes
+SIN repetir la parada ni forzar procesos. Se aplicó SOLO `conversation_voice.py`
+diagnóstico, sin APK/protocolo nuevo, UID/datos/volumen/sistema y61hashes verificados.
+Manifiesto instalado actual: `artifacts/android-voice/dynamic-tools-diagnosis-install-v1/installed.json`.
+Nuevo dueño y matriz nativa multi-turno/activación en
+`artifacts/android-voice/dynamic-tools-diagnosis-live-v1/`. No declarar función
+arreglada por instalar diagnóstico; aceptación exige petición real→reciboAndroid
+y siguiente turno sin atasco. TraducciónEN pendiente no incluida. Nada de garantía
+universal basada en pruebas sintéticas ni restauración automática tras fallos.
+Matriz REAL vía `model.start()`8/8 pasó: frases20 en palabras/cifras y con nombre,
+saludo previo,3rechazos, recordatorio, web y mezcla de acciones;2,7–6,4s, inputs
+≤453tokens. Decisiones privadas reales verificadas durante prueba pública; sin
+ejecutarAndroid/Worker/micrófono. Erase4/segundoerase0, prefijo público preparado
+de nuevo29,6s; activación explícita con consentimiento4/Detener. A00:16:15UTC:
+GLOBALrunning/monitorfresco, servicio+1recorderAndroid,61hashes correctos y sin
+error terminal actual. Dueño actual en `dynamic-tools-diagnosis-live-v1/work.json`.
+Observador acotado de próximo recibo técnico habilitado; no confundir los8recibos
+públicos anteriores a activación con pedidos humanos.
+
+## Aclaración humana vigente: IA dinámica, no otra lista de comandos
+
+Humano confirma que usó EXACTAMENTE «Andrómeda, baja el volumen al veinte por
+ciento» y también exige poder expresarlo de otras maneras. Informa que búsqueda
+web y crear recordatorios sí funcionan; preservar esas rutas y sus obligaciones.
+La meta es pedir acciones como en una conversación, no memorizar palabras clave.
+No hacer otra ronda de ampliar frases/decir que pasó una compilación como solución.
+
+La frase confirmada pasa el validador Python actual y con llamada nativa correcta
+produce `volume_proposal`20 en regresión. Por tanto gramática rígida es un problema
+arquitectónico, pero NO prueba la causa de este fallo concreto. El motivo del turno
+real sigue sin guardarse; no atribuirlo a ASR/modelo/parser ni a Android por descarte.
+
+Preparado LOCALMENTE un diagnóstico acotado de decisión ANTES del ejecutor:
+`voice_tools_health.json`, solo números/enum, última decisión ≤4KiB, sin audios,
+transcripciones, argumentos, IDs de contenido ni hashes. Distingue falta de llamada,
+schema inválido, herramienta seleccionada/guardia rechazada y timeout; no ejecuta,
+reintenta ni sustituye autorización.484Python481pasan/3skipsWindows; casoPOSIX
+aislado13aserciones pasa en59ms, sin acceder al modelo/voz/historial ni modificar
+los61módulos instalados. Candidato1módulo `conversation_voice.py`, sin APK/protocolo
+nuevo, **NO instalado** para no cortar la sesión. TraducciónEN sigue otro pendiente.
+Referencia `artifacts/android-voice/dynamic-tools-diagnosis-candidate-v1/`.
+
+Dirección funcional: selección semántica nativa→propuesta tipada de acción/datos→
+validación de permiso/alcance/límites/procedencia→Android→recibo real. Pedir lo que
+falta o aclarar ambigüedad, no dar el rechazo genérico de otra función. Los controles
+deben comprobar QUÉ se autorizó, no exigir una oración literal. Una propuesta del
+modelo no es permiso: si no se puede fundamentar un dato, pedir aclaración humana
+ligada al turno/propuesta; web/historial/TTS no autorizan. Mantener1mutación/turno,
+plazos, identidad de recursos, verificación Android y prohibición de reintentos
+inciertos. No prometer capacidad general de este chat para el modelo1.2B sin medir.
+
+## Vigente:34/13 activo; prioridad volumen y desbloqueo anterior a ejecución
+
+Humano informa100%/20%, alarma y silencio fallando y turno atascado. El dueño33
+acabó `voice_protocol_error`; CONNECT posterior no conserva su causa exacta.
+APK34 coordina ventana de volumen56,5s con cómputo55s/respuesta60s (antes26,5s),
+manteniendo grant4s/no-retry/selección nativa y autorizaciónAndroid independiente.
+Fallos de generación/plazo/formulario ANTES de despachar mutación liberan turno
+en la mismaTLS; resultado incierto/cancelación atascada siguen parada segura.
+Servicio cerrado ya no retiene caraERROR; recibo no-CONNECT conserva origen técnico.
+
+La primera prueba del LFM real rechazó100% con la descripción vieja: no se activó
+micrófono ni se maquilló como éxito. Descripción corregida con porcentajes pasó
+8/8 elecciones nativas públicas, sin ejecutar volumen; solo se actualizó después
+`assistant_tools_model` además de los3 módulos de recuperación.475Python:473pasan/
+2skipsWindows, Java175volumen/113UI y suite/build34 pasan. Firma/UID10238/datos,
+agenda3/recibos actuales, sistema y volumen preservados. Manifiesto definitivo:
+`artifacts/android-voice/volume-selector-v1/installed.json`; nuevo dueño y activación
+explícita en `artifacts/android-voice/volume-selector-live-v1/`. Aceptación real por
+voz/reciboAndroid aún requerida, no confundir selección nativa con cambio físico.
+Selector INSTALADO4/4 pasó (2,6–3,3s), prefijo frío37s, cacheerase0 confirmado y
+prefijo público preparado de nuevo29,6s. Servicio/modelo35s observados activos,
+comprobaciónGLOBAL posterior running/fresco y1recorderAndroid; sin recibo de
+volumen humano todavía. No repetirActivar ni arrancar otro dueño para observar.
+Observador3min finalizó23:48:22UTC sin recibos de volumen, media8/15 y modelo
+running; no prueba que el humano haya intentado o no el pedido, ni acepta volumen.
+Humano posteriormente confirma rechazo genérico en cada intento. Observación
+23:53:04UTC mantiene mismo dueño/servicio/61hashes sin recibo volumen. Constante
+REJECTION localizada antes de Android (`tools_rejected`), catálogo sí enviado;
+no se conserva motivo concreto del rechazo porque stdout técnico va /dev/null.
+No atribuir retrospectivamente a ASR/gramática/modelo ni declarar volumen arreglado.
+Evidencia `artifacts/android-voice/volume-rejection-diagnosis-v1/`; sesión intacta.
+No se certifican alarma ni silencio. TraducciónEN de una pasada512 sigueLOCAL:
+no se instaló aprovechando este arreglo, lecturaES33 sigue intacta. Sin autorestart.
+
+## Hito anterior:33/13 activo tras Detener accidental; traducción no aceptada
+
+Humano aclaró parada manual. Se actualizó APK33+5 módulos web juntos con base
+ACTUAL (agenda3/2DELIVERED/timerreceipt1), firma/UID/datos/sistema/volumen intactos.
+Una activación explícita nueva con Detener/consentimiento4 deja modelo/voz activos,
+sin autorestart. LecturaES602caracteres íntegra/0inferencias comprobada, ya no360.
+Prueba nativaEN43,3s pasó cifras/forma pero OMITIÓ tarifa semestral y añadió comentario:
+**fidelidadEN no aceptada**, no declarar búsqueda completa corregida por ese recibo.
+Se mantiene33 activo para pruebas humanas de agenda. AjusteLOCAL de traducción en
+una pasada512tokens SOLO traductor (selector96 intacto), sin trocear listas, parser
+≤2000 y rechazo de elipsis/comentarios:469 Python467 pasan/2skips, NO instalado ni
+probado nativamente. Referencias actual `artifacts/android-voice/web-response-spanish-live-v1/`
+y pendiente `artifacts/android-voice/web-translation-whole-candidate-v1/`. Silencio y
+búsqueda automática pospuestos. Todo estado apagado/candidato33 inferior es historia.
+
+## Instrucción posterior: no apagar; candidato web33 NO instalado
+
+**Comprobación final:** dueño cerró por `voice_peer_closed`; controlGLOBAL
+`not_running`, modelo/servicios/puertos0. Agente no envió stop/kill/restart/install
+ni escribió en el teléfono. Último reciboAndroid es un CONNECT posterior, no causa
+del cierre original. **Modelo actualmente apagado, no reactivado a ciegas.** Aclarar
+si humano pulsó Detener o vio error antes de otra activación. Candidato sigueLOCAL.
+
+Humano confirma búsqueda a veces responde «sin fuente fiable» con JSONok y
+silencio sigue fallando; deja silencio pendiente y prueba alarmas/recordatorios.
+**Mantener APK32/modelo/servicio actuales activos, sin reiniciar/instalar para aplicar
+web ahora.** CandidatoLOCAL33 corrige respuestaES completa (ya no prefijo360),
+traduce únicamente respuestaEN de forma local/tool-free, y diferencia fallo de
+traducción de falta de fuentes. Mantiene2000unidades/60s/privacidad/grants.463 Python:
+461 pasan/2skips, Java65web y build33 pasan; NO aceptación nativa de traducción ni
+despliegue. Capacidad nueva `worker_first_v3_spanish` requiere actualización
+coordinada posterior; backendactivo no recarga. Referencia candidata
+`artifacts/android-voice/web-response-spanish-candidate-v1/`. Instalado/dueño siguen
+en `artifacts/android-voice/spoken-silence-final-v1/`. Búsqueda automática pospuesta.
+
+## Estado vigente: APK32/protocolo13; fallo humano de «silencio» aún por aceptar
+
+El humano confirma voz funcionando con31, pero «silencio» repite el error. Recibo
+actual fase12/error8, decode235ms/lag182ms; motivo terminal quedó RECORDING por
+carrera del diagnóstico, por lo que la causa exacta no está probada. Corregida
+publicación final ANTES del callback de fallo, más recibo de11 números sin contenido.
+Mismos pesos/beam/umbral0,8; perfilNN en bloques6 (60ms), sin reescribir originales,
+frescura250ms y callbacks500ms intactos. Nueva prueba Vosk real con4 frases públicas
+sin mic/altavoz/TLS/LFM/tools/instrumentación:2 órdenes reconocidas, negación/cita
+rechazadas, edad máxima165ms; NO prueba acústica humana.454 Python:452 pasan/2skips,
+Java pasa, firma/UID/datos/agenda3/sistema y61 módulosbackend preservados. Referencia
+actual `artifacts/android-voice/spoken-silence-final-v1/`; activación explícita tras
+corrección con Detener/consentimiento4, sin autorestart. Falta silencio real→siguiente
+turno y aceptación agenda/alarmas. Apartados inferiores son historia.
+
+### Hito anterior: APK31 y tres salidas sin fallo, sin orden humana verificada
+
+Recibo real confirmó `STALE_AUDIO`: decode283ms con entrada fresca22ms superaba
+el guard250ms. El decodificador ahora se prepara con2s de ceros públicos antes de
+captura/TTS, sin parciales; cada salida usa uno nuevo y cierra el que vio al humano.
+Sin bajar guardias/0,8, grammar forcing, cambios de fuente/volumen o permisos.
+Tres salidas públicas reales completaron: decode máximo147ms, pre-arm376ms,
+guard posterior250ms conservado. No consultaWeb/acciones falsas; eco/«silencio» y
+web/agenda humanas completas siguen pendientes. Un lector nativo `tr` colgado al
+cerrar se retiró por identidad; worker ahora usa lectoresNUL acotados1s y UID/start/
+caps/exe.9 casosAndroid pasan y cierre nativo real sin mic confirma0 lectores/claves.
+451 Python:449 pasan/2skips y suiteJava pasan. APK31/mismoUID/datos/agenda3/sistema;
+modo continuo activado otra vez explícitamente con consentimiento4/Detener visible,
+sin autorestart/boot/renovación. Referencia vigente:
+`artifacts/android-voice/decoder-warmup-final-v1/`. Hitos inferiores son historia.
+
+### Hito anterior: APK30 y diagnóstico sin reproducción completa
 
 Tras reporte humano de error, se confirmó cierre por el cliente, no guardia de
 recursos; la etapa exacta anterior no estaba registrada y no se inventa causa.

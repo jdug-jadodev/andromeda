@@ -4,6 +4,14 @@ baja el volumen al 50%	50
 pon el volumen a 0	0
 pon el volumen al cero por ciento	0
 sube el volumen al cien por ciento	100
+sube el volumen al 100%	100
+baja el volumen al veinte por ciento	20
+bájale el volumen al 20%	20
+súbele el volumen al cien	100
+suba el volumen al cien por ciento	100
+baje el volumen al veinte	20
+no le subas el volumen al cien	INVALID
+súbele el volumen al cien y luego bájalo al veinte	INVALID
 ajusta el volumen multimedia al 100 %	100
 por favor pon el volumen del teléfono al treinta y siete por ciento	37
 Andrómeda por favor establece el volumen al setenta y tres por ciento por favor	73

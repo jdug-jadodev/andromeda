@@ -2,6 +2,44 @@
 
 Actualizado: 20 de octubre de 2026. Orden solicitado por el usuario al retomar.
 
+**Vigente33/13 activo:** humano confirmó Detener accidental. APK+5web instalados
+con datos/UID/sistema/agendaactual2DELIVERED intactos; nueva activación explícita
+sin autoinicio/Detener. ES602completo verificado; EN43,3s omitió tarifa semestral,
+NO aceptado por pasar forma/números. No volver a apagar para corregir mientras
+prueba agenda. CandidatoLOCALwhole-translation512 solo traductor/selector96,
+469 Python467 pasan/2skips, sin instalar ni nativo. Actual `web-response-spanish-live-v1`;
+pendiente `web-translation-whole-candidate-v1`; silencio/autoWeb después. Apagados
+y candidato33 no instalado de apartados inferiores son históricos.
+
+**Comprobación final posterior:** cliente cerró sesión32, GLOBAL not_running y0
+modelo/servicios. Sin stop/kill/restart/install/escrituras del agente. CONNECT
+posterior no identifica causa original; aclarar parada humana/error, no autoreinicio.
+Web33 sigueLOCAL/no instalada y las referencias previas a escucha activa son historia.
+
+**Instrucción posterior:** no apagar/reiniciar modelo, humano prueba agenda32.
+Silencio falla/no aceptado, pospuesto. Web33 soloLOCAL: respuestaJSON completaES,
+traducciónEN local sin tools/query extra, error de traducción diferenciado.463 Python:
+461 pasan/2skips, Java/build33 pasan. NO despliegue/recarga de sesión, no inyección
+en proceso; referencia `artifacts/android-voice/web-response-spanish-candidate-v1/`.
+Instalado/dueño32 sigue `spoken-silence-final-v1`. Búsqueda automática después.
+**Vigente32/13:** humano confirma voz31, error al decir silencio. Recibo no distinguió
+motivo final (RECORDING/carrera): ahora se finaliza antes del aviso y añade11 números
+sin contenido. Mismos pesos/search/0,8; NNchunks6 sin ampliar250/500ms. Prueba pública
+nativa4/4 (2 órdenes/negación/cita), edad máxima165ms, sin mic/sonido/TLS/LFM/tools/
+instrumentación.454 Python452 pasan/2skips y Java pasan. UID/datos/agenda3/sistema/
+backend preservados; activación explícita/Detener sin autorestart. Referencia actual
+`artifacts/android-voice/spoken-silence-final-v1/`; falta silencio humano→otra petición.
+
+**Hito31/13:** corte al hablar confirmado por decode283ms contra frescura250ms.
+Decodificador nuevo/caliente con ceros públicos antes deTTS/captura, sin parciales
+ni reutilizar el del humano. Tres salidas completas, pico147ms/pre-arm376ms y
+guardias intactas. Worker elimina lecturaproc que podía colgar al cerrar: NUL/1s,
+identidad PID/start/UID/caps/exe,9 testsAndroid y cierre nativo real0 lectores/claves.
+APK31/firma/UID/datos/agenda3/volumen/sistema preservados;451 Python449 pasan/2skips
+y Java pasa. Escucha continua reactivada explícitamente con Detener, sin reinicios/
+reconexión/boot/renovaciones. Referencia `artifacts/android-voice/decoder-warmup-final-v1/`;
+resto de aceptación acústica/herramientas pendiente, hitos inferiores históricos.
+
 **Vigente30/13:** tras error reportado, cierre del cliente confirmado sin causa
 exacta aún probada; APK28/29/30 añaden solo recibos numéricos y preflights aislados.
 Preparación sin mic/captura con PCM descartado/pre-arm353ms y lag10ms pasan, con

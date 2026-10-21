@@ -15,6 +15,9 @@ final class PhoneVolumeChannel {
     private boolean closed;
     private final boolean continuing;
     private final boolean continuous;
+    private final VolumeDialogue dialogue;
+    private VolumeDialogue.Human latestHuman;
+    private VolumeDialogue.Decision decision;
     PhoneVolumeChannel(String session, String context, long end) {
         this(session, context, end, false);
     }
@@ -25,7 +28,8 @@ final class PhoneVolumeChannel {
         this.session = session; this.context = context; sessionEnd = end;
         this.continuing = continuing; this.continuous = continuous;
         if (continuous && (!continuing || end != 0)) throw new IllegalArgumentException("Continuous volume mode not negotiated");
-        policy = new PhoneVolumePolicy(session, context);
+        policy = new PhoneVolumePolicy(session, context, continuing?60000:30000);
+        dialogue=continuing?new VolumeDialogue(continuous?64:24):null;
     }
     synchronized void human(JSONObject event) throws Exception {
         human(event, android.os.SystemClock.elapsedRealtime());
@@ -35,6 +39,10 @@ final class PhoneVolumeChannel {
         turn = AgendaActionChannel.text(event, "turn_id"); human = AgendaActionChannel.text(event, "text");
         sequence = AgendaActionChannel.integer(event, "turn_seq"); speechEnd = AgendaActionChannel.integer(event, "speech_end_ms");
         if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(AgendaActionChannel.integer(event,"action_window_end_ms"),speechEnd,now);
+        if(dialogue!=null) {
+            latestHuman=new VolumeDialogue.Human(turn,sequence,human,speechEnd,now,continuous?64:24);
+            decision=dialogue.answer(latestHuman,now);
+        }
         accepted = null; receipt = null;
     }
     synchronized PhoneVolumePolicy.Permit execution(JSONObject event, long now) throws Exception {
@@ -45,7 +53,10 @@ final class PhoneVolumeChannel {
             AgendaActionChannel.text(event, "context_id"), AgendaActionChannel.text(event, "request_turn_id"),
             AgendaActionChannel.text(event, "nonce"), AgendaActionChannel.integer(event, "request_sequence"),
             AgendaActionChannel.integer(event, "speech_end_ms"), AgendaActionChannel.integer(event, "execute_before_ms"), (int)value);
-        accepted = policy.claim(grant, human, turn, sequence, speechEnd, sessionEnd, now); return accepted;
+        accepted = dialogue==null?policy.claim(grant, human, turn, sequence, speechEnd, sessionEnd, now)
+            :policy.claimConfirmed(grant,dialogue,AgendaActionChannel.text(event,"volume_origin_turn_id"),
+                AgendaActionChannel.text(event,"volume_question_turn_id"),latestHuman,sessionEnd,now);
+        return accepted;
     }
     synchronized JSONObject result(PhoneVolumePolicy.Permit permit, PhoneVolumePolicy.Receipt value) throws Exception {
         if (accepted != permit || receipt != null) throw new IOException("Unrelated volume receipt");
@@ -55,6 +66,16 @@ final class PhoneVolumeChannel {
             .put("percent", permit.grant.percent).put("stream", "media").put("status", value.status.name()).put("actual_percent", value.actual);
     }
     synchronized boolean speech(JSONObject event) throws Exception {
+        String control=event.optString("timer_control");
+        if("volume_question".equals(control) || "volume_cancelled".equals(control)) {
+            if(closed || dialogue==null || accepted!=null || !turn.equals(event.optString("turn_id"))
+                    || AgendaActionChannel.integer(event,"actions_executed")!=0 || event.optBoolean("offered_more",true)
+                    || !event.optString("close_reason").isEmpty()) throw new IOException("Unrelated volume question");
+            if(decision==null) decision=dialogue.begin(latestHuman);
+            if(!decision.kind.equals(control) || !decision.text.equals(AgendaActionChannel.text(event,"text")))
+                throw new IOException("Unverified volume question");
+            return true;
+        }
         if (!"volume_result".equals(event.optString("timer_control"))) {
             if (accepted != null) throw new IOException("Missing volume result");
             return false;
@@ -67,5 +88,6 @@ final class PhoneVolumeChannel {
                     || !text.equals(ActionCompletionPolicy.text(PhoneVolumePolicy.resultText(receipt, accepted.grant.percent), continuing)))) throw new IOException("Unverified volume response");
         return true;
     }
-    synchronized void close() { closed = true; policy.close(); }
+    synchronized void spoken(String turn,boolean completed,long now) { if(dialogue!=null) dialogue.spoken(turn,completed,now); }
+    synchronized void close() { closed = true; policy.close(); if(dialogue!=null) dialogue.clear(); }
 }

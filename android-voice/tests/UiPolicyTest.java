@@ -26,6 +26,10 @@ public final class UiPolicyTest {
         check(UiPolicy.showsFace(FaceState.LISTENING), "Listening should show face");
         check(UiPolicy.showsFace(FaceState.THINKING), "Thinking should retain face");
         check(UiPolicy.showsFace(FaceState.SPEAKING), "Speaking should retain face");
+        check(UiPolicy.serviceState(false,false,FaceState.ERROR)==FaceState.MUTED,"Stopped service retained an error face");
+        check(UiPolicy.serviceState(false,false,FaceState.THINKING)==FaceState.MUTED,"Stopped service retained a thinking face");
+        check(UiPolicy.serviceState(true,false,FaceState.THINKING)==FaceState.THINKING,"Active computation hidden");
+        check(UiPolicy.serviceState(false,true,FaceState.SPEAKING)==FaceState.SPEAKING,"Active alarm hidden");
         check(UiPolicy.parseColor("#12aB34") == 0xff12ab34, "RGB color mismatch");
         check(UiPolicy.parseColor("#000000") == 0xff000000, "Black must stay opaque");
         for (String value : new String[]{null, "red", "#FFF", "#00123456", "#GG0011", " #123456"}) {

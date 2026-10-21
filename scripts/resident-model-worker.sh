@@ -35,18 +35,26 @@ if [ "$MODE" = continuous ]; then
 fi
 PID=''
 START=''
-owned() {
+spawned() {
   [ -n "$PID" ] && [ -r "/proc/$PID/stat" ] && [ -r "/proc/$PID/status" ] || return 1
   [ "$(awk '{print $22}' "/proc/$PID/stat")" = "$START" ] || return 1
   [ "$(awk '/^Uid:/ {print $2}' "/proc/$PID/status")" = 10218 ] || return 1
   [ "$(awk '/^CapEff:/ {print $2}' "/proc/$PID/status")" = 0000000000000000 ] || return 1
-  tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq "$BIN/llama-server" || return 1
-  tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq /data/local/doha-inference/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf || return 1
-  tr '\000' '\n' < "/proc/$PID/cmdline" | grep -Fxq "$WORK/key"
+  [ "$(readlink "/proc/$PID/exe")" = "$BIN/llama-server" ]
+}
+owned() {
+  spawned || return 1
+  # Android tr can spin on an open proc cmdline after the process exits. Match
+  # NUL-delimited whole arguments directly, with a deadline for each reader.
+  /system/bin/timeout -s KILL 1 /system/bin/grep -Fzqx -- "$BIN/llama-server" "/proc/$PID/cmdline" || return 1
+  /system/bin/timeout -s KILL 1 /system/bin/grep -Fzqx -- /data/local/doha-inference/LFM2.5-1.2B-Instruct-QAD-Q4_0.gguf "/proc/$PID/cmdline" || return 1
+  /system/bin/timeout -s KILL 1 /system/bin/grep -Fzqx -- "$WORK/key" "/proc/$PID/cmdline"
 }
 cleanup() {
-  if owned; then kill -TERM "$PID" 2>/dev/null || true; sleep 1; fi
-  if owned; then kill -KILL "$PID" 2>/dev/null || true; fi
+  # Cleanup identifies OUR fixed exec child by UID/start/caps/exe, not by a
+  # stream which may disappear during exit. It cannot signal a recycled PID.
+  if spawned; then kill -TERM "$PID" 2>/dev/null || true; sleep 1; fi
+  if spawned; then kill -KILL "$PID" 2>/dev/null || true; fi
   if [ -n "$PID" ]; then wait "$PID" 2>/dev/null || true; fi
 }
 trap cleanup EXIT

@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
             else if (VoiceService.active && VoiceService.expiresAt > 0) {
                 long remaining = Math.max(0, (VoiceService.expiresAt - SystemClock.elapsedRealtime() + 999) / 1000);
                 wakeHint.setText("Andrómeda activa · quedan " + remaining + " s · habla para pedir lo que necesites");
-            } else wakeHint.setText("Voz apagada · toca Activar Andrómeda");
+            } else wakeHint.setText(VoiceService.uiState==FaceState.ERROR?VoiceService.lastStatus:"Voz apagada · toca Activar Andrómeda");
             updateMicrophoneStop();
             renderWeather();
             if (policy.optionsVisible()) optionsCountdown.setText("Se ocultan en "
@@ -544,7 +544,7 @@ public class MainActivity extends Activity {
                 : "Di silencio una vez en cada fase · no habrá voz ni tonos"); transcript.setVisibility(View.VISIBLE);
             updateMicrophoneStop(); return;
         }
-        present(VoiceService.uiState, SilenceListener.recording() ? "MICRÓFONO ACTIVO · silencio o Andrómeda, silencio"
+        present(UiPolicy.serviceState(VoiceService.active,RingService.ringing || SilenceListener.recording(),VoiceService.uiState), SilenceListener.recording() ? "MICRÓFONO ACTIVO · silencio o Andrómeda, silencio"
             : RingService.ringing ? "Temporizador sonando · micrófono de interrupción todavía apagado" : VoiceService.lastStatus);
         transcript.setText(VoiceService.lastTranscript);
         transcript.setVisibility(VoiceService.lastTranscript.isEmpty() ? View.GONE : View.VISIBLE);

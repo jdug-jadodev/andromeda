@@ -44,16 +44,25 @@ final class WebAnswerPolicy {
         Set<String> anchors = words(answer); anchors.retainAll(words("es son se y el los las una puede estan hay"));
         check(spanish >= 2 && english <= Math.max(2, spanish) && !anchors.isEmpty());
     }
-    static void validateServiceAnswer(String answer) {
+    private static void validateServiceText(String answer) {
         check(answer != null && !answer.trim().isEmpty() && answer.length() <= 2000 && !answer.contains("<|"));
         check(!Pattern.compile("[<>{}`\\x00-\\x1f\\x7f]").matcher(answer).find());
         String folded = plain(answer);
         check(!Pattern.compile("ignore (?:all |the )?(?:previous |above )?instructions|disregard|system prompt|tool_calls|crea una alarma|create an? alarm|ignora (?:las |todas las )?instrucciones").matcher(folded).find());
         check(!Pattern.compile("\\b(?:estoy|estamos)\\s+(?:(?:ya|ahora)\\s+)?(?:creando|poniendo|programando|activando|iniciando|cancelando|apagando|encendiendo|buscando|consultando)\\b|\\b(?:he|hemos|ya|acabo de) (?:\\w+ )?(?:creado|puesto|programado|activado|iniciado|cancelado|apagado|encendido|consultado|buscado|encontrado en internet)\\b|\\b(?:temporizador|alarma|recordatorio)\\b.{0,45}\\b(?:cread[oa]|puest[oa]|programad[oa]|activad[oa]|iniciad[oa]|cancelad[oa]|list[oa])\\b|\\b(?:te avisare|te recordare|sonara en|voy a (?:poner|crear|programar|activar|cancelar)|timer (?:set|started)|alarm (?:set|scheduled))\\b").matcher(folded).find());
+    }
+    static void validateServiceAnswer(String answer) {
+        validateServiceText(answer);
+        String folded=plain(answer);
         int spanish = 0, english = 0; Matcher matcher = Pattern.compile("[a-z]+").matcher(folded);
         while (matcher.find()) { if (ES.contains(matcher.group())) spanish++; if (EN.contains(matcher.group())) english++; }
         Set<String> anchors = words(answer); anchors.retainAll(words("es son se y el los las una puede estan hay"));
         check(spanish >= 2 && english <= Math.max(2, spanish) && !anchors.isEmpty());
+    }
+    private static Map<String,Integer> numberCounts(String value) {
+        Map<String,Integer> counts=new HashMap<>(); Matcher matcher=Pattern.compile("\\b[0-9]+(?:[.,][0-9]+)*\\b").matcher(value);
+        while(matcher.find()) { String number=matcher.group().replace(',','.'); counts.put(number,counts.getOrDefault(number,0)+1); }
+        return counts;
     }
     static String validate(String mode, int index, String evidence, String answer, List<String> hosts, List<String> excerpts, String spoken) {
         check(mode != null && evidence != null && answer != null && spoken != null && hosts.size() == excerpts.size() && hosts.size() <= 3);
@@ -80,6 +89,11 @@ final class WebAnswerPolicy {
             check(index == -1 && evidence.isEmpty() && !hosts.isEmpty());
             validateServiceAnswer(answer);
             body = "El servicio web responde: " + answer + " Fuentes en Opciones.";
+        } else if ("service_translation".equals(mode)) {
+            check(index == -1 && !hosts.isEmpty());
+            validateServiceText(evidence); validateServiceAnswer(answer);
+            check(numberCounts(evidence).equals(numberCounts(answer)));
+            body = "El servicio web responde en español: " + answer + " Fuentes en Opciones.";
         } else if ("service_summary".equals(mode)) {
             // A separate mode, never relabelled as quoted/translated evidence.
             // The service lists sources; Android does not independently fetch them.
@@ -97,6 +111,7 @@ final class WebAnswerPolicy {
             } else {
                 check(!hosts.isEmpty());
                 switch (mode) {
+                    case "translation_failed": body = "La búsqueda devolvió una respuesta, pero no pude traducirla al español. Las fuentes están en Opciones."; break;
                     case "insufficient_evidence": body = "No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones."; break;
                     case "answer_too_long": body = "La respuesta del servicio es demasiado extensa para esta lectura acotada. No la he recortado. Puedes revisar las fuentes en Opciones."; break;
                     case "insufficient_budget": case "deadline": body = "Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones."; break;

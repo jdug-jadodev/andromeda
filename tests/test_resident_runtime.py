@@ -144,7 +144,7 @@ class ResidentRuntimeTests(unittest.TestCase):
         context.wrap_socket.return_value=conn
         server.accept.side_effect=[(raw,('127.0.0.1',1)),(raw,('127.0.0.1',2))]
         hello=dict(token='public-key-'*4,protocol=10,mode='assistant_tools',source='synthetic_pcm',
-            web_response_mode='worker_first_v2_medium',phone_volume_policy='absolute_media_v1',
+            web_response_mode='worker_first_v3_spanish',phone_volume_policy='absolute_media_v1',
             context=dict(version=1,id='a'*32,last_human_ms=0,turns=[]))
         models=[]
         def session(conn,detector,model,*args):
@@ -178,7 +178,7 @@ class ResidentRuntimeTests(unittest.TestCase):
                 server.accept.side_effect=accept
                 token='public-key-'*4
                 hello=dict(token=token if authenticated else 'wrong-public-key',protocol=10,mode='assistant_tools',source='synthetic_pcm',
-                    web_response_mode='worker_first_v2_medium',phone_volume_policy='absolute_media_v1',
+                    web_response_mode='worker_first_v3_spanish',phone_volume_policy='absolute_media_v1',
                     context='invalid context must not be read')
                 order=[]
                 def wrap(*args,**kwargs): order.append('tls'); return conn

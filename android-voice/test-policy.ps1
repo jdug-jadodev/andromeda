@@ -14,10 +14,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Voice health privacy policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Unified voice compilation failed' }
 & java -cp $output local.doja.voice.UnifiedVoicePolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Unified voice policy tests failed' }
-& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\PhoneVolumePolicy.java" "$PSScriptRoot\tests\PhoneVolumePolicyTest.java"
+& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\VolumeDialogue.java" "$source\PhoneVolumePolicy.java" "$PSScriptRoot\tests\PhoneVolumePolicyTest.java" "$PSScriptRoot\tests\VolumeDialogueTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Phone volume compilation failed' }
 & java -cp $output local.doja.voice.PhoneVolumePolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\phone_volume_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Phone volume policy tests failed' }
+& java -cp $output local.doja.voice.VolumeDialogueTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\volume_dialogue_cases.tsv')
+if ($LASTEXITCODE -ne 0) { throw 'Confirmed volume dialogue tests failed' }
 & javac -encoding UTF-8 -d $output "$source\WebAnswerPolicy.java" "$source\FaceState.java" "$source\UiPolicy.java" "$source\WeatherData.java" "$source\VoiceSessionPolicy.java" "$source\ConversationTurnPolicy.java" "$source\VoiceSocketCleanup.java" "$source\ConversationMemory.java" "$source\ContinuousVoicePolicy.java" "$source\TimerRequestGuard.java" "$source\TimerActionPolicy.java" "$source\TimerCreation.java" "$source\SilenceWindowPolicy.java" "$source\SilenceDiagnostics.java" "$source\AudioInputGate.java" "$PSScriptRoot\tests\UiPolicyTest.java" "$PSScriptRoot\tests\VoiceSocketCleanupTest.java" "$PSScriptRoot\tests\ConversationMemoryTest.java" "$PSScriptRoot\tests\ContinuousVoicePolicyTest.java" "$PSScriptRoot\tests\TimerActionTest.java" "$PSScriptRoot\tests\SilencePolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'UI policy test compilation failed' }
 & java -cp $output local.doja.voice.UiPolicyTest
@@ -53,6 +55,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Weekly alarm/deletion/snooze policy tests fail
 if ($LASTEXITCODE -ne 0) { throw 'Interruption lifecycle compilation failed' }
 & java -cp $output local.doja.voice.SilenceLifecycleTest
 if ($LASTEXITCODE -ne 0) { throw 'Interruption lifecycle/freshness tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\DecoderWarmup.java" "$PSScriptRoot\tests\DecoderWarmupTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Public decoder preparation compilation failed' }
+& java -cp $output local.doja.voice.DecoderWarmupTest
+if ($LASTEXITCODE -ne 0) { throw 'Public decoder preparation/privacy tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\InterruptionModelProfile.java" "$source\PublicSpeechPcm.java" "$PSScriptRoot\tests\StreamingDecoderTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Streaming decoder/public PCM compilation failed' }
+& java -cp $output local.doja.voice.StreamingDecoderTest
+if ($LASTEXITCODE -ne 0) { throw 'Streaming decoder/public PCM privacy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\SpeechDiagnostics.java" "$PSScriptRoot\tests\SpeechDiagnosticsTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Speech diagnostic compilation failed' }
 & java -cp $output local.doja.voice.SpeechDiagnosticsTest

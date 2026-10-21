@@ -18,6 +18,9 @@ final class UiPolicy {
     static boolean showsFace(FaceState state) {
         return state != FaceState.IDLE && state != FaceState.READY && state != FaceState.MUTED;
     }
+    static FaceState serviceState(boolean voice,boolean otherAudio,FaceState state) {
+        return !voice && !otherAudio ? FaceState.MUTED : state;
+    }
     static int parseColor(String text) {
         if (text == null || !text.matches("#[0-9a-fA-F]{6}"))
             throw new IllegalArgumentException("Usa #RRGGBB, por ejemplo #BFA3FF");

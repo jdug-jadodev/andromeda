@@ -11,7 +11,7 @@ final class PhoneVolumePolicy {
             throw new IllegalArgumentException("Invalid volume request");
         String plain = TimerRequestGuard.normalize(human).replaceAll("^[ .,!¡?¿]+|[ .,!¡?¿]+$", "")
             .replaceFirst("^andromeda[, ]+", "").replaceFirst("^por favor ", "");
-        Matcher match = Pattern.compile("(?:baja|sube|pon|ponme|ajusta|establece) el volumen"
+        Matcher match = Pattern.compile("(?:baja|baje|bajale|sube|suba|subele|pon|ponme|ponle|ajusta|establece) el volumen"
             + "(?: del telefono| multimedia)? (?:a|al) (.+?)(?: por favor)?").matcher(plain);
         if (!match.matches()) throw new IllegalArgumentException("Explicit volume required");
         String value = match.group(1);
@@ -43,19 +43,34 @@ final class PhoneVolumePolicy {
         boolean mayWrite(long now) { synchronized (PhoneVolumePolicy.this) { return active && begun && now < grant.before; } }
     }
     private final String session, context;
+    private final long maximumAge;
     private final Set<String> consumed = new HashSet<>();
     private boolean active = true;
     PhoneVolumePolicy(String session, String context) {
+        this(session,context,30000);
+    }
+    PhoneVolumePolicy(String session, String context, int responseMs) {
         if (!id(session) || !id(context)) throw new IllegalArgumentException("Invalid identity");
+        if(responseMs!=30000 && responseMs!=60000) throw new IllegalArgumentException("Invalid volume window");
         this.session = session; this.context = context;
+        maximumAge=responseMs-3500;
     }
     private static boolean id(String value) { return value != null && value.matches("[0-9a-f]{32}"); }
     synchronized Permit claim(Grant g, String human, String turn, long sequence, long end, long sessionEnd, long now) {
+        return claimPercent(g,requested(human),turn,sequence,end,sessionEnd,now);
+    }
+    synchronized Permit claimConfirmed(Grant g,VolumeDialogue dialogue,String origin,String question,
+            VolumeDialogue.Human human,long sessionEnd,long now) {
+        if(g==null) throw new IllegalArgumentException("Missing volume grant");
+        int percent=dialogue.claim(origin,question,human,g.percent,now);
+        return claimPercent(g,percent,human.id,human.sequence,human.speechEnd,sessionEnd,now);
+    }
+    private Permit claimPercent(Grant g,int percent,String turn,long sequence,long end,long sessionEnd,long now) {
         if (!active || g == null || !session.equals(g.session) || !context.equals(g.context) || !id(g.turn) || !id(g.nonce)
                 || !g.turn.equals(turn) || g.sequence != sequence || sequence < 1 || g.speechEnd != end || end <= 0
-                || end > now + 100 || now - end >= 26500 || g.before <= now || g.before - now > 4100
-                || g.before - end > 26500 || g.before > sessionEnd - 5000 || consumed.contains(turn) || consumed.size() >= 24
-                || requested(human) != g.percent) throw new IllegalArgumentException("Invalid volume grant");
+                || end > now + 100 || now - end >= maximumAge || g.before <= now || g.before - now > 4100
+                || g.before - end > maximumAge || g.before > sessionEnd - 5000 || consumed.contains(turn) || consumed.size() >= 24
+                || percent != g.percent) throw new IllegalArgumentException("Invalid volume grant");
         consumed.add(turn); return new Permit(g);
     }
     synchronized void close() { active = false; }

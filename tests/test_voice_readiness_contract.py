@@ -18,7 +18,7 @@ class VoiceReadinessContractTests(unittest.TestCase):
 
     def test_capture_check_requires_visible_app_and_existing_explicit_consent(self):
         source=(ROOT/'android-voice/src/local/doja/voice/VoiceService.java').read_text(encoding='utf-8')
-        begin=source.index('if((captureCheck || interruptionCheck) && (!conversationOnly')
+        begin=source.index('if((captureCheck || interruptionCheck || outputCheck || decoderCheck) && (!conversationOnly')
         end=source.index('        wakeOnly',begin) if '        wakeOnly' in source[begin:] else source.index('        timerTrial =',begin)
         guard=source[begin:end]
         self.assertIn('!MainActivity.visibleToUser',guard)

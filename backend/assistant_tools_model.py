@@ -26,7 +26,7 @@ TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('create_alarm', 'Programa la alarma Android solicitada.'),
          tool('create_reminder', 'Programa el recordatorio solicitado, también «recuérdame».'),
          tool('search_web', 'Internet.'),
-         tool('set_phone_volume', 'Baja, sube o pon el volumen del teléfono, también «a la mitad». Usa esta herramienta sin argumentos.')]
+         tool('set_phone_volume', 'Ajusta el volumen multimedia del teléfono al porcentaje pedido. Ejemplos: sube el volumen al cien por ciento; baja el volumen al veinte por ciento; a la mitad. Sin argumentos.')]
 SYSTEM = ('Andrómeda. Sí puedes programar con herramientas. Alarmas/recordatorios usan el pedido actual, sin argumentos. '
           'Copia literal en español; no citas/negaciones.')
 
@@ -56,6 +56,7 @@ def native_call(message, finish):
 
 
 class AssistantToolsModel(ConversationModel):
+    confirmed_volume = False
     guided_agenda = False
     alarm_lifecycle = False
     anchor_wall = anchor_boot = 0
@@ -100,6 +101,16 @@ class AssistantToolsModel(ConversationModel):
 
     def enable_alarm_lifecycle(self):
         self.enable_agenda_dialogue(); self.alarm_lifecycle=True; self.payload=self.alarm_payload
+
+    def enable_confirmed_volume(self):
+        if self.confirmed_volume: return
+        self.confirmed_volume = True
+        original = self.payload
+        def payload(messages, maximum=96):
+            result = original(messages, maximum)
+            result['messages'][0]['content'] += ' Volumen: selecciona su herramienta aunque falte porcentaje; se preguntará y confirmará.'
+            return result
+        self.payload = payload
 
     def start(self, text, speech_end, session_end):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
@@ -173,6 +184,8 @@ class AssistantToolsModel(ConversationModel):
                         return finish({'kind': 'agenda_dialogue_start', 'event_kind': kind}, 'agenda_question')
                     return finish(dict(value, kind='agenda_proposal'), 'accepted')
                 if name == 'set_phone_volume':
+                    if self.confirmed_volume:
+                        return finish({'kind': 'volume_dialogue_start'}, 'volume_question')
                     validation = 'volume_request_rejected'
                     return finish({'kind': 'volume_proposal', 'percent': current_volume(human)}, 'accepted')
                 validation = 'web_query_rejected'
@@ -185,9 +198,9 @@ class AssistantToolsModel(ConversationModel):
                     web_attempted = True  # Search attempted, not proof that a provider received a request.
                     result = buscar_en_internet(query, time.monotonic() + max(0, remaining - 1.5), self.cancelled)
                     rows = result['fuentes']
-                    # Worker-first: no second LFM pass, no context read aloud,
-                    # no truncation disguised as the service's full answer.
-                    response = worker_answer(result, self.clock, self.work_deadline - 1500, self.cancelled)
+                    # Worker respuesta in full. Only non-Spanish text takes a
+                    # separate tool-free local translation, never local web QA.
+                    response = worker_answer(result, self.clock, self.work_deadline - 1500, self.cancelled, post=self.post)
                     self.context_metrics.update(web_answer_status=response['status'], web_answer_source_index=response['source_index'],
                                                 web_answer_input_tokens=response['input_tokens'])
                     return finish({'kind': 'web_result', 'text': response['text'], 'sources': rows,
@@ -202,7 +215,7 @@ class AssistantToolsModel(ConversationModel):
             except (ValueError, KeyError, TypeError, AgendaValidationError, TimerValidationError):
                 return finish({'kind': 'tools_rejected'}, validation)
         plain = normalized(human)
-        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:elimina|borra|cancela) la alarma\b|(?:baja|sube|ajusta|establece) el volumen\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
+        if re.match(r'^(?:andromeda[, ]+)?(?:por favor )?(?:recuerdame\b|(?:pon|ponme|crea|programa|inicia)\b|(?:elimina|borra|cancela) la alarma\b|(?:baja|baje|bajale|sube|suba|subele|ponle|ajusta|establece) el volumen\b|(?:alarma|recordatorio|temporizador|timer|cuenta atras)\b|(?:busca|investiga|consulta) (?:en|por) (?:internet|la web))', plain):
             return finish({'kind': 'tools_rejected'}, 'missing_native_call')
         try:
             plain_reply = conversational_reply(message, finish_reason)

@@ -36,10 +36,11 @@ def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False,
 
 
 class AssistantToolsTrial:
-    def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False):
+    def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False, confirmed_volume=False):
         self.clock, self.timer, self.inflight = clock, TimerTrial(clock), None
         self.consumed = set()
-        self.volume = VolumeTrial(clock)
+        if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
+        self.volume = VolumeTrial(clock,60000 if guided_agenda else 30000,confirmed_volume,maximum_sequence)
         self.guided_agenda = guided_agenda
         from agenda_dialogue import AgendaDialogue
         self.alarm_lifecycle=alarm_lifecycle
@@ -48,7 +49,7 @@ class AssistantToolsTrial:
         self.deletion=AlarmDeletion(clock,maximum_sequence)
 
     @property
-    def pending_dialogue(self): return self.dialogue.active or self.deletion.active
+    def pending_dialogue(self): return self.dialogue.active or self.deletion.active or self.volume.dialogue.active
 
     @staticmethod
     def deletion_response(response):
@@ -65,6 +66,11 @@ class AssistantToolsTrial:
 
     def human(self, turn, session, context, session_end):
         if not self.guided_agenda: return None
+        if self.volume.dialogue.active:
+            result = self.volume.dialogue.answer(turn,self.clock())
+            if result is None: return None
+            if result['kind']=='confirmed_volume_proposal': return self.model_result(result,turn,session,context,session_end)
+            return self.volume_dialogue_response(result)
         if self.alarm_lifecycle and self.deletion.active:
             response=self.deletion.human(turn,session,context,session_end)
             if response and response.get('executing'):
@@ -78,6 +84,12 @@ class AssistantToolsTrial:
 
     def spoken(self, turn_id, completed):
         self.dialogue.spoken(turn_id, completed); self.deletion.spoken(turn_id,completed)
+        self.volume.dialogue.spoken(turn_id,completed,self.clock())
+
+    @staticmethod
+    def volume_dialogue_response(result):
+        if result['kind'] not in {'volume_question','volume_cancelled'}: raise ValueError('Unknown volume dialogue response')
+        return {'text':result['text'],'timer_control':result['kind'],'offered_more':False}
 
     def completion(self, response):
         if self.guided_agenda and response is not None and response.get('close_reason') == 'action_result':
@@ -85,6 +97,16 @@ class AssistantToolsTrial:
         return response
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind']=='volume_dialogue_start':
+            if (not self.volume.confirmed or self.pending_dialogue or self.inflight or self.timer.inflight
+                    or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed):
+                raise ValueError('Volume form unavailable')
+            return self.volume_dialogue_response(self.volume.dialogue.begin(turn,self.clock()))
+        if result['kind']=='confirmed_volume_proposal':
+            if (self.inflight or self.timer.inflight or self.volume.inflight or self.deletion.grant
+                    or turn['id'] in self.consumed or len(self.consumed)>=24): raise ValueError('Second mutation')
+            response=self.volume.authorize_confirmed(result,turn,session,context,session_end)
+            self.consumed.add(turn['id']); return response
         if result['kind']=='alarm_delete_request':
             if not self.alarm_lifecycle or self.pending_dialogue or self.deletion.grant or self.inflight or self.timer.inflight or self.volume.inflight or turn['id'] in self.consumed or len(self.consumed)>=24:
                 raise ValueError('Alarm deletion unavailable/current turn consumed')
@@ -109,7 +131,7 @@ class AssistantToolsTrial:
             return response
         if result['kind'] == 'tools_rejected': return {'text': REJECTION, 'timer_control': 'rejected'}
         if result['kind'] == 'web_result':
-            direct = result.get('web_answer', {}).get('mode') == 'service_answer'
+            direct = result.get('web_answer', {}).get('mode') in {'service_answer', 'service_translation'}
             return {'text': ConversationFlow.with_offer(result['text'], maximum=2100 if direct else 700), 'sources': result['sources'], 'timer_control': 'web', 'offered_more': True,
                     **({'web_answer': result['web_answer']} if 'web_answer' in result else {})}
         if result['kind'] not in {'agenda_proposal', 'guided_agenda_proposal'} or self.inflight is not None or turn['id'] in self.consumed or len(self.consumed) >= 24:

@@ -30,8 +30,9 @@ final class SilenceListener implements AutoCloseable {
     private final Object captureLock = new Object();
     private volatile Handle activeHandle;
     private SilenceModels.Lease lease;
+    private Recognizer preparedDecoder;
     private Future<?> preparation;
-    private volatile boolean closed, ready;
+    private volatile boolean closed, ready, preparationFailed;
     volatile String error = "";
     volatile boolean echoCancellation;
     static final class Handle {
@@ -73,14 +74,30 @@ final class SilenceListener implements AutoCloseable {
             && mode != AudioManager.MODE_IN_CALL && mode != AudioManager.MODE_IN_COMMUNICATION;
     }
     synchronized void prepare() {
-        if (closed || preparation != null) return;
+        if (closed || ready || preparationFailed || preparation != null && !preparation.isDone()) return;
         preparation = worker.submit(() -> {
+            Recognizer decoder=null;
             try {
-                if (!safe(1200000, 380)) throw new IllegalStateException("Guardia de recursos/permisos");
-                lease = SilenceModels.acquire(context); ready = !closed;
-            } catch (Exception | LinkageError failure) { error = "Interrupción local no disponible"; }
+                if (!safe(lease==null?1200000:500000,lease==null?380:400)) throw new IllegalStateException("Guardia de recursos/permisos");
+                if(lease==null) lease = SilenceModels.acquire(context);
+                decoder=new Recognizer(lease.value,16000); decoder.setWords(true);
+                DecoderWarmup.Result result=warmDecoder(decoder,() -> !closed);
+                VoiceHealthStore.decoderWarmup(context,result);
+                synchronized(SilenceListener.this) {
+                    if(!closed) { preparedDecoder=decoder; decoder=null; ready=true; }
+                }
+            } catch (Exception | LinkageError failure) { preparationFailed=true; error = "Interrupción local no disponible"; }
+            finally { if(decoder!=null) decoder.close(); }
             notifyState();
         });
+    }
+    static DecoderWarmup.Result warmDecoder(Recognizer decoder,BooleanSupplier wanted) throws Exception {
+        return DecoderWarmup.prepare(new DecoderWarmup.Decoder() {
+            public boolean accept(byte[] pcm,int length) { return decoder.acceptWaveForm(pcm,length); }
+            public boolean empty(boolean endpoint) throws JSONException {
+                return new JSONObject(decoder.getResult()).getString("text").isEmpty();
+            }
+        },SystemClock::elapsedRealtime,wanted);
     }
     boolean awaitReady(long deadline) {
         prepare();
@@ -147,9 +164,12 @@ final class SilenceListener implements AutoCloseable {
         AudioRecord recorder = null; AcousticEchoCanceler echo = null; boolean started = false, acquired = false, counted=false;
         SilenceDiagnostics.End reason = SilenceDiagnostics.End.OUTPUT_ENDED;
         byte[] pcm=new byte[640]; boolean announced=false;
+        Recognizer claimed=null;
         try {
             if (!ready()) { reason = SilenceDiagnostics.End.NOT_READY; return; }
             if (!safe(500000, 400)) { reason = SilenceDiagnostics.End.GUARD; return; }
+            synchronized(this) { claimed=preparedDecoder; preparedDecoder=null; ready=false; }
+            if(claimed==null) { reason=SilenceDiagnostics.End.NOT_READY; return; }
             while (!closed && policy.preparing(ticket,SystemClock.elapsedRealtime()) && handle.wanted.getAsBoolean()) {
                 if (AudioInputGate.acquire(micOwner)) { acquired = true; break; }
                 SystemClock.sleep(10);
@@ -168,8 +188,8 @@ final class SilenceListener implements AutoCloseable {
                     echoCancellation = echo != null && echo.setEnabled(true) == android.media.audiofx.AudioEffect.SUCCESS && echo.getEnabled();
                 } catch (RuntimeException unsupported) { echoCancellation = false; }
             }
-            try (Recognizer recognizer = new Recognizer(lease.value, 16000)) {
-                recognizer.setWords(true);
+            try (Recognizer recognizer = claimed) {
+                claimed=null;
                 synchronized(captureLock) {
                     if(closed || handle.stopRequested.get() || !policy.current(ticket,SystemClock.elapsedRealtime())) return;
                     handle.recorder=recorder; recorder.startRecording(); started = true;
@@ -212,6 +232,7 @@ final class SilenceListener implements AutoCloseable {
                     if(!policy.playing(ticket,SystemClock.elapsedRealtime()) || !InterruptionAudioClock.afterStart(end,count,policy.started(ticket))) continue;
                     long decode=SystemClock.elapsedRealtime(); boolean endpoint=recognizer.acceptWaveForm(pcm, count);
                     diagnostic.decoded(SystemClock.elapsedRealtime()-decode);
+                    diagnostic.processed(Math.max(0,SystemClock.elapsedRealtime()-end));
                     if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
                     if (endpoint) {
                         String result = recognizer.getResult();
@@ -219,11 +240,14 @@ final class SilenceListener implements AutoCloseable {
                         JSONObject parsed = new JSONObject(result);
                         String text=parsed.optString("text");
                         boolean explicit=handle.alarmCommand==null ? SilenceWindowPolicy.isCommand(text) : AlarmOccurrencePolicy.command(text)!=null;
+                        diagnostic.processed(Math.max(0,SystemClock.elapsedRealtime()-end));
+                        if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
                         boolean accepted = policy.accept(ticket,explicit,confidence,SystemClock.elapsedRealtime());
                         diagnostic.endpoint(parsed.optJSONArray("result") == null ? 0 : parsed.getJSONArray("result").length(), accepted);
                         if (accepted) {
                             reason = SilenceDiagnostics.End.DETECTED;
                             diagnostic.detected(SystemClock.elapsedRealtime());
+                            diagnostic.finish(reason,SystemClock.elapsedRealtime());
                             main.post(() -> {
                                 if (!closed && handle.wanted.getAsBoolean() && policy.claimCallback(ticket,SystemClock.elapsedRealtime())) {
                                     diagnostic.callback(SystemClock.elapsedRealtime()); if(handle.alarmCommand==null) handle.command.run(); else handle.alarmCommand.accept(text);
@@ -244,6 +268,7 @@ final class SilenceListener implements AutoCloseable {
                 }
             }
             if (echo != null) try { echo.release(); } catch (Exception ignored) {}
+            if(claimed!=null) claimed.close(); // Early cancellation before capture never retains a decoder.
             // startRecording may succeed before a later initialization check throws.
             if (counted) microphones.decrementAndGet();
             if (acquired) AudioInputGate.release(micOwner);
@@ -252,11 +277,15 @@ final class SilenceListener implements AutoCloseable {
                 else if (SystemClock.elapsedRealtime() >= ticket.expires) reason = SilenceDiagnostics.End.EXPIRED;
             }
             java.util.Arrays.fill(pcm,(byte)0);
+            diagnostic.finish(reason, SystemClock.elapsedRealtime());
+            VoiceHealthStore.interruption(context,handle);
             if(reason!=SilenceDiagnostics.End.DETECTED && reason!=SilenceDiagnostics.End.CLOSED && reason!=SilenceDiagnostics.End.OUTPUT_ENDED) {
                 error="Escucha de interrupción no disponible"; unavailable(handle);
             }
-            diagnostic.finish(reason, SystemClock.elapsedRealtime());
             jobs.decrementAndGet(); notifyState();
+            // A fresh, public-only decoder for the next output. Never reset or
+            // pool the one that saw human audio; the single worker closes it first.
+            if(!closed && (reason==SilenceDiagnostics.End.OUTPUT_ENDED || reason==SilenceDiagnostics.End.DETECTED)) prepare();
         }
     }
     synchronized void end() { policy.end(); stopCaptureAsync(activeHandle); activeHandle=null; }
@@ -267,7 +296,7 @@ final class SilenceListener implements AutoCloseable {
         Thread cleanup=new Thread(() -> {
             try { while(!worker.awaitTermination(1,TimeUnit.SECONDS)) { /* No restart; wait for owned native work to release. */ } }
             catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); return; }
-            finally { if(worker.isTerminated()) { if(lease!=null) { lease.close(); lease=null; } cleaned.countDown(); } }
+            finally { if(worker.isTerminated()) { if(preparedDecoder!=null) { preparedDecoder.close(); preparedDecoder=null; } if(lease!=null) { lease.close(); lease=null; } cleaned.countDown(); } }
         },"andromeda-interrupt-close");
         cleanup.setDaemon(true); cleanup.start();
     }

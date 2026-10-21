@@ -227,8 +227,8 @@ class ContinuousVoiceTests(unittest.TestCase):
         raw=Mock(); raw.__enter__=Mock(return_value=raw); raw.__exit__=Mock(return_value=False); server.accept.return_value=(raw,('127.0.0.1',1))
         conn=Mock(); conn.__enter__=Mock(return_value=conn); conn.__exit__=Mock(return_value=False)
         context=Mock(); context.wrap_socket.return_value=conn
-        hello=dict(token='public-key-'*4,protocol=12,mode='assistant_tools',source='synthetic_pcm',web_response_mode='worker_first_v2_medium',
-            phone_volume_policy='absolute_media_v1',agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
+        hello=dict(token='public-key-'*4,protocol=12,mode='assistant_tools',source='synthetic_pcm',web_response_mode='worker_first_v3_spanish',
+            phone_volume_policy='absolute_media_v2_turn60',agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
             voice_lifetime_policy='continuous_voice_v1',dialogue_reset_policy='client_fresh_v1',context=dict(version=1,id='a'*32,last_human_ms=0,turns=[]))
         with tempfile.TemporaryDirectory() as directory:
             key=Path(directory)/'key'; key.write_text(hello['token'])

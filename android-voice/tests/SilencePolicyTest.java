@@ -49,7 +49,9 @@ public final class SilencePolicyTest {
             check(!window.containsKey("pcm") && !window.containsKey("text") && !window.containsKey("turn_id"), "Diagnostic stored human content/IDs");
             window.clear();
         }
-        check(SilenceDiagnostics.snapshot().get(0).size() == 23, "Caller altered retained diagnostics");
+        check(SilenceDiagnostics.snapshot().get(0).size() == 26, "Caller altered retained diagnostics");
+        check(SilenceDiagnostics.snapshot().get(0).get("began_ms").equals(2004L)
+            && SilenceDiagnostics.snapshot().get(0).get("ended_ms").equals(3004L), "Final numeric receipt clock missing");
         Object full = new Object(), interrupt = new Object();
         check(AudioInputGate.acquire(full), "Full microphone lease failed");
         check(!AudioInputGate.acquire(interrupt), "Two AudioRecords allowed");

@@ -1,0 +1,30 @@
+human	candidate
+Andrómeda, baja el volumen al veinte por ciento	20
+¿Me puedes bajar el volumen al veinte por ciento, por favor?	20
+quiero que dejes el volumen en el 20%	20
+ponlo al veinte porciento	20
+déjalo al ciento por ciento	100
+sube el volumen al cien por ciento	100
+ajústalo a treinta y siete por ciento	37
+baja a la mitad	50
+pon el volumen a cero	0
+un por ciento	1
+un poco	NONE
+pon el volumen al 20 o al 30	NONE
+pon el volumen al ciento veinte	NONE
+ponlo al 101 por ciento	NONE
+bájalo un poco	NONE
+ponlo a la mitad del actual	NONE
+no bajes el volumen al veinte	INVALID
+si digo baja el volumen al veinte	INVALID
+ayer dije baja el volumen al veinte	INVALID
+di «baja el volumen al veinte»	INVALID
+sube el volumen de la TV al veinte	INVALID
+baja el volumen de llamadas al veinte	INVALID
+pon el volumen al 20 mañana	INVALID
+sube el volumen al 20 y apaga el TV	INVALID
+busca en Internet volumen al 20	INVALID
+ponlo al -1	INVALID
+ponlo al 12,5	INVALID
+ponlo al ５０	INVALID
+ponlo al ٥٠	INVALID

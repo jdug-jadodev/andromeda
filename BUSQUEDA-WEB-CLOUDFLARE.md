@@ -1,5 +1,37 @@
 # Búsqueda web del Worker → Andrómeda
 
+## Vigente:33 activo; respuestaES íntegra instalada, fidelidadEN pendiente
+
+Humano confirmó Detener accidental. InstaladosAPK33+5 módulos coordinados/firma/
+UID/datos/sistema/baseagendaACTUAL preservados. Nueva activación explícita deja
+modelo/voz activos sin autorestart. ES602caracteres se conservaentero/0inferencias.
+PruebaENreal43,3s pasó cifras pero omitió tarifa semestral: **NO aceptada** por
+recibo `service_translation`. Se mantiene33 activo para agenda sin volver a cortar.
+PreparadoLOCALunapasa512 solo traductor/selector96, parser≤2000 y rechazo elipsis/
+comentarios,469 Python467 pasan/2skips; no instalado ni nativo. Referencia actual
+`artifacts/android-voice/web-response-spanish-live-v1/`, pendiente
+`artifacts/android-voice/web-translation-whole-candidate-v1/`. Silencio y búsqueda
+automática pospuestos. Todo apagado/noinstalado33 inferior es histórico.
+
+## Vigente: APK32 instalado; corrección web33 LOCAL, no instalada
+
+**Estado final:** cliente cerró la sesión; controlGLOBAL not_running/modelo0. Agente
+no apagó/reinició/instaló ni escribió el teléfono. Último CONNECT es posterior y no
+explica cierre original; aclarar Detener/error antes de reactivar, sin autoreinicio.
+
+El usuario pide mantener modelo/sesión para probar alarmas y recordatorios, y
+pospone «silencio». Se respeta: sin stop/restart/reconexión/instalación ni consultas
+Worker del agente. Candidato33 lee `respuesta` del JSONok íntegra en español, en
+lugar de prefijo360. Si viene en inglés, traduce solo ese campo localmente, sin
+historia/tools/query adicional; conserva2000unidades/60s y plazo único. Errores de
+traducción ya no dicen que faltaban fuentes. Capacidad `worker_first_v3_spanish`
+requiere APK+backend coordinados; el backendactivo no tiene recarga segura, por
+lo que NO se aplicó a mitad de las pruebas humanas.463 Python461 pasan/2skips,
+Java65web/build33 pasan, traducción LFM/voz real aún pendientes. Referencia candidata
+`artifacts/android-voice/web-response-spanish-candidate-v1/`; instalado/dueño32
+siguen en `artifacts/android-voice/spoken-silence-final-v1/`. Búsqueda automática
+cuando el modelo no sepa queda para después. Todo estado inferior es histórico.
+
 ## Estado y alcance
 
 **Estado posterior más reciente:**mitad corregida en la descripción nativa y

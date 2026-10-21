@@ -2,7 +2,51 @@
 
 20 de octubre de 2026. Siguiente prioridad tras la prueba física de volumen.
 
-## Estado vigente:30/13 instalado; servicio de voz y modelo continuos activados
+**Vigente:**33/13 activo tras aclaración de Detener accidental. APK+5webactualizados
+sin pérdida de datos/baseactual2DELIVERED; activación nueva explícita con Detener,
+sin autoinicio. ES602íntegro comprobado; EN43,3s perdió tarifa semestral: NO fidelidad
+aceptada por pasar cifras. Modelo se mantiene para agenda, sin volverlo a cortar.
+CandidatoLOCAL traducción entera512 solo traductor/selector96,469 Python467 pasan/
+2skips, no instalado/nativo. Actual `web-response-spanish-live-v1`, pendiente
+`web-translation-whole-candidate-v1`. Silencio/búsqueda automática pendientes;
+apartados apagados/instrucción no aplicar33 inferiores son historia.
+
+**Comprobación final posterior:** controlGLOBAL not_running, sesión cerrada por
+cliente,0 modelo/servicios. Agente no apagó/reinició/instaló ni escribió teléfono.
+Causa inicial no identificable del último CONNECT posterior; no autoreactivar
+sin aclarar parada humana/error. Web33 preparadoLOCAL, no instalado. Escucha activa
+descrita en hitos anteriores no es el estado final.
+
+**Vigente tras instrucción humana:** preservar modelo32/PID y sesión para pruebas
+de alarmas/recordatorios; no stop/restart/instalación. Candidatoweb33LOCAL: respuesta
+JSONcompletaES/traducciónEN local acotada sin tools/query extra;463 Python461 pasan/
+2skips, Java/build pasan. No recarga segura del backendactivo: aplicación posterior,
+sin inyección de código ni reconectar ahora. Referencia candidata
+`artifacts/android-voice/web-response-spanish-candidate-v1/`; instalado/dueño32
+continúan en `spoken-silence-final-v1`. Silencio y búsqueda automática pospuestos.
+
+## Estado vigente:32/13; prueba nativa de palabras pasa, silencio humano pendiente
+
+Humano confirma voz31, falla silencio. Fase12/error8 con diagnóstico aún RECORDING
+por carrera no prueba causa terminal.32 guarda fin antes de avisar fallo;11 números
+adicionales sin contenido. Mismos pesos/search/0,8, bloquesNN6, guardias250/500ms
+intactas.4 casos públicos Vosk pasan sin mic/altavoz/TLS/LFM/acciones/instrumentación,
+edad máxima165ms; no aceptación acústica.454 Python:452 pasan/2skips, Java pasa.
+Firma/UID/datos/agenda3/sistema/modelo ybackend preservados. Referencia actual
+`artifacts/android-voice/spoken-silence-final-v1/`; activación explícita/Detener,
+sin reinicio/reconexión/boot automático. Falta silencio real y siguiente turno.
+
+### Hito anterior:31/13 con salida calentada; sin interrupción humana verificada
+
+Recibo confirma corte por decode283ms > frescura250ms. ASR se prepara ahora con
+ceros públicos antes deTTS y se descarta tras cada salida humana; sin parciales,
+pool humano o guardias rebajadas. Tres salidas reales completas: máximo147ms y
+pre-arm376ms. Lectorproc residual corregido con NUL acotado1s y PID/start/UID/caps/
+exe;9 casosAndroid y cierre real sin mic confirman0 lectores/credenciales.451 Python:
+449 pasan/2skips y Java pasa. APK31/UID/datos/sistema preservados, dueño continuo
+nuevo explícito/Detener sin autorestart o pilotos renovados. Referencia actual
+`artifacts/android-voice/decoder-warmup-final-v1/`; eco/silencio y herramientas
+humanas aún no certificados. Apartados inferiores son estados históricos.
 
 Después del error humano se añadieron recibos numéricos y comprobaciones aisladas,
 sin instrumentación/transcripciones. Preparación sin mic, captura/reloj con PCM

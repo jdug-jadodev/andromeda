@@ -1,4 +1,54 @@
-# Agenda y web · instalado30/protocolo13 · aceptación hablada pendiente
+# Agenda y web · instalado33/protocolo13 · voz activa, traducciónEN pendiente
+
+## Vigente tras confirmación de Detener accidental
+
+APK33+5web coordinados con firma/UID/datos/sistema/agendaACTUAL2DELIVERED intactos;
+activación explícita nueva/Detener, modelo/voz activos para pruebas humanas. ES602
+íntegro sin prefijo360 comprobado. ENnativo43,3s perdió tarifa semestral/comentó:
+NO aceptar fidelidad por igualdad de números. Se conserva sesión activa; candidato
+LOCALtraducción completa512 solo traductor (selector96) y parser≤2000/antiellipsis,
+469 Python467 pasan/2skips, no instalado/nativo. Referencias actuales
+`artifacts/android-voice/web-response-spanish-live-v1/` y pendiente
+`artifacts/android-voice/web-translation-whole-candidate-v1/`. Silencio/autoWeb
+pospuestos; estados apagados/33soloLOCAL inferiores son históricos.
+
+
+**Estado final:** dueño32 cerró por cliente; GLOBAL not_running/modelo0. No hubo
+parada/reinicio/instalación/escrituras del agente. Recibo último CONNECT posterior
+no identifica cierre original; aclarar Detener/error antes de activar. Candidato33
+sigueLOCAL/no aplicado; no afirmar que la voz siga disponible por el estado previo.
+
+## Último pedido: mantener modelo activo; web33 preparada pero NO aplicada
+
+Se reproducen con JSON públicos: inglés descartado y español>360 leído como prefijo.
+Candidato33 lee respuestaES íntegra, traduce solo respuestaEN local/tool-free y
+separa fallo de traducción de ausencia de fuentes. Límites2000/60s y permisos
+intactos;463 Python461 pasan/2skips y Java/build33 pasan, sin red/modelo real. No
+instalación/reinicio: el humano prueba agenda con32/mismo dueño y el backend no
+recarga seguro. `artifacts/android-voice/web-response-spanish-candidate-v1/` no es
+estado instalado. Silencio y búsqueda automática quedan para después.
+
+## Vigente: humano confirma voz, informa nuevo fallo al interrumpir
+
+32 reduce unidadNN a6 sin cambiar pesos/search/0,8 ni guardias250/500ms; guarda motivo
+final antes del aviso de fallo (31 no lo hizo: RECORDING/3). Prueba nativa pública
+reconoce2 órdenes y rechaza negación/cita, edad máxima165ms; sin mic/altavoz/TLS/LFM/
+tools/instrumentación.454 Python:452 pasan/2skips y Java pasan. Worker-first/agenda3/
+recibos/firma/UID/datos/sistema intactos. Referencia actual
+`artifacts/android-voice/spoken-silence-final-v1/`, activación explícita con Detener,
+sin autorestart. Falta silencio humano→otra petición; no certificar por prueba pública.
+
+## Hito anterior: tres salidas reales completas, ruta de web sin cambios
+
+Decode283ms provocaba corte de interrupción al hablar; se prepara el decodificador
+solo con ceros públicos antes deTTS/captura y se reemplaza tras cada salida humana.
+Tres frases públicas completaron: pico147ms/pre-arm376ms, frescura250ms/0,8 intactos,
+sin parciales o cambios de fuente/volumen. Worker corrige lectorproc colgado con
+lecturas acotadas1s; cierre real0 lectores/claves. APK31/UID/agenda3/recibos/sistema
+preservados; conversación continua reactivada explícitamente con Detener. No
+consultasWeb o avisos falsos del agente, no autoarranque/reconexión/renovación.
+Referencia vigente `artifacts/android-voice/decoder-warmup-final-v1/`. Falta comprobar
+eco/silencio, lecturaWorker y herramientas con humano/recibos; historia debajo.
 
 ## Estado vigente: sesión continua activada y observada, recibos numéricos disponibles
 
