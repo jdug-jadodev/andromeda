@@ -2,6 +2,10 @@ $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot 'src\local\doja\voice'
 $output = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\android-voice\policy-tests'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+& javac -encoding UTF-8 -d $output "$source\LightColor.java" "$source\LightTarget.java" "$source\LightCommand.java" "$source\LightCommandParser.java" "$PSScriptRoot\tests\LightCommandTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Light command parser compilation failed' }
+& java -cp $output local.doja.voice.LightCommandTest
+if ($LASTEXITCODE -ne 0) { throw 'Light command parser tests failed' }
 & javac -encoding UTF-8 -d $output "$source\VoiceStartPolicy.java" "$PSScriptRoot\tests\VoiceStartPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Voice startup policy compilation failed' }
 & java -cp $output local.doja.voice.VoiceStartPolicyTest
