@@ -53,6 +53,7 @@ public class VoiceService extends Service {
     volatile boolean assistantTools;
     volatile boolean continuousVoice, awaitingContext, dialogueEnded;
     volatile boolean audioYielded, resumeRequested;
+    PowerManager.WakeLock continuousWakeLock;
     volatile int contextGeneration;
     volatile AgendaActionChannel agendaChannel;
     volatile AlarmActionChannel alarmChannel;
@@ -166,6 +167,13 @@ public class VoiceService extends Service {
         timerTrialActive = timerTrial;
         assistantToolsActive = assistantTools;
         continuousVoiceActive = continuousVoice;
+        if (VoiceLifecyclePolicy.holdCpuWhileScreenOff(continuousVoice)) {
+            try {
+                PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+                continuousWakeLock=power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"andromeda:continuous-voice");
+                continuousWakeLock.setReferenceCounted(false); continuousWakeLock.acquire();
+            } catch (RuntimeException ignored) { continuousWakeLock=null; }
+        }
         if (!wakeOnly && !conversationOnly) initializeTts();
         int requestedSeconds = intent == null ? 90 : intent.getIntExtra("seconds", 90);
         final int seconds = requestedSeconds == 300 ? 300 : 90;
@@ -1067,6 +1075,8 @@ public class VoiceService extends Service {
         closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
         if (tts != null) { stopSpeechOutput(); try { tts.shutdown(); } catch(RuntimeException ignored) { /* Stop failure is not a successful playback receipt. */ } }
+        if (continuousWakeLock != null && continuousWakeLock.isHeld()) continuousWakeLock.release();
+        continuousWakeLock=null;
         state(lastError.isEmpty() ? (prepared ? "Preparación local completada · micrófono apagado" : conversationClosed ? (contextLease == null ? "Micrófono apagado · búsqueda cerrada" : "Micrófono apagado · charla cerrada; contexto retomable hasta 1 h sin actividad")
             : pilotExpired ? "Micrófono apagado · terminó el piloto" : "Micrófono apagado") : "Micrófono apagado · " + lastError, lastError.isEmpty() ? FaceState.MUTED : FaceState.ERROR, null); stopForeground(true); super.onDestroy();
     }

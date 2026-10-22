@@ -6,6 +6,26 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Light command parser compilation failed' }
 & java -cp $output local.doja.voice.LightCommandTest
 if ($LASTEXITCODE -ne 0) { throw 'Light command parser tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\LotusLampProtocol.java" "$PSScriptRoot\tests\LotusLampProtocolTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Lotus protocol compilation failed' }
+& java -cp $output local.doja.voice.LotusLampProtocolTest
+if ($LASTEXITCODE -ne 0) { throw 'Lotus protocol tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\MrStarProtocol.java" "$PSScriptRoot\tests\MrStarProtocolTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'MR Star protocol compilation failed' }
+& java -cp $output local.doja.voice.MrStarProtocolTest
+if ($LASTEXITCODE -ne 0) { throw 'MR Star protocol tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\LightCommandRouting.java" "$PSScriptRoot\tests\LightCommandRoutingTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Light routing compilation failed' }
+& java -cp $output local.doja.voice.LightCommandRoutingTest
+if ($LASTEXITCODE -ne 0) { throw 'Light routing tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\LightWriteAuthorization.java" "$source\LightCommandExecutionPolicy.java" "$PSScriptRoot\tests\LightWriteAuthorizationTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Light authorization compilation failed' }
+& java -cp $output local.doja.voice.LightWriteAuthorizationTest
+if ($LASTEXITCODE -ne 0) { throw 'Light authorization tests failed' }
+& javac -encoding UTF-8 -d $output "$source\VoiceLifecyclePolicy.java" "$PSScriptRoot\tests\VoiceLifecyclePolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Voice lifecycle policy compilation failed' }
+& java -cp $output local.doja.voice.VoiceLifecyclePolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Voice lifecycle policy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\VoiceStartPolicy.java" "$PSScriptRoot\tests\VoiceStartPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Voice startup policy compilation failed' }
 & java -cp $output local.doja.voice.VoiceStartPolicyTest

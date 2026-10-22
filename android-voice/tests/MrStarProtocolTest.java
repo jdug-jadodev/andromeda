@@ -1,0 +1,31 @@
+package local.doja.voice;
+
+import java.util.List;
+
+/** Pure MR Star protocol gate: captured frames only, no Android or BLE. */
+public final class MrStarProtocolTest {
+    static int checks;
+    static void check(boolean value) { checks++; if (!value) throw new AssertionError("MR Star protocol check " + checks); }
+    static void checkHex(String expected, byte[] actual) { check(expected.equals(MrStarProtocol.hex(actual))); }
+    static void invalid(LightCommand command) {
+        try { MrStarProtocol.framesFor(command); throw new AssertionError("Accepted unvalidated MR Star order"); }
+        catch (IllegalArgumentException expected) { checks++; }
+    }
+
+    public static void main(String[] args) {
+        checkHex("BC 04 06 00 00 03 E8 00 00 55", MrStarProtocol.color(LightColor.parseHex("#FF0000")));
+        checkHex("BC 04 06 00 78 03 E8 00 00 55", MrStarProtocol.color(LightColor.parseHex("#00FF00")));
+        checkHex("BC 04 06 00 F0 03 E8 00 00 55", MrStarProtocol.color(LightColor.parseHex("#0000FF")));
+        checkHex("BC 05 06 01 0D 00 00 00 00 55", MrStarProtocol.brightness25());
+        checkHex("BC 01 01 01 55", MrStarProtocol.power(true));
+        checkHex("BC 01 01 00 55", MrStarProtocol.power(false));
+        List<byte[]> frames = MrStarProtocol.framesFor(
+            LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#FF0000"), 25));
+        check(frames.size() == 2);
+        checkHex("BC 05 06 01 0D 00 00 00 00 55", frames.get(1));
+        invalid(LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#FFFFFF")));
+        invalid(LightCommand.color(LightTarget.LOTUS, LightColor.parseHex("#FF0000")));
+        invalid(LightCommand.preset(LightTarget.MR_STAR, "calido_tranquilo"));
+        System.out.println("MR Star protocol: " + checks + " assertions passed (captured frames, no radio or mutation).");
+    }
+}

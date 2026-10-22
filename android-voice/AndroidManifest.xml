@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="51" android:versionName="0.13.23-lights-ui-power">
+    android:versionCode="55" android:versionName="0.13.27-engine-status-json">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -67,4 +67,8 @@
         android:label="Servicios BLE MELK, conexión efímera sin lectura ni escritura" android:functionalTest="true" />
     <instrumentation android:name=".BleAddressServiceDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Servicios BLE MELK por dirección, solo lectura estructural" android:functionalTest="true" />
+    <instrumentation android:name=".LotusWriteInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Una escritura Lotus explícitamente autorizada, sin reintentos" android:functionalTest="true" />
+    <instrumentation android:name=".MrStarServiceDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Inventario GATT MR Star, solo lectura y sin escritura" android:functionalTest="true" />
 </manifest>

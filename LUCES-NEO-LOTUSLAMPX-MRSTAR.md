@@ -1,4 +1,4 @@
-# Luces NEO: descubrimiento BLE ejecutado; objetivo no encontrado
+# Luces NEO: descubrimiento BLE ejecutado; Lotus y MR Star identificados
 
 Prioridad renovada por el usuario: retomar recordatorios, alarmas, chistes y
 cuentos; después iniciar luces y luego TV. Plan actual en
@@ -26,6 +26,66 @@ identidad y servicios/características reales, adaptar cada protocolo por separa
 No adivinar comandos por similitud con ELK-BLEDOM/otros controladores ni escribir
 paquetes hasta identificar el adaptador. Un ACK de GATT no demuestra por sí solo
 que la luz cambió; exigir estado leído/notificado o confirmación humana.
+
+## Inventario MR Star confirmado en el A56
+
+El escáner independiente `local.doja.mrstar.scanner` encontró exactamente
+`GATT--DEMO` y realizó una conexión efímera de solo lectura. Enumeró 4 servicios
+y 8 características:
+
+- servicios: `1800`, `1801`, `FFF0` y `FF12`;
+- `FFF3` tiene propiedades `0x0C` (write/write-no-response);
+- `FFF4` tiene propiedad `0x10` (notify);
+- `FF15` tiene `0x06` y `FF14` tiene `0x10`;
+- el servicio candidato `2022` **no** apareció.
+
+No se leyeron valores, no se escribió, no se emparejó y no se exportó la
+dirección. Evidencia sanitizada: `artifacts/android-voice/mr-star-discovery-v1/`.
+La presencia de `FFF3` no autoriza reutilizar Lotus: falta capturar cada orden
+MR Star de forma diferencial.
+
+La primera captura diferencial de color, realizada mientras el controlador
+normal ejecutaba únicamente rojo, produjo el Write Without Response en el
+handle `0x000E`:
+
+`BC 04 06 00 00 03 E8 00 00 55`
+
+Esto confirma la familia de trama `BC … 55` para este dispositivo, pero todavía
+no asigna todos sus campos ni autoriza reproducirla desde Andrómeda.
+
+La segunda captura diferencial, ejecutando únicamente azul, produjo:
+
+`BC 04 06 F0 03 E8 00 00 55`
+
+Frente al rojo, el campo en la posición 3 cambió de `00` a `F0`; esto es una
+correlación de tono observada, no aún una especificación completa.
+
+La tercera captura primaria, ejecutando únicamente verde, produjo
+`BC 04 06 00 78 03 E8 00 00 55`. Los tres primarios observados corresponden a
+tonos `0`, `120` y `240`, con saturación `1000`; falta validar saturación cero
+antes de generalizar colores RGB arbitrarios.
+
+La tentativa de blanco incluyó varios movimientos y produjo una secuencia de
+tonos/saturaciones (`30/984`, `78/39`, `84/39`, `100/47`, `105/47`) además de
+eventos de energía. No apareció un frame inequívoco de saturación cero, por lo
+que blanco sigue sin estar validado y esos intentos no se reproducirán.
+
+La captura de brillo al 25% produjo `BC 05 06 01 0D 00 00 00 00 55`.
+El valor `0D` queda registrado como código observado para ese ajuste; no se
+tratará como porcentaje lineal sin más muestras.
+
+Al mover el control dos veces para aproximar la mitad, se observaron dos
+writes, `BC 05 06 01 E6 00 00 00 00 55` y `BC 05 06 02 4A 00 00 00 00 55`.
+La acción fue deliberadamente aproximada y no se etiqueta como 50%; el control
+puede enviar eventos intermedios o códigos no lineales.
+
+La captura diferencial de apagado produjo el frame corto `BC 01 01 00 55`.
+Sigue pendiente comparar el encendido; ningún frame MR Star se ha reproducido
+desde Andrómeda.
+
+La captura diferencial de encendido produjo `BC 01 01 01 55`. Los cuatro
+comandos básicos observados ya están separados, pero los adaptadores siguen
+sin estar conectados a la UI o a la voz.
 
 Control futuro: selección nativa y pedido humano vigente, límites de brillo/color,
 una mutación por turno, sin retries de resultado incierto, credenciales locales y

@@ -34,12 +34,15 @@ public class MainActivity extends Activity {
     private final SimpleDateFormat weatherTimeFormat = new SimpleDateFormat("HH:mm", new Locale("es", "CO"));
     private final ExecutorService weatherWorker = Executors.newSingleThreadExecutor();
     private final ExecutorService agendaWorker = Executors.newSingleThreadExecutor();
+    private final ExecutorService engineWorker = Executors.newSingleThreadExecutor();
     private final WeatherClient weatherClient = new WeatherClient();
+    private LightCommandDispatcher lightDispatcher;
     private Future<?> weatherTask;
     private WeatherData weatherData;
     private volatile boolean weatherBusy;
     private boolean weatherFailed, resumed, preview, showingFace, ambientGesture;
-    private int lightBrightnessPercent = 100;
+    private int lightBrightnessPercent = 25;
+    private boolean pendingVoiceActivation;
     private int weatherGeneration, previewIndex;
     private long previewEnds, lastWeatherFetch;
     private AlertDialog optionsDialog;
@@ -94,6 +97,7 @@ public class MainActivity extends Activity {
 
     public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        lightDispatcher = new LightCommandDispatcher(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         for (SimpleDateFormat format : new SimpleDateFormat[]{clockFormat, dateFormat, weatherTimeFormat})
             format.setTimeZone(TimeZone.getTimeZone("America/Bogota"));
@@ -275,7 +279,7 @@ public class MainActivity extends Activity {
         getSharedPreferences("ui", MODE_PRIVATE).edit().putInt("loader_color", color).apply(); noteOptionsInteraction();
     }
     private void lightOptions() {
-        showDialog(new AlertDialog.Builder(this).setTitle("Luces · elige objetivo · simulación")
+        showDialog(new AlertDialog.Builder(this).setTitle("Luces · elige objetivo")
             .setItems(new String[]{"Ambas luces", "LotusLamp X · MELK-OA10 17", "MR Star · GATT--DEMO"}, (dialog, index) ->
                 lightCommandOptions(index == 0 ? LightTarget.BOTH : index == 1 ? LightTarget.LOTUS : LightTarget.MR_STAR))
             .setNegativeButton("Volver", null).create());
@@ -285,13 +289,17 @@ public class MainActivity extends Activity {
         java.util.ArrayList<Runnable> actions = new java.util.ArrayList<>();
         labels.add("Encender"); actions.add(() -> simulateLightCommand(LightCommand.power(target,true)));
         labels.add("Apagar"); actions.add(() -> simulateLightCommand(LightCommand.power(target,false)));
-        addLightColor(labels, actions, target, "Rosa", "#FF8FD0");
-        addLightColor(labels, actions, target, "Blanco", "#FFFFFF");
-        addLightColor(labels, actions, target, "Azul", "#0000FF");
-        addLightColor(labels, actions, target, "Ámbar", "#FFBF00");
+        if (target == LightTarget.LOTUS) {
+            addLightColor(labels, actions, target, "Rosa", "#FF8FD0");
+            addLightColor(labels, actions, target, "Blanco", "#FFFFFF");
+            addLightColor(labels, actions, target, "Azul", "#0000FF");
+            addLightColor(labels, actions, target, "Ámbar", "#FFBF00");
+        } else {
+            addLightColor(labels, actions, target, "Rojo", "#FF0000");
+            addLightColor(labels, actions, target, "Verde", "#00FF00");
+            addLightColor(labels, actions, target, "Azul", "#0000FF");
+        }
         labels.add("Brillo · "+lightBrightnessPercent+"%"); actions.add(() -> lightBrightnessOptions(target));
-        labels.add("Cálido tranquilo · preset"); actions.add(() -> simulateLightCommand(LightCommand.preset(target,"calido_tranquilo",lightBrightnessPercent)));
-        labels.add("Patrón gamer · capacidad pendiente"); actions.add(() -> simulateLightCommand(LightCommand.pattern(target,"gamer",lightBrightnessPercent)));
         labels.add("Usar hexadecimal…"); actions.add(() -> lightHexDialog(target,false));
         labels.add("Guardar hexadecimal…"); actions.add(() -> lightHexDialog(target,true));
         for (java.util.Map.Entry<String,LightColor> entry:LightPresetStore.list(this).entrySet()) {
@@ -306,6 +314,13 @@ public class MainActivity extends Activity {
         labels.add(name+" "+hex); actions.add(() -> simulateLightCommand(LightCommand.color(target,LightColor.parseHex(hex),lightBrightnessPercent)));
     }
     private void lightBrightnessOptions(LightTarget target) {
+        if (target == LightTarget.MR_STAR || target == LightTarget.BOTH) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Brillo · "+lightTargetLabel(target))
+                .setMessage("Solo 25% está validado para MR Star; no se enviarán otros valores.")
+                .setPositiveButton("Usar 25%", (dialog, which) -> { lightBrightnessPercent=25; lightCommandOptions(target); })
+                .setNegativeButton("Volver", (dialog, which) -> lightCommandOptions(target)).create());
+            return;
+        }
         String[] values={"100% · máximo","75%","50%","25%","0% · apagado","Personalizado…"};
         showDialog(new AlertDialog.Builder(this).setTitle("Brillo · "+lightTargetLabel(target))
             .setItems(values,(dialog,index) -> {
@@ -329,8 +344,8 @@ public class MainActivity extends Activity {
         EditText name=new EditText(this); name.setSingleLine(true); name.setHint("Nombre, por ejemplo atardecer");
         if(save)fields.addView(name);
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle(save?"Guardar color personalizado":"Color hexadecimal")
-            .setMessage(save?"Se guardará solo en este teléfono. Todavía no se enviará a ninguna luz.":"Acepta #RRGGBB o RRGGBB; esta fase solo simula la orden.")
-            .setView(fields).setNegativeButton("Volver", (d,w) -> lightCommandOptions(target)).setPositiveButton(save?"Guardar y simular":"Simular", null).create();
+             .setMessage(save?"Se guardará solo en este teléfono. El envío requiere una confirmación separada.":"Acepta #RRGGBB o RRGGBB; solo se enviará si el protocolo está validado.")
+             .setView(fields).setNegativeButton("Volver", (d,w) -> lightCommandOptions(target)).setPositiveButton(save?"Guardar y revisar":"Revisar", null).create();
         showDialog(dialog);
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
             try {
@@ -354,10 +369,46 @@ public class MainActivity extends Activity {
     }
     private void simulateLightCommand(LightCommand command) {
         noteOptionsInteraction();
-        showDialog(new AlertDialog.Builder(this).setTitle("Vista previa de luces")
-            .setMessage("SIMULACIÓN · no se envió a BLE\n\nObjetivo: "+lightTargetLabel(command.target)+"\nOrden: "+lightCommandLabel(command)
-                +"\n\nLa escritura se habilitará solo después de verificar cada protocolo y pedir autorización.")
-            .setPositiveButton("Cerrar", null).create());
+        String rejection = LightCommandExecutionPolicy.rejection(command);
+        String message = "SIMULACIÓN · no se envía hasta confirmarlo\n\nObjetivo: "
+            + lightTargetLabel(command.target) + "\nOrden: " + lightCommandLabel(command);
+        if (rejection != null) {
+            message += "\n\nNo disponible todavía: " + rejection
+                + "\n\nLa interfaz conserva la orden, pero no fingirá un frame no validado.";
+            showDialog(new AlertDialog.Builder(this).setTitle("Vista previa de luces")
+                .setMessage(message).setPositiveButton("Cerrar", null).create());
+            return;
+        }
+        AlertDialog previewDialog = new AlertDialog.Builder(this).setTitle("Vista previa de luces")
+            .setMessage(message + "\n\nEnviar una vez abrirá una conexión breve por dispositivo, sin reintentos."
+                + " El resultado no confirma por sí solo el cambio visual.")
+            .setNegativeButton("Cerrar", null).setPositiveButton("Enviar una vez", null).create();
+        showDialog(previewDialog);
+        previewDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            previewDialog.dismiss(); sendLightCommand(command);
+        });
+    }
+    private void sendLightCommand(LightCommand command) {
+        AlertDialog loading = new AlertDialog.Builder(this).setTitle("Luces")
+            .setMessage("Resolviendo solo Lotus/MR Star autorizados…").setCancelable(false).create();
+        showDialog(loading);
+        LightWriteAuthorization authorization = LightWriteAuthorization.issueForUser(SystemClock.elapsedRealtime());
+        lightDispatcher.send(command, authorization, result -> handler.post(() -> {
+            if (loading.isShowing()) loading.dismiss();
+            String message;
+            if (result.status == LightCommandDispatcher.Status.COMPLETE_UNCONFIRMED) {
+                message = "ENVIADO al stack GATT, sin confirmación del dispositivo."
+                    + " Confirma visualmente si cambió.";
+            } else if (result.status == LightCommandDispatcher.Status.PARTIAL_OR_UNCERTAIN) {
+                message = "INCIERTO: una orden independiente pudo quedar parcial. No se reintentó.";
+            } else if (result.status == LightCommandDispatcher.Status.UNSUPPORTED_ORDER) {
+                message = "NO EJECUTADO: " + result.detail;
+            } else message = "ERROR: " + result.detail;
+            showDialog(new AlertDialog.Builder(this).setTitle("Recibo de luces")
+                .setMessage(message + "\n\nObjetivos completos: " + result.completedTargetCount + "/" + result.targetCount
+                    + "\nFrames aceptados por GATT: " + result.acceptedFrameCount)
+                .setPositiveButton("Cerrar", null).create());
+        }));
     }
     private void timerOptions() {
         showDialog(new AlertDialog.Builder(this).setTitle("Temporizadores")
@@ -515,9 +566,30 @@ public class MainActivity extends Activity {
         if (!resumed || !UnifiedVoicePolicy.mayStart(VoiceService.active, getIntent().getBooleanExtra("offline_preview", false),
                 AgendaDeliveryService.active || RingService.ringing, CaptureProbeService.active)) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingVoiceActivation = true;
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1); return;
         }
-        closeOptions(); stopPreview(); startForegroundService(unifiedVoiceIntent());
+        pendingVoiceActivation = false;
+        closeOptions(); stopPreview();
+        present(FaceState.PREPARING, "Preparando motor local de Andrómeda…");
+        if (assistantStart != null) assistantStart.setEnabled(false);
+        if (assistantAction != null) assistantAction.setEnabled(false);
+        engineWorker.execute(() -> {
+            AndromedaEngine.Result result=AndromedaEngine.startAndWait();
+            handler.post(() -> {
+                if (assistantStart != null) assistantStart.setEnabled(true);
+                if (assistantAction != null) assistantAction.setEnabled(true);
+                if (!resumed || isFinishing()) return;
+                if (!result.ready) {
+                    present(FaceState.ERROR, "Motor local no listo · "+result.state);
+                    showDialog(new AlertDialog.Builder(this).setTitle("Andrómeda")
+                        .setMessage("No se inició el motor completo ("+result.state+"). No se activó el micrófono ni se ejecutaron órdenes.")
+                        .setPositiveButton("Cerrar", null).create());
+                    return;
+                }
+                startForegroundService(unifiedVoiceIntent());
+            });
+        });
     }
     // Retained only for controlled diagnostics/instrumentation, not normal navigation.
     void voiceDiagnostics() {
@@ -735,6 +807,15 @@ public class MainActivity extends Activity {
         return view;
     }
     public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) immersive(); }
+    public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants) {
+        super.onRequestPermissionsResult(requestCode,permissions,grants);
+        if (requestCode!=1||!pendingVoiceActivation)return;
+        pendingVoiceActivation=false;
+        if (grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED) startUnifiedVoice();
+        else showDialog(new AlertDialog.Builder(this).setTitle("Andrómeda")
+            .setMessage("El micrófono es necesario para activar la voz. El motor no se inició por esta autorización incompleta.")
+            .setPositiveButton("Cerrar",null).create());
+    }
     public void dump(String prefix, FileDescriptor fd, PrintWriter writer, String[] args) {
         if (args != null && args.length == 1 && "speech_metrics".equals(args[0])) {
             try { writer.println("speech_metrics=" + new JSONObject().put("attempts", new org.json.JSONArray(SpeechDiagnostics.snapshot(SystemClock.elapsedRealtime())))); }
@@ -784,12 +865,16 @@ public class MainActivity extends Activity {
         handler.removeCallbacks(tick); handler.removeCallbacks(weatherRefresh); unregisterReceiver(receiver); super.onPause();
     }
     public void onStop() {
-        stopService(new Intent(this, VoiceService.class)); stopService(new Intent(this, CaptureProbeService.class)); super.onStop();
+        if (VoiceLifecyclePolicy.stopVoiceWhenActivityStops(VoiceService.continuousVoiceActive))
+            stopService(new Intent(this, VoiceService.class));
+        stopService(new Intent(this, CaptureProbeService.class)); super.onStop();
     }
     public void onDestroy() {
         if (weatherTask != null) weatherTask.cancel(true);
         weatherWorker.shutdownNow();
+        engineWorker.shutdownNow();
         agendaWorker.shutdown(); // Closing options/activity must not discard an accepted selected-ID deletion.
+        if (lightDispatcher != null) lightDispatcher.close();
         super.onDestroy();
     }
 }
