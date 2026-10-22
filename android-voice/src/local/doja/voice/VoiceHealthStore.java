@@ -8,6 +8,11 @@ import org.json.JSONException;
 
 /** Private last-result receipt. Fixed numeric keys only; no UI/transcript diagnostics. */
 final class VoiceHealthStore {
+    static void reminderRead(Context context,ReminderListPolicy.Receipt receipt,long readMs) {
+        context.getSharedPreferences("voice_reminder_list_health",Context.MODE_PRIVATE).edit().clear()
+            .putInt("version",1).putInt("status",receipt.status.equals("READ")?1:2).putLong("total",receipt.total)
+            .putInt("shown",receipt.shown).putLong("read_ms",Math.max(0,readMs)).putLong("at_ms",SystemClock.elapsedRealtime()).apply();
+    }
     static void turnFailure(Context context,int reason) {
         context.getSharedPreferences("voice_turn_health",Context.MODE_PRIVATE).edit().clear()
             .putInt("version",1).putInt("reason",reason).putLong("at_ms",SystemClock.elapsedRealtime())

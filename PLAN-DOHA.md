@@ -1,6 +1,86 @@
 # Doha / Doja: servidor doméstico y asistente con IA
 
-Fecha de revisión: 20 de octubre de 2026.
+Fecha de revisión: 21 de octubre de 2026.
+
+**ACTUAL40 instalada por petición expresa de detener/validar/actualizar.**
+Usuario acepta alta/listado y ahora borrado en su prueba; también alta a8h.
+**Nuevo reporte:** fecha/hora faltante funciona y queda bien en su prueba40.
+Aceptación limitada a lo reportado; no todos los formatos/días relativos ni entrega.
+**AL-01 aceptado en los casos reportados:** alarma semanal martes20:00 y «hoy en
+dos minutos» funcionaron. El apagado anterior no se reprodujo, sin declarar resuelta
+toda formulación. Sin acciones desde el chat ni cambios en la sesión.
+El arreglo instalado acepta `hoy en/dentro de X minutos` como cuenta atrás y
+mantener `hoy a las HH:MM` como hora fija. Backend/Java alineados; 551 Python y 511
+aserciones Java de calendario pasan. **Siguiente prioridad: VOZ-01**, cortes de
+respuesta/interrupción.
+REM-FECHA-01: fechas/año/«pm» y días fallaban en39.40 instalada
+valida fechas y pregunta hora faltante sin asumirla.7tools/payload/modelo/límites/
+Worker/esquema intactos. Nativo20/20requeridos,20/21total (indirecto anterior abierto),
+581tokens/prefijo43,811s;59checks Android SQLite/wire aislados pasan. Mismafirma/UID/
+datos/agenda/HOME/SSH/web/swap/volumen8/15. Baseline FRESCO1REMINDER_SCHEDULED,
+2CREATED/5DELIVERED; el aviso existente sigue en AlarmManager antes/después/tras
+ensayo aislado. No exigir vacío ni repetir aviso8h. Referencia
+`artifacts/android-voice/calendar-date-live-v1/installed.json`; transacción en
+`calendar-date-install-v1/`, selector
+`calendar-date-native-v1/`, arranque `calendar-date-live-v1/`.
+Dueño actual `andromeda-resident.qnchgT`/inode124693, activación20:58:28UTC;
+lectura20:59:30UTC:GLOBALrunning/65hashes/1recorderAndroid, sin fault/terminal actual.
+Preparación54,137s<55s;35s observados,1gapPCM recuperado/32descartados sin replay.
+20:59:31UTC:agenda1SCHEDULED/AlarmManager1/sistema/8/15 preservados.
+Fecha/hora faltante aceptadas después en el caso humano reportado; no se inspeccionó
+un recibo/listado nuevo por ese reporte. No más cambios sobre la sesión nueva.
+
+**Antecedente39:**7tools/auto581tokens:
+14/14requeridos pasan (14/15total, indirecto previo abierto); Android93checks
+SQLite/wire aislados con efectos ficticios pasan. 540Python536pasan/4skips y
+Java144nuevas pasan; APK39build-v3 con mismafirma/UID/datos y65módulos coordinados.
+Dueño histórico39 `andromeda-resident.MvPDHh`/inode119934, activación19:52:39UTC; lectura
+19:53:39UTC:GLOBALrunning/65hashescorrectos/servicio/1recorderAndroid/sin fallo actual.
+Autoridad `artifacts/android-voice/reminder-delete-live-v1/`; pendientes y evidencia
+en `MEJORAS-Y-PRUEBAS-ANDROMEDA.md` y `reminder-delete-install-v1/`.
+Sistema/HOME/SSH/web/swap/agenda y último volumen8/15 conservados, no100% histórico.
+Snapshot0agenda/5DELIVERED era anterior al uso nuevo, no condición vacía. Cero agenda
+humana abierta/acciones reales por el agente. Conservar los avisos actuales del
+usuario, incluido el de8h si sigue pendiente, con lectura FRESCA, sin repetirlo.
+Esa sesión39 se cerró por autorización actual para instalar40. No más cambios sobre
+la sesión40 nueva ni reintentos inciertos. App visible.
+
+**Antecedente, no estado actual:** APK38 experimental/64módulos,
+dueño `andromeda-resident.V3jKz7`/inode124489; activación18:08:12UTC y comprobación
+18:09:25UTC:GLOBALrunning, servicio/1recorderAndroid, hashes correctos, sin fallo
+actual en esa lectura. `artifacts/android-voice/reminder-clarification-live-v3/` es la referencia histórica38.
+UID/datos/agenda/sistema/volumenactual15/15 conservados; no acciones humanas repetidas.
+Selector8/9: una petición indirecta todavía se rechaza, sin permiso/lectura de agenda.
+No gate completo ni aceptación humana. Preparación pública55s tras fallos45s, sin
+ampliar respuesta humana60s ni plazos de ejecución. No intervenir sobre esta nueva
+sesión; el usuario probará recordatorios con sus palabras. Mantener app visible.
+
+**Última decisión:** conservar arquitectura y modelo locales; mejorar flexibilidad
+ante transcripción imperfecta e integrar/validar herramientas una por una. Primer
+alcance: aclaración de intención al crear recordatorios. El candidatoAPK38 pasó
+después a instalación experimental solicitada, descrita arriba. Antes de pruebas nativas o
+despliegue coordinado, Detener explícito y lectura fresca de estado/dueño/agenda.
+Las alarmas por voz NO tienen aceptación humana; alta/listado de recordatorios sí
+la tienen en sus casos reportados, igual que borrado39 y fecha/hora faltante40;
+ASR/clarificación, cortes de voz, emoji hablado y cuentos son prioritarios.
+Listado y búsqueda web tienen valoración humana positiva limitada a lo observado.
+Ver `MEJORAS-Y-PRUEBAS-ANDROMEDA.md` y `ARQUITECTURA-ANDROMEDA.md`.
+Luces/TV siguen detrás de estos fallos. La alternativaChatGPT no se eligió:
+no iniciar sesión, copiar credenciales, añadir cargos ni enviar conversaciones/
+audio a la nube. Mantener guardias, una mutación por turno y recibos Android reales.
+
+**Prioridad nueva del usuario:** registrar la mejora de escucha independiente de
+la ventana y retomar pruebas de recordatorios, alarmas, chistes y cuentos; después
+luces LotusLamp X/MR Star y luego TV. Mejora BG-01 y criterios/orden en
+`MEJORAS-Y-PRUEBAS-ANDROMEDA.md`. Solo registrada, no implementada ahora: cerrar la
+interfaz todavía detiene la voz; mantenerla visible en las pruebas actuales.
+La última instalación verificada es APK37/64 módulos, no los hitos33/32 inferiores.
+El teléfono fue reconectado, se confirmó el cierre anterior `voice_peer_closed`
+y el usuario pidió una sesión nueva explícita. Manifiesto de referencia
+`artifacts/android-voice/explicit-tools-live-v1/installed.json`; sesión nueva y
+evidencia en `artifacts/android-voice/resumed-tests-lights-plan-v1/`.
+No repetir acciones antiguas ni crear desde ejemplos del chat. No modificar una
+sesión activa para integrar luces; no declarar pairing del TV resuelto.
 
 **Vigente33/13 activo:** humano confirmó Detener accidental; instalación coordinada
 APK+5web/firma/UID/datos/sistema/baseagendaACTUAL2DELIVERED preservados. Nueva única

@@ -1,0 +1,35 @@
+case	when_text	anchor_ms	due_ms	delay_ms
+date_pm	el dos de noviembre de 2026 a las 5pm	1792610130000	1793656800000	0
+date_del	para el dos de noviembre del 2026 a las cinco de la tarde	1792610130000	1793656800000	0
+spoken_year	el dos de noviembre del dos mil veintiséis a las cinco pe eme	1792610130000	1793656800000	0
+spaced_pm	el 2 de noviembre de 2026 a las 5 p m	1792610130000	1793656800000	0
+dotted_pm	el 2 de noviembre de 2026 a las 5 p. m.	1792610130000	1793656800000	0
+relative_pm	en tres días a las 5pm	1792610130000	1792879200000	0
+relative_words	dentro de tres días a las cinco de la tarde	1792610130000	1792879200000	0
+relative_am	en tres días a las 5:30am	1792610130000	1792837800000	0
+tomorrow_pm	mañana a las cinco y media pm	1792610130000	1792708200000	0
+midnight_am	el 2 de noviembre de 2026 a las 12am	1792610130000	1793595600000	0
+noon_pm	el 2 de noviembre del 2026 a las 12pm	1792610130000	1793638800000	0
+midnight_minutes	el 2 de noviembre del 2026 a las 12:00 a. m.	1792610130000	1793595600000	0
+numeric_iso	2026-11-02 a las 17:00	1792610130000	1793656800000	0
+numeric_dmy	02/11/2026 a las 17:00	1792610130000	1793656800000	0
+year_boundary	el dos de enero del dos mil veintisiete a las cinco pm	1792610130000	1798927200000	0
+hours_regression	en ocho horas	1792610130000	1792638930000	28800000
+minutes_regression	en dos minutos	1792610130000	1792610250000	120000
+missing_hour	en tres días	1792610130000	INVALID	0
+missing_hour_date	el dos de noviembre del 2026	1792610130000	INVALID	0
+missing_period	en tres días a las cinco	1792610130000	INVALID	0
+wrong_month	el dos de nobiembre de 2026 a las 5pm	1792610130000	INVALID	0
+missing_year	el dos de noviembre a las 5pm	1792610130000	INVALID	0
+invalid_day	el 31 de noviembre de 2026 a las 5pm	1792610130000	INVALID	0
+past_date	el 20 de octubre del 2026 a las 5pm	1792610130000	INVALID	0
+out_of_range	el dos de noviembre del 2028 a las 5pm	1792610130000	INVALID	0
+conflicting_period	el dos de noviembre del 2026 a las 5pm de la mañana	1792610130000	INVALID	0
+invalid_pm_hour	el dos de noviembre del 2026 a las 17pm	1792610130000	INVALID	0
+zero_days	en cero días a las 5pm	1792610130000	INVALID	0
+negative_days	en -3 días a las 5pm	1792610130000	INVALID	0
+too_many_days	en 367 días a las 5pm	1792610130000	INVALID	0
+fractional_days	en 1.5 días a las 5pm	1792610130000	INVALID	0
+multi_day_request	en tres días a las 5pm y mañana a las 6pm	1792610130000	INVALID	0
+mixed_duration	en tres días y ocho horas	1792610130000	INVALID	0
+clock_only	5pm	1792610130000	INVALID	0

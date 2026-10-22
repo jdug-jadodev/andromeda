@@ -323,9 +323,12 @@ son sintéticos. Configuración deshabilitada por defecto.
   Siguiente diagnóstico acordado: comparar con mando móvil funcional/cliente
   de referencia; no repetir pairing a ciegas ni rebajar TLS. Luego lectura de
   estado y una acción reversible consentida; encendido desde reposo por separado.
-- **Neón**: falta marca/modelo del controlador, app actual y transporte
-  Wi‑Fi/Bluetooth/IR. Una foto del controlador o nombre de app sirve; no claves.
-  Elegir una sola integración inicial según compatibilidad local verificable.
+- **Luces/neón**: usuario ya identificó LotusLamp X `MELK-OA10 17` y MR Star
+  `GATT--DEMO`. Investigación pública apunta a familias BLE diferentes; falta
+  verificar identidad, servicios y características de SUS dispositivos antes
+  de escribir. No volver a pedir información de app que ya aportó ni asumir que
+  compartir característica FFF3 implica compartir protocolo. Inventario y límites
+  en `LUCES-NEO-LOTUSLAMPX-MRSTAR.md`; orden actual: pruebas básicas → luces → TV.
 - No descubrimiento de red indiscriminado, compras/reset, cuentas nuevas ni
   mandos arbitrarios. Herramientas de teléfono y TV se separan explícitamente.
 

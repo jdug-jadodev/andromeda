@@ -76,8 +76,11 @@ final class VoiceConnection implements Closeable {
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
             if (assistantTools) hello.put("web_response_mode", "worker_first_v3_spanish").put("phone_volume_policy", guidedAgenda?"confirmed_media_v3":"absolute_media_v1");
             if (guidedAgenda) hello.put("agenda_dialogue_policy", "guided_agenda_v1").put("action_completion_policy", "continue_v1");
+            if(guidedAgenda) hello.put("reminder_read_policy",ReminderListPolicy.POLICY);
+            if(guidedAgenda) hello.put("reminder_creation_policy",AgendaDialogue.REMINDER_POLICY);
             if (continuousVoice) hello.put("voice_lifetime_policy",ContinuousVoicePolicy.VOICE).put("dialogue_reset_policy",ContinuousVoicePolicy.RESET);
             if(lifecycle) hello.put("alarm_lifecycle_policy",AlarmSchedule.POLICY);
+            if(lifecycle) hello.put("reminder_delete_policy",ReminderDeletion.POLICY);
             if (catalog != null) {
                 JSONArray chats = new JSONArray();
                 for (ConversationMemory.Snapshot chat : catalog) chats.put(ConversationChannel.encode(chat));
@@ -103,7 +106,9 @@ final class VoiceConnection implements Closeable {
                     || timerTrial && !"request_authorized_close".equals(ready.optString("timer_policy"))
                     || timerTrial && (ready.optJSONArray("allowed_tools") == null || ready.getJSONArray("allowed_tools").length() != 1
                          || !"create_timer".equals(ready.getJSONArray("allowed_tools").optString(0)))
-                    || assistantTools && !"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\"]".equals(String.valueOf(ready.optJSONArray("allowed_tools")))
+                    || assistantTools && !(lifecycle?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"list_reminders\",\"delete_reminder\"]":guidedAgenda?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"list_reminders\"]":"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\"]").equals(String.valueOf(ready.optJSONArray("allowed_tools")))
+                    || guidedAgenda && !ReminderListPolicy.POLICY.equals(ready.optString("reminder_read_policy"))
+                    || guidedAgenda && !AgendaDialogue.REMINDER_POLICY.equals(ready.optString("reminder_creation_policy"))
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
                     || ready.optInt("response_start_ms") != (assistantTools ? 60000 : 30000) || ready.optInt("context_version") != 1
@@ -113,6 +118,7 @@ final class VoiceConnection implements Closeable {
                     || continuousVoice && !ContinuousVoicePolicy.ready(ready.optInt("protocol"),ready.optInt("seconds",-1),ready.optString("voice_lifetime_policy"),
                         ready.optString("dialogue_reset_policy"),ready.optLong("action_window_ms"),ready.optLong("stream_start_ms"),ready.optLong("stream_idle_ms"),lifecycle)
                     || lifecycle && !AlarmSchedule.POLICY.equals(ready.optString("alarm_lifecycle_policy"))
+                    || lifecycle && !ReminderDeletion.POLICY.equals(ready.optString("reminder_delete_policy"))
                     || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
                     || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
                     || catalog != null && !ready.optBoolean("voice_entry")

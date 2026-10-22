@@ -27,9 +27,13 @@ final class AgendaActionChannel {
         this(session,context,end,guided,continuous,false);
     }
     AgendaActionChannel(String session, String context, long end, boolean guided, boolean continuous,boolean lifecycle) {
+        this(session,context,end,guided,continuous,lifecycle,false);
+    }
+    AgendaActionChannel(String session,String context,long end,boolean guided,boolean continuous,boolean lifecycle,boolean reminderClarification) {
         this.session = session; this.context = context; sessionEnd = end; this.guided = guided; this.continuous = continuous;
         if (continuous && (!guided || end != 0)) throw new IllegalArgumentException("Continuous agenda mode not negotiated");
-        this.lifecycle=lifecycle; dialogue = new AgendaDialogue(continuous ? 64 : 24,lifecycle);
+        if(reminderClarification && !guided) throw new IllegalArgumentException("Reminder clarification not negotiated");
+        this.lifecycle=lifecycle; dialogue = new AgendaDialogue(continuous ? 64 : 24,lifecycle,reminderClarification);
     }
     static long integer(JSONObject event, String key) throws Exception {
         Object value = event.get(key);
@@ -144,7 +148,7 @@ final class AgendaActionChannel {
     static String resultText(AgendaStore.Status status, AgendaRequestGuard.Value value, boolean detailed) {
         return AgendaSpeechPolicy.text(status.name(), value, detailed);
     }
-    synchronized void spoken(String turn, boolean completed) { if (guided) dialogue.spoken(turn, completed); }
+    synchronized void spoken(String turn, boolean completed) { if (guided) dialogue.spoken(turn, completed,SystemClock.elapsedRealtime()); }
     synchronized void cancelDialogue() { dialogue.clear(); dialogueDecision=null; }
     synchronized void close() { closed = true; dialogue.clear(); latestHuman = null; dialogueDecision = null; if (accepted != null) accepted.revoke(); }
 }

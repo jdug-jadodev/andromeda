@@ -36,20 +36,28 @@ def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False,
 
 
 class AssistantToolsTrial:
-    def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False, confirmed_volume=False):
+    def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
         self.clock, self.timer, self.inflight = clock, TimerTrial(clock), None
         self.consumed = set()
         if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
         self.volume = VolumeTrial(clock,60000 if guided_agenda else 30000,confirmed_volume,maximum_sequence)
         self.guided_agenda = guided_agenda
+        from reminder_read import ReminderRead
+        if reminder_read and not guided_agenda: raise ValueError('Reminder reading requires guided tools')
+        self.read_enabled = reminder_read; self.read = ReminderRead(clock)
         from agenda_dialogue import AgendaDialogue
         self.alarm_lifecycle=alarm_lifecycle
-        self.dialogue = AgendaDialogue(maximum_sequence,alarm_lifecycle)
+        if reminder_clarification and not guided_agenda: raise ValueError('Reminder clarification requires guided tools')
+        self.dialogue = AgendaDialogue(maximum_sequence,alarm_lifecycle,reminder_clarification)
         from alarm_deletion import AlarmDeletion
         self.deletion=AlarmDeletion(clock,maximum_sequence)
+        from reminder_deletion import ReminderDeletion
+        if reminder_deletion and not (guided_agenda and reminder_read and reminder_clarification and alarm_lifecycle):
+            raise ValueError('Reminder deletion requires coordinated continuous reminders')
+        self.reminder_delete_enabled=reminder_deletion; self.reminder_delete=ReminderDeletion(clock,maximum_sequence)
 
     @property
-    def pending_dialogue(self): return self.dialogue.active or self.deletion.active or self.volume.dialogue.active
+    def pending_dialogue(self): return self.dialogue.active or self.deletion.active or self.volume.dialogue.active or self.reminder_delete.active
 
     @staticmethod
     def deletion_response(response):
@@ -66,6 +74,12 @@ class AssistantToolsTrial:
 
     def human(self, turn, session, context, session_end):
         if not self.guided_agenda: return None
+        if self.reminder_delete.active:
+            response=self.reminder_delete.human(turn,session,context,session_end)
+            if response and response.get('event',{}).get('type')=='reminder_delete_execute':
+                if turn['id'] in self.consumed or len(self.consumed)>=24: raise ValueError('Second mutation')
+                self.consumed.add(turn['id'])
+            return self.deletion_response(response)
         if self.volume.dialogue.active:
             result = self.volume.dialogue.answer(turn,self.clock())
             if result is None: return None
@@ -83,8 +97,9 @@ class AssistantToolsTrial:
         return self.dialogue_response(result)
 
     def spoken(self, turn_id, completed):
-        self.dialogue.spoken(turn_id, completed); self.deletion.spoken(turn_id,completed)
+        self.dialogue.spoken(turn_id, completed, self.clock()); self.deletion.spoken(turn_id,completed)
         self.volume.dialogue.spoken(turn_id,completed,self.clock())
+        self.reminder_delete.spoken(turn_id,completed)
 
     @staticmethod
     def volume_dialogue_response(result):
@@ -97,6 +112,19 @@ class AssistantToolsTrial:
         return response
 
     def model_result(self, result, turn, session, context, session_end):
+        if self.read.inflight is not None: raise ValueError('A read result is already pending')
+        if self.reminder_delete.active or self.reminder_delete.grant is not None:
+            raise ValueError('A reminder deletion is already pending')
+        if result['kind']=='reminder_delete_request':
+            if (not self.reminder_delete_enabled or self.pending_dialogue or self.inflight or self.timer.inflight
+                    or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed or len(self.consumed)>=24):
+                raise ValueError('Reminder deletion unavailable')
+            return self.reminder_delete.start(turn,session,context,session_end)
+        if result['kind']=='reminder_list_request':
+            if (not self.read_enabled or self.pending_dialogue or self.inflight or self.timer.inflight
+                    or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed):
+                raise ValueError('Reminder read unavailable')
+            return self.read.authorize(turn,session,context,session_end)
         if result['kind']=='volume_dialogue_start':
             if (not self.volume.confirmed or self.pending_dialogue or self.inflight or self.timer.inflight
                     or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed):
@@ -163,6 +191,9 @@ class AssistantToolsTrial:
         return {'event': self.inflight, 'executing': True}
 
     def result(self, packet, session, context):
+        if packet.get('action')=='reminder_delete_selection': return self.deletion_response(self.reminder_delete.selection(packet,session,context))
+        if packet.get('action')=='reminder_delete_result': return self.deletion_response(self.reminder_delete.result(packet,session,context))
+        if packet.get('action')=='reminder_read_result': return self.read.result(packet,session,context)
         if packet.get('action')=='alarm_selection': return self.deletion_response(self.deletion.selection(packet,session,context))
         if packet.get('action')=='alarm_delete_result': return self.deletion_response(self.deletion.result(packet,session,context))
         if packet.get('action') == 'volume_result': return self.completion(self.volume.result(packet, session, context))
@@ -178,6 +209,10 @@ class AssistantToolsTrial:
                 'actions_executed': int(packet['status'] == 'CREATED'), 'close_reason': 'action_result', 'offered_more': False})
 
     def timed_out(self):
+        reminder_delete=self.reminder_delete.timed_out()
+        if reminder_delete is not None: return self.deletion_response(reminder_delete)
+        read = self.read.timed_out()
+        if read is not None: return read
         deletion=self.deletion.timed_out()
         if deletion is not None: return self.deletion_response(deletion)
         volume = self.volume.timed_out()
@@ -188,5 +223,5 @@ class AssistantToolsTrial:
                     'actions_executed': 0, 'close_reason': 'action_result', 'offered_more': False})
         return self.completion(self.timer.timed_out())
 
-    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear(); self.deletion.clear()
-    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.deletion.clear(); self.inflight = None
+    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear(); self.deletion.clear(); self.read.cancel(); self.reminder_delete.clear()
+    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.deletion.clear(); self.read.close(); self.reminder_delete.clear(); self.inflight = None

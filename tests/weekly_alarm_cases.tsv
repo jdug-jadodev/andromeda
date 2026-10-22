@@ -20,3 +20,16 @@ lunes a las 17:00 y busca noticias	REJECT	0	0
 no lunes a las 17:00	REJECT	0	0
 lunes a las cinco pm y no la pongas	REJECT	0	0
 lunes a las doce de la mañana	REJECT	0	0
+a las 8pm los martes	2	1200	1792544400000
+a las ocho de la noche los martes	2	1200	1792544400000
+a las 8 p. m. cada martes	2	1200	1792544400000
+a las 20:00 todos los martes	2	1200	1792544400000
+a las ocho pe eme los martes	2	1200	1792544400000
+los martes a las 8pm	2	1200	1792544400000
+a las 12am los viernes	5	0	1792731600000
+a las 12pm los sábados	6	720	1792861200000
+a las ocho los martes	REJECT	0	0
+a las 8pm los martes y jueves	REJECT	0	0
+a las 8pm los martes y no la pongas	REJECT	0	0
+no a las 8pm los martes	REJECT	0	0
+a las 8pm los martes y baja el volumen	REJECT	0	0

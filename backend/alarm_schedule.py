@@ -8,18 +8,22 @@ POLICY = 'weekly_alarm_lifecycle_v1'
 PROTOCOL = 13
 DAYS = 'lunes martes miércoles jueves viernes sábado domingo'.split()
 PLAIN_DAYS = [normalized(day) for day in DAYS]
+DAY_PATTERN = '|'.join(day+'s?' if day in {'sabado','domingo'} else day for day in PLAIN_DAYS)
 
 
 def weekly(when, anchor):
     if type(anchor) is not int or anchor<=0: raise AgendaValidationError('invalid_clock')
     plain = normalized(clean(when))
-    match = re.fullmatch(r'(?:el |los |cada |todos los )?(' + '|'.join(PLAIN_DAYS) + r') a (?:las? )?(.+)', plain)
-    if not match: return None
-    weekday = PLAIN_DAYS.index(match[1]) + 1
-    clock = match[2]
-    period = re.search(r'\s+(a\.?\s*m\.?|p\.?\s*m\.?)$', clock)
+    match = re.fullmatch(r'(?:el |los |cada |todos los )?(' + DAY_PATTERN + r') a (?:las? )?(.+)', plain)
+    if match: day_text,clock=match[1],match[2]
+    else:
+        match=re.fullmatch(r'a (?:las? )?(.+?) (?:el |los |cada |todos los )('+DAY_PATTERN+r')',plain)
+        if not match: return None
+        clock,day_text=match[1],match[2]
+    weekday = PLAIN_DAYS.index(day_text[:-1] if day_text in {'sabados','domingos'} else day_text) + 1
+    period = re.search(r'\s*(a\.?\s*m\.?|p\.?\s*m\.?|a eme|pe eme)$', clock)
     if period:
-        morning = period[1][0] == 'a'; clock = clock[:period.start()]
+        morning = period[1][0] == 'a'; clock = clock[:period.start()].strip()
         if morning and re.fullmatch(r'(?:12|doce)(?::[0-9]{2})?', clock):
             clock = '00' + clock[clock.index(':'):] if ':' in clock else '00:00'
         else: clock += ' de la manana' if morning else ' de la tarde'

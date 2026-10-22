@@ -89,5 +89,6 @@ final class PhoneVolumeChannel {
         return true;
     }
     synchronized void spoken(String turn,boolean completed,long now) { if(dialogue!=null) dialogue.spoken(turn,completed,now); }
+    synchronized void cancelDialogue() { if(dialogue!=null) dialogue.clear(); decision=null; }
     synchronized void close() { closed = true; policy.close(); if(dialogue!=null) dialogue.clear(); }
 }

@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="35" android:versionName="0.13.8-confirmed-volume">
+    android:versionCode="46" android:versionName="0.13.18-lights-services-address">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 10 BLE discovery only; no location/network service is used. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <application android:label="Andrómeda · prototipo" android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false" android:debuggable="true" android:supportsRtl="true" android:extractNativeLibs="true">
         <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="sensorLandscape">
@@ -47,10 +51,20 @@
         android:label="Control de captura con WAV públicos/UI, sin AudioRecord" android:functionalTest="true" />
     <instrumentation android:name=".AgendaInstrumentation" android:targetPackage="local.doja.voice"
         android:label="SQLite de agenda aislada con planificador/acuse simulados, sin audio" android:functionalTest="true" />
+    <instrumentation android:name=".ReminderDeleteInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Borrado de recordatorios en SQLite aislada, sin audio ni agenda humana" android:functionalTest="true" />
+    <instrumentation android:name=".CalendarDateInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Fechas y hora aclarada en SQLite aislada, sin audio ni agenda humana" android:functionalTest="true" />
     <instrumentation android:name=".AgendaUiInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Listas vacías de agenda y caducidad de opciones, sin audio" android:functionalTest="true" />
     <instrumentation android:name=".AgendaTransportInstrumentation" android:targetPackage="local.doja.voice"
         android:label="TLS y agenda aislada con fixtures explícitos, sin audio ni modelo" android:functionalTest="true" />
     <instrumentation android:name=".AlarmAsrInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Vosk y LFM reales con alarma pública aislada, sin micrófono ni sonido" android:functionalTest="true" />
+    <instrumentation android:name=".BleDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Descubrimiento BLE de LotusLamp X, solo lectura y sin escritura" android:functionalTest="true" />
+    <instrumentation android:name=".BleServiceDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Servicios BLE MELK, conexión efímera sin lectura ni escritura" android:functionalTest="true" />
+    <instrumentation android:name=".BleAddressServiceDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Servicios BLE MELK por dirección, solo lectura estructural" android:functionalTest="true" />
 </manifest>

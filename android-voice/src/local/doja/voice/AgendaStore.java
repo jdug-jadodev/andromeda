@@ -299,6 +299,24 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
             return new AlarmReceipt(operation,event,result.status,result.due);
         }
     }
+    AlarmReceipt deleteReminder(ReminderDeletion.Permit permit) {
+        if(permit==null || permit.selected.kind!=AgendaEntry.Kind.REMINDER) throw new IllegalArgumentException("Missing reminder deletion permit");
+        String operation=permit.operation,event=permit.selected.id;
+        if(!permit.begin(SystemClock.elapsedRealtime())) return new AlarmReceipt(operation,event,"REJECTED",0);
+        synchronized(COORDINATOR) {
+            try {
+                if(!reserveAction(operation,event,"DELETE_REMINDER")) return new AlarmReceipt(operation,event,"UNKNOWN",0);
+                if(SystemClock.elapsedRealtime()>=permit.before) return confirmAction(operation,event,"DELETE_REMINDER","REJECTED",0);
+                AgendaCancellation.Effects cancel=scheduler==null?effects(context):new AgendaCancellation.Effects() {
+                    public boolean stopOutput(String id) { return true; } // Fake scheduler is permitted only in the isolated test database.
+                    public void cancelSchedule(String id) { scheduler.cancel(id); }
+                };
+                AgendaCancellation.Result result=AgendaCancellation.remove(permit.selected,this,cancel);
+                String status=result==AgendaCancellation.Result.REMOVED?"REMOVED":result==AgendaCancellation.Result.STALE || result==AgendaCancellation.Result.NOT_FOUND?"STALE":"UNKNOWN";
+                return confirmAction(operation,event,"DELETE_REMINDER",status,0);
+            } catch(Exception failure) { return new AlarmReceipt(operation,event,"UNKNOWN",0); }
+        }
+    }
     static void restore(Context context) {
         synchronized (COORDINATOR) {
             try (AgendaStore store = new AgendaStore(context)) {

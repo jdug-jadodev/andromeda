@@ -97,15 +97,15 @@ def record_protocol_technical(inference_key,value):
 
 
 TOOLS_TECHNICAL_ENUMS = {
-    'choice': ('text', 'native'),
-    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'),
+    'choice': ('text', 'native', 'local'),
+    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'list_reminders', 'delete_reminder'),
     'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
-               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start'),
+               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'reminder_list_request', 'reminder_delete_request'),
     'validation': ('invalid_native_call', 'missing_native_call', 'unsupported_reply', 'volume_request_rejected',
                    'agenda_request_rejected', 'timer_request_rejected', 'accepted', 'reply', 'agenda_question',
                    'web_query_rejected', 'web_results', 'web_no_results', 'web_provider_unavailable',
                    'local_web_followup', 'web_invalid_request', 'web_explicit_request_required',
-                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question'),
+                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question', 'reminder_read_rejected', 'read_requested', 'local_arithmetic', 'reminder_delete_rejected', 'reminder_delete_requested'),
     'generation_error': ('TimeoutError', 'ValueError', 'OSError', 'RuntimeError', 'KeyError', 'TypeError'),
 }
 TOOLS_TECHNICAL_KEYS = frozenset({'version', 'at_ms', 'sequence', 'phase', 'elapsed_ms', 'choice', 'tool',
@@ -230,6 +230,70 @@ class FramePump:
             frames.append((kind, bytes(self.buffer[5:5 + length])))
             del self.buffer[:5 + length]
         return frames
+
+
+class AudioFreshness:
+    """Invalid PCM is NEVER decoded or retimestamped. A short gap is not EOF.
+
+    Discard a partial request and require fresh wake/button activation. Persistent
+    clock failure still closes after 5s; no transport/model restart or action retry.
+    """
+    def __init__(self):
+        self.last = 0; self.gap_since = None; self.changed = False
+        self.status = self.reason = self.rejected = self.gaps = 0
+        self.max_lag = self.max_future = self.max_backward = 0
+
+    def expired(self, now):
+        return self.gap_since is not None and now-self.gap_since >= 5000
+
+    def accept(self, stamp, now):
+        self.changed = False
+        if self.expired(now): return False
+        lag, future, backward = max(0,now-stamp), max(0,stamp-now), max(0,self.last-stamp)
+        reason = 2 if future>100 else 1 if lag>1000 else 3 if backward else 0
+        if reason:
+            self.rejected = min(10**12,self.rejected+1)
+            self.max_lag=max(self.max_lag,min(10**12,lag)); self.max_future=max(self.max_future,min(10**12,future))
+            self.max_backward=max(self.max_backward,min(10**12,backward)); self.reason=reason; self.status=1
+            if self.gap_since is None:
+                self.gap_since=now; self.gaps=min(10**12,self.gaps+1); self.changed=True
+            return False
+        if self.gap_since is not None:
+            self.changed=True; self.status=2
+        self.gap_since=None; self.last=stamp
+        return True
+
+    def snapshot(self, now):
+        return dict(version=1,at_ms=now,status=3 if self.expired(now) else self.status,reason=self.reason,
+            rejected=self.rejected,gaps=self.gaps,max_lag_ms=self.max_lag,max_future_ms=self.max_future,max_backward_ms=self.max_backward)
+
+
+def observe_audio_technical(model, freshness, now):
+    """Fixed bounded numeric receipt, not a transcript, audio hash or permission."""
+    import stat
+    work=getattr(model,'technical_work',None)
+    if not isinstance(work,Path): return
+    directory=None; inode=None; temporary='voice_audio_health.new'
+    try:
+        from resident_runtime import private_directory
+        directory=private_directory(work); name='voice_audio_health.json'
+        try: info=os.stat(name,dir_fd=directory,follow_symlinks=False)
+        except FileNotFoundError: pass
+        else:
+            if not stat.S_ISREG(info.st_mode) or info.st_uid!=os.geteuid() or stat.S_IMODE(info.st_mode)!=0o600: return
+        raw=json.dumps(freshness.snapshot(now),allow_nan=False).encode('ascii')
+        fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=directory)
+        inode=os.fstat(fd).st_ino
+        with os.fdopen(fd,'wb') as output: output.write(raw)
+        os.replace(temporary,name,src_dir_fd=directory,dst_dir_fd=directory)
+    except (OSError,ValueError): pass  # Diagnostics cannot authorize, close or restart a session.
+    finally:
+        if directory is not None:
+            try:
+                if inode is not None and os.stat(temporary,dir_fd=directory,follow_symlinks=False).st_ino==inode:
+                    os.unlink(temporary,dir_fd=directory)
+            except FileNotFoundError: pass
+            os.close(directory)
 
 
 class AudioTimeline:
@@ -388,6 +452,8 @@ class ConversationModel:
         self.http = None
         self.result = self.error = self.thread = None
         self.context_metrics = {}
+        self._public_preparing = False
+        self.public_prefix_error = None
 
     def post(self, path, body, deadline):
         if self.cancelled.is_set() or self.clock() >= deadline: raise TimeoutError()
@@ -425,6 +491,7 @@ class ConversationModel:
         return min(self.clock() + self.compute_ms, speech_end + self.response_start_ms - 3500, session_end - 1500)
 
     def start(self, text, speech_end, session_end):
+        self.finish_public_prefix()
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
         self.context_metrics = {}
@@ -464,6 +531,29 @@ class ConversationModel:
         self.thread.start()
         return deadline
 
+    def finish_public_prefix(self):
+        if not getattr(self, '_public_preparing', False): return
+        # Public maintenance yields to a NEW human request, never retries it.
+        if not self.cancel_generation():
+            from continuous_voice import ContinuousVoiceFault
+            raise ContinuousVoiceFault('voice_cancellation_stuck')
+        self._public_preparing = False
+
+    def warm_public_prefix(self):
+        """Only AFTER verified cache erasure/context reset; fixed public Hola only.
+
+        One cancellable generation thread, no transcript, tool grant or new model.
+        Does not block the voice/context event loop or renew any human deadline.
+        """
+        self.finish_public_prefix()
+        if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent public preparation')
+        self.cancelled.clear(); self.public_prefix_error = None; self._public_preparing = True
+        def work():
+            try: self.prepare()
+            except Exception as error: self.public_prefix_error = type(error).__name__
+        self.thread = threading.Thread(target=work, daemon=True, name='public-tools-prefix')
+        self.thread.start()
+
     def cancel_generation(self):
         """Cancel only current generation; caller must stop owner if it stays stuck."""
         self.cancelled.set()
@@ -483,7 +573,7 @@ class ConversationModel:
         self.cancel_generation()
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
     from vosk import KaldiRecognizer, SetLogLevel
     from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
         MAX_EPOCH_TURNS, STREAM_START_MS, STREAM_IDLE_MS, VOICE_POLICY, RESET_POLICY)
@@ -491,6 +581,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         raise ValueError('Invalid conversation session')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
     if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
+    if reminder_read and not guided_agenda: raise ValueError('Reminder reading requires guided tools')
+    if reminder_clarification and not guided_agenda: raise ValueError('Reminder clarification requires guided tools')
+    if reminder_deletion and not (reminder_read and reminder_clarification and alarm_lifecycle): raise ValueError('Reminder deletion requires coordinated reminders')
     if continuous_voice and (not guided_agenda or timer_trial): raise ValueError('Continuous voice requires guided tools')
     if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
     SetLogLevel(-1)
@@ -508,18 +601,19 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     state, recognizer, timeline = 'wake', None, None
     preroll = deque(maxlen=75)
     activation = last_audio = 0
+    audio_freshness = AudioFreshness() if continuous_voice else None
     turn = None
     sequence = 0
     flow = ConversationFlow()
     timers = None
     if assistant_tools:
         from assistant_tools_trial import AssistantToolsTrial
-        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda, maximum_sequence=MAX_EPOCH_TURNS if continuous_voice else 24,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
+        timers = AssistantToolsTrial(now_ms, guided_agenda=guided_agenda, maximum_sequence=MAX_EPOCH_TURNS if continuous_voice else 24,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion)
     elif timer_trial:
         from timer_trial import TimerTrial
         timers = TimerTrial(now_ms)
 
-    def reset(continue_chat=False):
+    def reset(continue_chat=False, audio_resync=False):
         nonlocal state, recognizer, timeline, turn
         recognizer = timeline = turn = None
         preroll.clear(); detector.reset(); state = 'wake'
@@ -529,7 +623,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             flow.reset()
             if timers is not None: timers.cancel()
             if entry is not None: entry.cancel_pending()
-            emit({'type': 'state', 'state': 'wake'})
+            emit({'type': 'state', 'state': 'wake', **({'reason':'audio_clock_resync'} if audio_resync else {})})
 
     def activate(trigger, delay_ms=0):
         nonlocal state, recognizer, timeline, activation
@@ -551,7 +645,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
              'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
-               'timer_control': turn.get('timer_control', ''),
+              'timer_control': turn.get('timer_control', ''),
+                 **({'reminder_read':turn['reminder_read']} if turn.get('timer_control')=='reminder_list' else {}),
+                 **({'reminder_delete':turn['reminder_delete']} if turn.get('reminder_delete') is not None else {}),
                **({'agenda_kind': turn['agenda_kind']} if turn.get('timer_control') == 'agenda_question' else {}),
                **({'sources': turn.get('sources', [])} if assistant_tools else {}),
               **({'web_answer': turn['web_answer']} if assistant_tools and turn.get('timer_control') == 'web'
@@ -567,6 +663,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         turn['agenda_kind'] = response.get('agenda_kind', '')
         turn['sources'] = response.get('sources', [])
         turn['web_answer'] = response.get('web_answer')
+        turn['reminder_read'] = response.get('reminder_read')
+        turn['reminder_delete'] = response.get('reminder_delete')
         turn['actions_executed'] = response.get('actions_executed', 0)
         say(response['text'], close_reason=response.get('close_reason', ''), offered_more=response.get('offered_more', False))
 
@@ -596,11 +694,14 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     emit({'type': 'ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
                       'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
                       **({'assistant_tools': True} if assistant_tools else {}),
-                      'timer_trial': timer_trial, 'allowed_tools': ['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'] if assistant_tools else ['create_timer'] if timer_trial else [],
+                        'timer_trial': timer_trial, 'allowed_tools': (['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'] + (['list_reminders'] if reminder_read else []) + (['delete_reminder'] if reminder_deletion else [])) if assistant_tools else ['create_timer'] if timer_trial else [],
                       'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                       'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
-                        **({'web_response_mode': 'worker_first_v3_spanish', 'phone_volume_policy': 'confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'} if assistant_tools else {}),
+                         **({'web_response_mode': 'worker_first_v3_spanish', 'phone_volume_policy': 'confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'} if assistant_tools else {}),
+                         **({'reminder_read_policy':'android_reminder_read_v1'} if reminder_read else {}),
+                          **({'reminder_creation_policy':'confirmed_reminder_intent_v1'} if reminder_clarification else {}),
+                          **({'reminder_delete_policy':'confirmed_reminder_delete_v1'} if reminder_deletion else {}),
                          **({'agenda_dialogue_policy': 'guided_agenda_v1', 'action_completion_policy': 'continue_v1'} if guided_agenda else {}),
                          **({'alarm_lifecycle_policy':'weekly_alarm_lifecycle_v1'} if alarm_lifecycle else {}),
                         **({'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,
@@ -616,6 +717,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation resource/server guard')
                 if continuous_voice and entry is not None: entry.prune()
             if continuous_voice:
+                if audio_freshness.expired(current):
+                    observe_audio_technical(model,audio_freshness,current)
+                    raise ValueError('Persistent invalid audio clock')
                 if current-last_input >= (STREAM_IDLE_MS if stream_started else STREAM_START_MS): raise ContinuousVoiceFault('voice_stream_lost')
                 if pending_reset is not None and current >= pending_reset.before: raise ContinuousVoiceFault('voice_context_timeout')
                 if (pending_reset is None and turn is None and model.memory.last_human
@@ -667,20 +771,21 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         timer_response(response)
                 elif state == 'speech' and current >= turn['deadline_ms'] and not turn.get('tts_started'):
                     return
-                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation', 'service_excerpt'} else 20000): return
+                elif state == 'speech' and current > turn['deadline_ms'] + (60000 if turn.get('timer_control')=='reminder_list' or (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation', 'service_excerpt'} else 20000): return
             for kind, data in pump.poll():
                 if continuous_voice:
                     last_input = now_ms(); stream_started = True
                     if kind == 5:
                         if pending_reset is None: raise ValueError('Unsolicited continuous context')
                         snapshot, catalog, voice_entry = pending_reset.claim(context_packet(data))
+                        warm_public = reminder_read and pending_reset.reason != 'turn_checkpoint'
                         memory = ShortMemory(now_ms); chosen = memory.restore(snapshot)
                         restored = restore_catalog(catalog)
                         if chosen in restored: raise ValueError('Duplicate continuous context')
                         old_session, old_context, nonce = session_id, context_id, pending_reset.nonce
                         model.memory = memory; context_id = chosen; session_id = uuid.uuid4().hex
                         entry = ConversationEntry(restored, chosen, now_ms) if voice_entry else None
-                        sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
+                        sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion)
                         pending_reset = None
                         accept_audio_after = now_ms() + 600
                         emit({'type': 'voice_context_ready', 'previous_session_id': old_session, 'previous_context_id': old_context,
@@ -689,6 +794,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         if audio_yielded:
                             state = 'yield'; emit({'type':'state','state':'audio_yield'})
                         else: reset(continue_chat=checkpoint_followup)
+                        if warm_public and not audio_yielded: model.warm_public_prefix()
                         continue
                     if pending_reset is not None:
                         if kind == 3:
@@ -697,7 +803,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if action == 'pause': return 'voice_suspended'
                             if action == 'audio_yield': audio_yielded = True; checkpoint_followup = False; continue
                             if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
-                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','alarm_selection','alarm_delete_result','activate'}:
+                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate'}:
                                 raise ValueError('Control during context handoff')
                         elif kind != 4: raise ValueError('Invalid continuous context frame')
                         continue  # Discard queued microphone/TTS tail, never transcribe during handoff.
@@ -710,7 +816,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = True
                         if not model.cancel_generation(): raise ContinuousVoiceFault('voice_cancellation_stuck')
                         if turn is not None and not turn.get('administrative'): model.memory.unanswered(turn['text'])
-                        timers.close(); timers = AssistantToolsTrial(now_ms,guided_agenda=True,maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume)
+                        timers.close(); timers = AssistantToolsTrial(now_ms,guided_agenda=True,maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion)
                         turn = recognizer = timeline = None; preroll.clear(); detector.reset(); flow.reset()
                         model.result = model.error = None; model.context_metrics.clear(); state = 'yield'
                         emit({'type':'state','state':'audio_yield'}); continue
@@ -719,7 +825,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = False
                         request_context('audio_resume'); continue
                     if action == 'activate' and state == 'wake': activate('button')
-                    if action in {'timer_result', 'agenda_result', 'volume_result','alarm_selection','alarm_delete_result'} and timers is not None:
+                    if action in {'timer_result', 'agenda_result', 'volume_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
+                        if action in {'reminder_delete_selection','reminder_delete_result'} and not reminder_deletion: raise ValueError('Reminder deletion not negotiated')
+                        if action=='reminder_read_result' and not reminder_read: raise ValueError('Reminder reading not negotiated')
                         if action in {'alarm_selection','alarm_delete_result'} and not alarm_lifecycle: raise ValueError('Alarm policy not negotiated')
                         if action in {'agenda_result', 'volume_result'} and not assistant_tools: raise ValueError('Tools not enabled')
                         if state == 'executing':
@@ -780,7 +888,14 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     raise ValueError('Expected timestamped PCM16')
                 stamp = struct.unpack('!Q', data[:8])[0]; pcm = data[8:]
                 current = now_ms()
-                if stamp > current + 100 or current - stamp > 1000 or stamp < last_audio:
+                if audio_freshness is not None:
+                    if not audio_freshness.accept(stamp,current):
+                        if audio_freshness.changed:
+                            observe_audio_technical(model,audio_freshness,current)
+                            if state in {'wake','listen'}: reset(audio_resync=True)
+                        continue  # Never decode/replay an invalid packet or use it to fill a form.
+                    if audio_freshness.changed: observe_audio_technical(model,audio_freshness,current)
+                elif stamp > current + 100 or current - stamp > 1000 or stamp < last_audio:
                     raise ValueError('Stale or incompatible audio clock')
                 last_audio = stamp
                 if continuous_voice and stamp < accept_audio_after: continue
@@ -885,12 +1000,15 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
     from continuous_voice import ContinuousVoiceFault, END_REASONS
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
     if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
+    if reminder_read and not guided_agenda: raise ValueError('Reminder reading requires guided tools')
+    if reminder_clarification and not guided_agenda: raise ValueError('Reminder clarification requires guided tools')
+    if reminder_deletion and not (reminder_read and reminder_clarification and alarm_lifecycle): raise ValueError('Reminder deletion requires coordinated reminders')
     if alarm_lifecycle and not continuous_voice: raise ValueError('Alarm lifecycle requires coordinated continuous voice')
     if continuous_voice and (not guided_agenda or resident is None or not resident.continuous_model or limit != 0):
         raise ValueError('Continuous voice requires explicit continuous model owner')
@@ -912,6 +1030,9 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
         if guided_agenda: value.enable_agenda_dialogue()
         if alarm_lifecycle: value.enable_alarm_lifecycle()
         if confirmed_volume: value.enable_confirmed_volume()
+        if reminder_read: value.enable_basic_assistant()
+        if reminder_clarification: value.enable_reminder_clarification()
+        if reminder_deletion: value.enable_reminder_deletion()
         if continuous_voice: value.purge_cache = lambda: resident.purge_cache(value)
         return value
     model = make_model()
@@ -940,6 +1061,9 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             hello = read_hello(conn, authentication_end)
                             if assistant_tools and hello.get('web_response_mode') != 'worker_first_v3_spanish': continue
                             if assistant_tools and hello.get('phone_volume_policy') != ('confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'): continue
+                            if reminder_read and hello.get('reminder_read_policy')!='android_reminder_read_v1': continue
+                            if reminder_clarification and hello.get('reminder_creation_policy')!='confirmed_reminder_intent_v1': continue
+                            if reminder_deletion and hello.get('reminder_delete_policy')!='confirmed_reminder_delete_v1': continue
                             if guided_agenda and (hello.get('agenda_dialogue_policy') != 'guided_agenda_v1' or hello.get('action_completion_policy') != 'continue_v1'): continue
                             if continuous_voice and (hello.get('voice_lifetime_policy') != 'continuous_voice_v1' or hello.get('dialogue_reset_policy') != 'client_fresh_v1'): continue
                             if alarm_lifecycle and hello.get('alarm_lifecycle_policy')!='weekly_alarm_lifecycle_v1': continue
@@ -975,7 +1099,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             try:
                                 end_reason = session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
-                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}))
+                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}), **({'reminder_read':True} if reminder_read else {}), **({'reminder_clarification':True} if reminder_clarification else {}), **({'reminder_deletion':True} if reminder_deletion else {}))
                             except ContinuousVoiceFault as fault:
                                 if not continuous_voice: raise
                                 if getattr(fault,'technical',None) is not None:

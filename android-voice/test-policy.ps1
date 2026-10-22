@@ -45,10 +45,26 @@ if ($LASTEXITCODE -ne 0) { throw 'Manual agenda management compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Manual agenda management tests failed' }
 & javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\AlarmSchedule.java" "$source\AgendaEntry.java" "$source\AgendaRequestGuard.java" "$source\AgendaDialogue.java" "$source\AgendaPermit.java" "$source\AgendaSpeechPolicy.java" "$source\ActionCompletionPolicy.java" "$source\AlarmDeletion.java" "$source\AlarmOccurrencePolicy.java" "$source\AlarmOccurrenceTransaction.java" "$PSScriptRoot\tests\AgendaGuardTest.java" "$PSScriptRoot\tests\AgendaDialogueTest.java" "$PSScriptRoot\tests\AlarmLifecycleTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Calendar guard compilation failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\ReminderListPolicy.java" "$PSScriptRoot\tests\ReminderListPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Reminder read policy compilation failed' }
+& java -cp $output local.doja.voice.ReminderListPolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\reminder_read_cases.tsv')
+if ($LASTEXITCODE -ne 0) { throw 'Reminder read scope/local speech tests failed' }
 & java -cp $output local.doja.voice.AgendaGuardTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\agenda_request_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Calendar literal/permit checks failed' }
 & java -cp $output local.doja.voice.AgendaDialogueTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\agenda_dialogue_cases.tsv') (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\agenda_receipt_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Guided agenda/continuation policy tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$PSScriptRoot\tests\CalendarDatesTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Calendar date/hour compilation failed' }
+& java -cp $output local.doja.voice.CalendarDatesTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\calendar_date_cases.tsv')
+if ($LASTEXITCODE -ne 0) { throw 'Calendar date/hour independent validation tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$PSScriptRoot\tests\ReminderClarificationTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Reminder clarification compilation failed' }
+& java -cp $output local.doja.voice.ReminderClarificationTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\reminder_clarification_cases.tsv')
+if ($LASTEXITCODE -ne 0) { throw 'Reminder clarification human/receipt scope tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\ReminderDeletion.java" "$PSScriptRoot\tests\ReminderDeletionTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Reminder deletion compilation failed' }
+& java -cp $output local.doja.voice.ReminderDeletionTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\reminder_delete_cases.tsv')
+if ($LASTEXITCODE -ne 0) { throw 'Reminder deletion target/authorization/fault tests failed' }
 & java -cp $output local.doja.voice.AlarmLifecycleTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\weekly_alarm_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Weekly alarm/deletion/snooze policy tests failed' }
 & javac -encoding UTF-8 -cp $output -d $output "$source\InterruptionAudioClock.java" "$source\SilenceRecognition.java" "$PSScriptRoot\tests\SilenceLifecycleTest.java"

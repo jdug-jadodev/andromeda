@@ -55,6 +55,9 @@ public final class AlarmLifecycleTest {
             check(decision.kind.equals("proposal") && decision.value.weekday==day && decision.value.minute==minute);
         }
         for(String unsafe:new String[]{"no elimina la alarma del lunes a las 17:00","elimina todas las alarmas","dijo elimina la alarma del lunes a las 17:00","elimina la alarma del lunes a las cinco","elimina la alarma del lunes a las 17:00 y busca noticias"}) reject(() -> AlarmSchedule.deletionTarget(unsafe));
+        AgendaRequestGuard.Value natural=AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"una alarma a las 8pm los martes","a las 8pm los martes","",WALL,true);
+        check(natural.weekday==2 && natural.minute==1200 && natural.due==1792544400000L);
+        reject(()->AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"no una alarma a las 8pm los martes","a las 8pm los martes","",WALL,true));
         AlarmDeletion deletion=new AlarmDeletion(); AgendaEntry selected=sounding(1,1020); AgendaDialogue.Human opening=human(1,"elimina la alarma del lunes a las 17:00");
         deletion.select(opening,selected,BOOT); reject(() -> deletion.human(human(2,"sí"),BOOT+3000));
         deletion.select(opening,selected,BOOT); deletion.spoken(opening.id,false); check(!deletion.active());

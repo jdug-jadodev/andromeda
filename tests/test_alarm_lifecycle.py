@@ -54,10 +54,24 @@ class AlarmLifecycleTests(unittest.TestCase):
                 self.assertEqual(weekly(when,int(due))['due_ms'],int(due)+7*86400000)
 
     def test_explicit_date_and_elapsed_alarms_remain_once(self):
-        for when in ['mañana a las 17:00','en dos minutos','2026-12-24 a las 23:00']:
+        for when in ['mañana a las 17:00','en dos minutos','hoy en dos minutos',
+                     'hoy dentro de dos minutos','hoy a las 23:59','2026-12-24 a las 23:00']:
             value=current_event('ALARM','pon una alarma '+when,WALL,True)
             self.assertEqual((value['weekday'],value['minute_of_day']),(0,-1))
         with self.assertRaises(ValueError): schedule('REMINDER','lunes a las 17:00',WALL)
+
+    def test_current_natural_time_first_Tuesday_20h_requires_native_selection_and_matching_receipt(self):
+        for human in ('una alarma a las 8pm los martes','pon una alarma a las ocho de la noche los martes'):
+            selected=self.native(human); self.assertEqual(selected['kind'],'agenda_proposal')
+            self.assertEqual((selected['weekday'],selected['minute_of_day']),(2,1200))
+        trial=AssistantToolsTrial(lambda:self.now[0],True,64,True)
+        turn=self.turn(1,'pon una alarma a las 8pm los martes'); selected=self.native(turn['text'])
+        event=trial.model_result(selected,turn,SESSION,CONTEXT,self.now[0]+300000)['event']
+        packet={key:event[key] for key in ('event_id','nonce','event_kind','due_ms','request_turn_id','request_sequence','weekday','minute_of_day')}
+        packet.update(action='agenda_result',status='CREATED',session_id=SESSION,context_id=CONTEXT)
+        with self.assertRaises(ValueError): trial.result(dict(packet,minute_of_day=480),SESSION,CONTEXT)
+        response=trial.result(packet,SESSION,CONTEXT)
+        self.assertIn('cada martes a las 20:00',response['text']); self.assertEqual(response['actions_executed'],1)
 
     def test_same_five_native_tools_and_no_model_supplied_target_or_schedule(self):
         payload=AssistantToolsModel.alarm_payload([{'role':'system','content':'Public'},{'role':'user','content':'Hola.'}])

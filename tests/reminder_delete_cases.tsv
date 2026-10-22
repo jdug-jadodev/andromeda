@@ -1,0 +1,28 @@
+operation	human	expected
+request	elimina el recordatorio de regar las plantas	1
+request	quiero borrar un recordatorio	1
+request	puedes quitar el recordatorio de llamar al taller	1
+request	cancela el recordatorio	1
+request	no elimines el recordatorio	0
+request	ayer dije elimina el recordatorio	0
+request	«elimina el recordatorio»	0
+request	borra todos los recordatorios	0
+request	elimina el recordatorio y apaga la luz	0
+request	busca en internet cómo eliminar un recordatorio	0
+request	elimina la alarma	0
+request	lista mis recordatorios	0
+request	pon un recordatorio	0
+yes	sí	1
+yes	sí, por favor	1
+yes	confirmo eliminar ese recordatorio	1
+yes	de acuerdo	1
+yes	te	0
+yes	no	0
+yes	sí y borra todos	0
+yes	«sí»	0
+choice	uno	0
+choice	el segundo	1
+choice	el número tres	2
+choice	cuatro	-1
+choice	sí	-1
+choice	el segundo y el tercero	-1

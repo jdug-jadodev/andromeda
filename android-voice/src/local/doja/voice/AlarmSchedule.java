@@ -9,17 +9,23 @@ final class AlarmSchedule {
     static final String POLICY = "weekly_alarm_lifecycle_v1";
     static final int PROTOCOL = 13;
     static final String[] DAYS = "lunes martes miércoles jueves viernes sábado domingo".split(" ");
-    static final String DAY_PATTERN = "lunes|martes|miercoles|jueves|viernes|sabado|domingo";
+    static final String DAY_PATTERN = "lunes|martes|miercoles|jueves|viernes|sabados?|domingos?";
     static AgendaRequestGuard.Value parse(AgendaEntry.Kind kind, String when, String text, long anchor) {
-        Matcher match = Pattern.compile("(?:el |los |cada |todos los )?("+DAY_PATTERN+") a (?:las? )?(.+)")
-            .matcher(TimerRequestGuard.normalize(AgendaRequestGuard.clean(when)));
-        if (kind != AgendaEntry.Kind.ALARM || !match.matches()) {
+        String plain=TimerRequestGuard.normalize(AgendaRequestGuard.clean(when));
+        Matcher match = Pattern.compile("(?:el |los |cada |todos los )?("+DAY_PATTERN+") a (?:las? )?(.+)").matcher(plain);
+        String dayText=null,clock=null;
+        if(match.matches()) { dayText=match.group(1); clock=match.group(2); }
+        else {
+            match=Pattern.compile("a (?:las? )?(.+?) (?:el |los |cada |todos los )("+DAY_PATTERN+")").matcher(plain);
+            if(match.matches()) { clock=match.group(1); dayText=match.group(2); }
+        }
+        if (kind != AgendaEntry.Kind.ALARM || dayText==null) {
             long[] time=AgendaRequestGuard.due(when,anchor); return new AgendaRequestGuard.Value(kind,text,time[0],time[1]);
         }
-        int weekday=Arrays.asList("lunes martes miercoles jueves viernes sabado domingo".split(" ")).indexOf(match.group(1))+1;
-        String clock=match.group(2); Matcher period=Pattern.compile("\\s+(a\\.?\\s*m\\.?|p\\.?\\s*m\\.?)$").matcher(clock);
+        int weekday=Arrays.asList("lunes martes miercoles jueves viernes sabado domingo".split(" ")).indexOf(dayText.replaceAll("(sabado|domingo)s$","$1"))+1;
+        Matcher period=Pattern.compile("\\s*(a\\.?\\s*m\\.?|p\\.?\\s*m\\.?|a eme|pe eme)$").matcher(clock);
         if (period.find()) {
-            boolean morning=period.group(1).startsWith("a"); clock=clock.substring(0,period.start());
+            boolean morning=period.group(1).startsWith("a"); clock=clock.substring(0,period.start()).trim();
             if (morning && clock.matches("(?:12|doce)(?::[0-9]{2})?")) clock=clock.contains(":") ? "00"+clock.substring(clock.indexOf(':')) : "00:00";
             else clock+=morning ? " de la manana" : " de la tarde";
         }

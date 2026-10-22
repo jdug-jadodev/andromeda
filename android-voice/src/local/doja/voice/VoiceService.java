@@ -57,6 +57,8 @@ public class VoiceService extends Service {
     volatile AgendaActionChannel agendaChannel;
     volatile AlarmActionChannel alarmChannel;
     volatile PhoneVolumeChannel volumeChannel;
+    volatile ReminderReadChannel reminderReadChannel;
+    volatile ReminderDeleteChannel reminderDeleteChannel;
     volatile String activeTimerControl = "";
     volatile TimerActionChannel timerChannel;
     final ExecutorService timerExecutor = new ThreadPoolExecutor(1,1,0L,TimeUnit.MILLISECONDS,new ArrayBlockingQueue<Runnable>(ContinuousVoicePolicy.ACTION_QUEUE));
@@ -251,15 +253,21 @@ public class VoiceService extends Service {
         TimerActionChannel oldTimer = timerChannel;
         AgendaActionChannel oldAgenda = agendaChannel;
         PhoneVolumeChannel oldVolume = volumeChannel;
+        ReminderReadChannel oldRead = reminderReadChannel;
         AlarmActionChannel oldAlarm=alarmChannel;
+        ReminderDeleteChannel oldDelete=reminderDeleteChannel;
         if (timerTrial || assistantTools) timerChannel = new TimerActionChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,assistantTools && AssistantConfig.GUIDED_AGENDA,continuousVoice);
-        if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice,continuousVoice && AssistantConfig.ALARM_LIFECYCLE);
+        if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice,continuousVoice && AssistantConfig.ALARM_LIFECYCLE,AssistantConfig.GUIDED_AGENDA);
         if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) alarmChannel=new AlarmActionChannel(contextChannel.sessionId,contextChannel.contextId);
         if (assistantTools) volumeChannel = new PhoneVolumeChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice);
+        if(assistantTools && AssistantConfig.GUIDED_AGENDA) reminderReadChannel=new ReminderReadChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,continuousVoice);
+        if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) reminderDeleteChannel=new ReminderDeleteChannel(contextChannel.sessionId,contextChannel.contextId);
         if (oldTimer != null) oldTimer.close();
         if (oldAgenda != null) oldAgenda.close();
         if (oldVolume != null) oldVolume.close();
+        if (oldRead != null) oldRead.close();
         if(oldAlarm!=null) oldAlarm.close();
+        if(oldDelete!=null) oldDelete.close();
     }
     void microphoneNotification(boolean recording) {
         NotificationManager manager = getSystemService(NotificationManager.class);
@@ -423,6 +431,8 @@ public class VoiceService extends Service {
             if (agendaChannel != null) agendaChannel.close();
             if(alarmChannel!=null) alarmChannel.close();
             if (volumeChannel != null) volumeChannel.close();
+            if (reminderReadChannel != null) reminderReadChannel.close();
+            if (reminderDeleteChannel != null) reminderDeleteChannel.close();
             if (contextChannel != null) contextChannel.close();
             if (contextLease != null) ConversationContexts.MEMORY.release(contextLease);
             ConversationContexts.scheduleExpiry();
@@ -560,6 +570,57 @@ public class VoiceService extends Service {
                     catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
                 });
             } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+        });
+    }
+    void readReminders(JSONObject event) throws Exception {
+        if(!running || reminderReadChannel==null) throw new IOException("Reminder reading not enabled");
+        ReminderReadChannel channel=reminderReadChannel;
+        ReminderListPolicy.Permit permit=channel.execution(event,SystemClock.elapsedRealtime());
+        timerExecutor.execute(() -> {
+            if(!running || channel!=reminderReadChannel) return;
+            long began=SystemClock.elapsedRealtime(); ReminderListPolicy.Receipt receipt=ReminderListPolicy.unavailable();
+            if(permit.begin(began) && !audioYielded) {
+                try(AgendaStore store=new AgendaStore(this)) {
+                    AgendaStore.Page page=store.list(AgendaEntry.Kind.REMINDER);
+                    if(SystemClock.elapsedRealtime()<permit.grant.before) receipt=ReminderListPolicy.render(page.entries,page.total,System.currentTimeMillis());
+                } catch(Exception ignored) { receipt=ReminderListPolicy.unavailable(); }
+            }
+            if(!running || channel!=reminderReadChannel) return;
+            VoiceHealthStore.reminderRead(this,receipt,SystemClock.elapsedRealtime()-began);
+            try {
+                JSONObject result=channel.result(permit,receipt);
+                if(result!=null && running && channel==reminderReadChannel) {
+                    byte[] raw=result.toString().getBytes(StandardCharsets.UTF_8); frame(3,raw,raw.length);
+                }
+            } catch(Exception failure) { if(running) main.post(this::stopSelf); }
+        });
+    }
+    void selectReminderDeletion(JSONObject event) throws Exception {
+        if(!running || reminderDeleteChannel==null) throw new IOException("Reminder deletion not negotiated");
+        ReminderDeleteChannel channel=reminderDeleteChannel;
+        timerExecutor.execute(() -> {
+            if(!running || channel!=reminderDeleteChannel || audioYielded) return;
+            try(AgendaStore store=new AgendaStore(this)) { sendReminderDeleteControl(channel.select(event,store,SystemClock.elapsedRealtime()),channel); }
+            catch(Exception failure) { /* Read-only timeout: no permission and no automatic retry. */ }
+        });
+    }
+    void executeReminderDeletion(JSONObject event) throws Exception {
+        if(!running || reminderDeleteChannel==null) throw new IOException("Reminder deletion not negotiated");
+        agendaChannel.alarmExecution(); // Shared single-mutation turn reservation, not an alarm target.
+        ReminderDeleteChannel channel=reminderDeleteChannel;
+        ReminderDeletion.Permit permit=channel.execution(event,SystemClock.elapsedRealtime());
+        timerExecutor.execute(() -> {
+            if(!running || channel!=reminderDeleteChannel || audioYielded) { permit.revoke(); return; }
+            try(AgendaStore store=new AgendaStore(this)) { sendReminderDeleteControl(channel.result(permit,store.deleteReminder(permit)),channel); }
+            catch(Exception failure) { /* Never replay an uncertain deletion. */ }
+        });
+    }
+    void sendReminderDeleteControl(JSONObject result,ReminderDeleteChannel channel) {
+        if(!running || controls.isShutdown() || channel!=reminderDeleteChannel) return;
+        controls.execute(() -> {
+            if(!running || channel!=reminderDeleteChannel) return;
+            try { byte[] data=result.toString().getBytes(StandardCharsets.UTF_8); frame(3,data,data.length); }
+            catch(Exception failure) { if(running) main.post(this::stopSelf); }
         });
     }
     void executeVolume(JSONObject event) throws Exception {
@@ -713,7 +774,9 @@ public class VoiceService extends Service {
                         if (timerTrial || assistantTools) timerChannel.human(event,SystemClock.elapsedRealtime());
                         if (assistantTools) agendaChannel.human(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
                         if (assistantTools) volumeChannel.human(event,SystemClock.elapsedRealtime());
+                        if(reminderReadChannel!=null) reminderReadChannel.human(event,SystemClock.elapsedRealtime());
                         if(alarmChannel!=null) alarmChannel.human(event,SystemClock.elapsedRealtime());
+                        if(reminderDeleteChannel!=null) reminderDeleteChannel.human(event,SystemClock.elapsedRealtime());
                         ConversationContexts.scheduleExpiry();
                         if (continuousVoice && audioYielded) { conversationTurn.clear(); continue; }
                         speaking = true;
@@ -735,6 +798,13 @@ public class VoiceService extends Service {
                     } else if ("volume_execute".equals(type) && assistantTools) {
                         mutationRequested=true;
                         executeVolume(event);
+                    } else if("reminder_read".equals(type)) {
+                        readReminders(event); // Read-only; never reserve or execute an agenda mutation.
+                    } else if("reminder_delete_step".equals(type)) {
+                        selectReminderDeletion(event);
+                    } else if("reminder_delete_execute".equals(type)) {
+                        mutationRequested=true;
+                        executeReminderDeletion(event);
                     } else if("alarm_select".equals(type) && alarmChannel!=null) {
                         selectAlarm(event);
                     } else if("alarm_delete_execute".equals(type) && alarmChannel!=null) {
@@ -774,9 +844,20 @@ public class VoiceService extends Service {
                         conversationTurn.clear(); ConversationContexts.scheduleExpiry();
                         main.post(() -> stopSelf());
                     } else if ("state".equals(type)) {
-                        if (continuousVoice && "audio_yield".equals(event.optString("state"))) { audioYielded = speaking = true; resumeRequested = false; continue; }
-                        if("wake".equals(event.optString("state")) && !conversationTurn.hasActiveTurn()) {
+                        if("wake".equals(event.optString("state")) && "audio_clock_resync".equals(event.optString("reason"))) {
+                            if(conversationTurn.hasActiveTurn()) throw new IOException("Audio resync during uncertain turn");
                             if(agendaChannel!=null) agendaChannel.cancelDialogue(); if(alarmChannel!=null) alarmChannel.cancelDialogue();
+                             if(volumeChannel!=null) volumeChannel.cancelDialogue();
+                             if(reminderDeleteChannel!=null) reminderDeleteChannel.cancelDialogue();
+                             dialogueListening=false;
+                            state("Audio fuera de tiempo descartado · vuelve a dirigirte a Andrómeda",FaceState.READY,null);
+                            continue;
+                        }
+                        if (continuousVoice && "audio_yield".equals(event.optString("state"))) { audioYielded = speaking = true; resumeRequested = false; if(reminderDeleteChannel!=null)reminderDeleteChannel.cancelDialogue(); continue; }
+                         if("wake".equals(event.optString("state")) && !conversationTurn.hasActiveTurn()) {
+                              if(agendaChannel!=null) agendaChannel.cancelDialogue(); if(alarmChannel!=null) alarmChannel.cancelDialogue();
+                              if(volumeChannel!=null) volumeChannel.cancelDialogue();
+                              if(reminderDeleteChannel!=null) reminderDeleteChannel.cancelDialogue();
                         }
                         dialogueListening = "command".equals(event.optString("state"));
                         if (dialogueListening) state(microphoneRecording ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
@@ -821,11 +902,19 @@ public class VoiceService extends Service {
                         || "service_translation".equals(event.getJSONObject("web_answer").optString("mode"))
                         || "service_excerpt".equals(event.getJSONObject("web_answer").optString("mode")));
                 if (message.isEmpty() || message.length() > (workerRead ? 2100 : 700)) throw new IOException("Respuesta inválida");
-                if (assistantTools) { if (!(alarmChannel!=null && alarmChannel.speech(event)) && !volumeChannel.speech(event) && !agendaChannel.speech(event)) timerChannel.validateSpeech(event); }
+                if (assistantTools) {
+                    String localRead=reminderReadChannel==null?null:reminderReadChannel.speech(event);
+                    String localDelete=reminderDeleteChannel==null?null:reminderDeleteChannel.speech(event);
+                    if(localRead!=null) message=localRead;
+                    else if(localDelete!=null) message=localDelete;
+                    else if (!(alarmChannel!=null && alarmChannel.speech(event)) && !volumeChannel.speech(event) && !agendaChannel.speech(event)) timerChannel.validateSpeech(event);
+                }
                 else if (timerTrial) timerChannel.validateSpeech(event);
                 activeWebAnswer = !workerRead ? "" : event.getJSONObject("web_answer").getString(
                     "service_excerpt".equals(event.getJSONObject("web_answer").optString("mode")) ? "evidence" : "answer_es");
-                activePlaybackMs = workerRead ? 60000 : 20000;
+                boolean listing="reminder_list".equals(event.optString("timer_control")) || "reminder_delete_question".equals(event.optString("timer_control"));
+                if(listing && (message.isEmpty() || message.length()>ReminderListPolicy.MAX_SPOKEN+40)) throw new IOException("Reminder speech outside limit");
+                activePlaybackMs = workerRead || listing ? 60000 : 20000;
                 activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
             } else switch (event.optString("type")) {
                 case "timer":
@@ -923,7 +1012,9 @@ public class VoiceService extends Service {
             }
             if (assistantTools && agendaChannel != null) agendaChannel.spoken(activeSpeechId, completed);
             if (assistantTools && volumeChannel != null) volumeChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
+            if(reminderReadChannel!=null) reminderReadChannel.spoken(activeSpeechId);
             if(alarmChannel!=null) alarmChannel.spoken(activeSpeechId,completed);
+            if(reminderDeleteChannel!=null) reminderDeleteChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
             controlTurn(speechInterrupted ? "tts_interrupted" : completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
         }
         boolean closing = conversationOnly && conversationTurn.awaitingClose();
@@ -963,6 +1054,8 @@ public class VoiceService extends Service {
         if (agendaChannel != null) agendaChannel.close();
         if(alarmChannel!=null) alarmChannel.close();
         if (volumeChannel != null) volumeChannel.close();
+        if (reminderReadChannel != null) reminderReadChannel.close();
+        if (reminderDeleteChannel != null) reminderDeleteChannel.close();
         timerExecutor.shutdown(); // Accepted durable work is not a timer cancellation.
         conversationTurn.clear();
         if (contextChannel != null) contextChannel.close();

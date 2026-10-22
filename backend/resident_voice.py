@@ -57,7 +57,7 @@ def main():
             serve('/var/lib/andromeda-conversation/token',work/'key',detector,0 if args.continuous_voice else 300,
                 '/var/lib/andromeda-conversation/server-cert.pem','/var/lib/andromeda-conversation/server-key.pem',
                 'synthetic_pcm' if args.synthetic_input else 'microphone',runtime.check,assistant_tools=True,resident=runtime,guided_agenda=args.guided_agenda,
-                continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle,confirmed_volume=args.guided_agenda)
+                continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle,confirmed_volume=args.guided_agenda,reminder_read=args.guided_agenda,reminder_clarification=args.guided_agenda,reminder_deletion=args.alarm_lifecycle)
         except RuntimeError:
             if monitor.reason not in {'manual_stop','time_limit','low_memory','battery_warm','stale_monitor','sensor_or_report_error','model_exit'}: raise
     finally:

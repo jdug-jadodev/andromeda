@@ -1,0 +1,43 @@
+case	step	human	heard	expected	text
+ambiguous	1	con un recordatorio	1	question	REMINDER_INTENT
+ambiguous	2	sí, por favor	1	question	SUBJECT
+ambiguous	3	regar las plantas	1	question	WHEN
+ambiguous	4	en cinco minutos	-	proposal	regar las plantas
+discard_old_fields	1	con un recordatorio beber agua mañana a las 20:00	1	question	REMINDER_INTENT
+discard_old_fields	2	claro	1	question	SUBJECT
+discard_old_fields	3	regar las plantas	1	question	WHEN
+discard_old_fields	4	en cinco minutos	-	proposal	regar las plantas
+natural	1	me ayudas con un recordatorio	1	question	REMINDER_INTENT
+natural	2	quiero crear un recordatorio	1	question	SUBJECT
+natural	3	regar las plantas	1	question	WHEN
+natural	4	en cinco minutos	-	proposal	regar las plantas
+indirect	1	necesito que me recuerdes algo	1	question	REMINDER_INTENT
+indirect	2	de acuerdo	1	question	SUBJECT
+indirect	3	regar las plantas	1	question	WHEN
+indirect	4	en cinco minutos	-	proposal	regar las plantas
+fragment	1	un recordatorio	1	question	REMINDER_INTENT
+fragment	2	no	-	cancelled	CANCELLED
+decline	1	con un recordatorio	1	question	REMINDER_INTENT
+decline	2	no quiero un recordatorio	-	cancelled	CANCELLED
+not_yet_intent	1	con un recordatorio	1	question	REMINDER_INTENT
+not_yet_intent	2	regar las plantas	1	question	REMINDER_INTENT
+not_yet_intent	3	correcto	1	question	SUBJECT
+not_yet_intent	4	regar las plantas	1	question	WHEN
+not_yet_intent	5	en cinco minutos	-	proposal	regar las plantas
+mixed_yes	1	con un recordatorio	1	question	REMINDER_INTENT
+mixed_yes	2	sí y borra la alarma	1	question	REMINDER_INTENT
+mixed_yes	3	no	-	cancelled	CANCELLED
+unheard	1	con un recordatorio	-	question	REMINDER_INTENT
+unheard	2	sí	-	INVALID	
+interrupted	1	con un recordatorio	0	question	REMINDER_INTENT
+interrupted	2	sí	-	none	
+legacy_complete_open	1	pon un recordatorio	1	question	SUBJECT
+legacy_complete_open	2	regar las plantas	1	question	WHEN
+legacy_complete_open	3	en cinco minutos	-	proposal	regar las plantas
+negated	1	no pongas un recordatorio	-	INVALID	
+quoted	1	«con un recordatorio»	-	INVALID	
+reported	1	mi amigo dijo con un recordatorio	-	INVALID	
+hypothetical	1	si digo con un recordatorio qué pasa	-	INVALID	
+mixed	1	con un recordatorio y apaga el televisor	-	INVALID	
+read_not_create	1	lista mis recordatorios	-	INVALID	
+other_tool	1	pon una alarma	-	INVALID	

@@ -37,34 +37,48 @@ def clean(text):
     return re.sub(r'^por favor ', '', value, flags=re.I)
 
 
-def calendar_due(when, anchor_ms):
-    """Explicit date + unambiguous time, or literal elapsed duration. Never roll past dates forward."""
+def calendar_day(text, anchor_ms):
+    """A literal local date, with no inferred hour/year or fuzzy month repair."""
     if type(anchor_ms) is not int or anchor_ms <= 0: raise AgendaValidationError('invalid_clock')
-    plain = normalized(when)
-    if plain.startswith('en '):
-        try: seconds = literal_seconds('pon un temporizador de ' + plain[3:])
-        except ValueError: raise AgendaValidationError('invalid_time') from None
-        return anchor_ms + seconds * 1000, seconds * 1000
-    match = re.fullmatch(r'(.+?) a (?:las? )?(.+)', plain)
-    if not match: raise AgendaValidationError('missing_date_time')
-    date, clock = match.groups(); today = datetime.fromtimestamp(anchor_ms / 1000, BOGOTA).date()
-    if date in {'hoy', 'manana', 'pasado manana'}:
-        day = today + timedelta(days={'hoy': 0, 'manana': 1, 'pasado manana': 2}[date])
-    else:
-        date = re.sub(r'^el ', '', date)
-        try:
+    date = re.sub(r'^(?:para )?(?:el )?', '', normalized(clean(text)))
+    today = datetime.fromtimestamp(anchor_ms / 1000, BOGOTA).date()
+    try:
+        relative = re.fullmatch(r'(?:en|dentro de) (.+?) dias?', date)
+        if relative:
+            days = number(relative[1])
+            if not 1 <= days <= 366: raise ValueError()
+            day = today + timedelta(days=days)
+        elif date in {'hoy', 'manana', 'pasado manana'}:
+            day = today + timedelta(days={'hoy': 0, 'manana': 1, 'pasado manana': 2}[date])
+        else:
             if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', date): day = datetime.strptime(date, '%Y-%m-%d').date()
             elif re.fullmatch(r'[0-9]{2}/[0-9]{2}/[0-9]{4}', date): day = datetime.strptime(date, '%d/%m/%Y').date()
             else:
-                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r') de ([0-9]{4})', date)
+                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r') (?:de|del) (.+)', date)
                 if not parts: raise ValueError()
-                day = datetime(int(parts[3]), MONTHS.index(parts[2]) + 1, number(parts[1])).date()
-        except (ValueError, OverflowError): raise AgendaValidationError('invalid_date') from None
+                year = parts[3]
+                if re.fullmatch(r'[0-9]{4}', year): year = int(year)
+                else:
+                    spoken = re.fullmatch(r'dos mil(?: (.+))?', year)
+                    if not spoken: raise ValueError()
+                    suffix = number(spoken[1]) if spoken[1] else 0
+                    if not 0 <= suffix <= 99: raise ValueError()
+                    year = 2000 + suffix
+                day = datetime(year, MONTHS.index(parts[2]) + 1, number(parts[1])).date()
+        if not 0 <= (day - today).days <= 366: raise ValueError()
+        return day
+    except (ValueError, OverflowError): raise AgendaValidationError('invalid_date') from None
+
+
+def calendar_clock(text):
+    clock = re.sub(r'^a (?:las? )?', '', normalized(clean(text)))
     if clock in {'medianoche', 'mediodia'}: hour, minute = (0 if clock == 'medianoche' else 12), 0
     else:
-        suffix = re.search(r' (de la manana|de la tarde|de la noche|del mediodia)$', clock)
+        suffix = re.search(r'\s*(a\.?\s*m\.?|p\.?\s*m\.?|a eme|pe eme)$', clock)
+        meridiem = bool(suffix)
+        if not suffix: suffix = re.search(r' (de la manana|de la tarde|de la noche|del mediodia)$', clock)
         period = suffix[1] if suffix else ''
-        clock = clock[:suffix.start()] if suffix else clock
+        clock = clock[:suffix.start()].strip() if suffix else clock
         digital = re.fullmatch(r'([0-9]{1,2}):([0-9]{2})', clock)
         try:
             if digital: hour, minute = int(digital[1]), int(digital[2])
@@ -75,24 +89,57 @@ def calendar_due(when, anchor_ms):
                 if minute == -1: minute = number(parts[1])
             if period:
                 if not 1 <= hour <= 12: raise ValueError()
-                if period == 'de la manana' and hour == 12: raise ValueError()
-                if period == 'del mediodia' and hour != 12: raise ValueError()
-                if period == 'de la noche' and hour == 12: hour = 0
-                elif period in {'de la tarde', 'de la noche'} and hour < 12: hour += 12
+                if meridiem: hour = hour % 12 + (0 if period.startswith('a') else 12)
+                else:
+                    if period == 'de la manana' and hour == 12: raise ValueError()
+                    if period == 'del mediodia' and hour != 12: raise ValueError()
+                    if period == 'de la noche' and hour == 12: hour = 0
+                    elif period in {'de la tarde', 'de la noche'} and hour < 12: hour += 12
             elif not digital and hour < 13: raise AgendaValidationError('ambiguous_time')
             if not 0 <= hour <= 23 or not 0 <= minute <= 59: raise ValueError()
         except (ValueError, OverflowError) as error:
             if isinstance(error, AgendaValidationError): raise
             raise AgendaValidationError('invalid_time') from None
+    return hour, minute
+
+
+def day_due(day, clock, anchor_ms):
+    if type(anchor_ms) is not int or anchor_ms <= 0: raise AgendaValidationError('invalid_clock')
+    hour, minute = calendar_clock(clock)
     due = int(datetime(day.year, day.month, day.day, hour, minute, tzinfo=BOGOTA).timestamp() * 1000)
     if not 0 < due - anchor_ms <= MAX_AHEAD_MS: raise AgendaValidationError('past_or_range')
     return due, 0
 
 
+def calendar_due(when, anchor_ms):
+    """Explicit calendar day + clock, or retained minute/hour countdown grammar.
+
+    A day-only request needs a fresh hour; it is NOT a timer or an assumed time.
+    """
+    if type(anchor_ms) is not int or anchor_ms <= 0: raise AgendaValidationError('invalid_clock')
+    plain = re.sub(r'^para ', '', normalized(clean(when)))
+    match = re.fullmatch(r'(.+?) a (?:las? )?(.+)', plain)
+    if match: return day_due(calendar_day(match[1], anchor_ms), match[2], anchor_ms)
+    if plain.startswith('en '):
+        try: seconds = literal_seconds('pon un temporizador de ' + plain[3:])
+        except ValueError: pass
+        else: return anchor_ms + seconds * 1000, seconds * 1000
+    # “Hoy en/dentro de X” is still a countdown, but keeps the user's
+    # explicit local-day wording. It must not be routed through day-only
+    # clarification or silently converted to a fixed clock time.
+    relative = re.fullmatch(r'hoy (?:en|dentro de) (.+)', plain)
+    if relative:
+        try: seconds = literal_seconds('pon un temporizador de ' + relative[1])
+        except ValueError: pass
+        else: return anchor_ms + seconds * 1000, seconds * 1000
+    calendar_day(plain, anchor_ms)  # Distinguish an understood day from an invalid date.
+    raise AgendaValidationError('missing_time')
+
+
 def parts(kind, raw):
     candidates = []
     if kind == 'ALARM':
-        match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|alarma) (?:para )?(.+)', raw, re.I)
+        match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|(?:una |la )?alarma) (?:para )?(.+)', raw, re.I)
         if match: candidates.append((match[1], ''))
     else:
         prefix = re.fullmatch(r'(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)', raw, re.I)
@@ -100,9 +147,11 @@ def parts(kind, raw):
             tail = prefix[1]
             front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
             if front: candidates.append((re.sub(r'^para ', '', front[1], flags=re.I), front[2]))
-            for start in re.finditer(r' (?=en |hoy |ma[ñn]ana |pasado ma[ñn]ana |el [0-9]|[0-9]{4}-|[0-9]{2}/)', tail, re.I):
-                candidates.append((tail[start.end():], tail[:start.start()]))
-    return candidates
+            for start in re.finditer(r' (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))', tail, re.I):
+                body = tail[:start.start()]
+                if not re.search(r'\bpara$', body, re.I):
+                    candidates.append((re.sub(r'^para ', '', tail[start.end():], flags=re.I), body))
+    return list(dict.fromkeys(candidates))
 
 
 def request(kind, human, when_text, reminder_text, anchor_ms, alarm_lifecycle=False):
@@ -119,7 +168,7 @@ def request(kind, human, when_text, reminder_text, anchor_ms, alarm_lifecycle=Fa
         if kind == 'REMINDER' and (not 0 < len(body) <= 160 or re.search(
                 r'[;.!?]|(?:\b(?:y|ademas|tambien|despues|luego)\b|,)\s+(?:andromeda[, ]+)?(?:por favor )?'
                 r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
-                r'|\ben .+ (?:segundos?|minutos?|horas?)\b', normalized(body))):
+                r'|\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\b', normalized(body))):
             continue
         if alarm_lifecycle:
             from alarm_schedule import schedule
