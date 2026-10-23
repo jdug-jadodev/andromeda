@@ -22,6 +22,7 @@ public final class LightCommandRouting {
         switch (command.kind) {
             case POWER: return LightCommand.power(target, command.powerOn);
             case COLOR: return LightCommand.color(target, command.color, command.brightnessPercent);
+            case BRIGHTNESS: return LightCommand.brightness(target, command.brightnessPercent);
             case PRESET: return LightCommand.preset(target, command.name, command.brightnessPercent);
             case PATTERN: return LightCommand.pattern(target, command.name, command.brightnessPercent);
             default: throw new IllegalArgumentException("Tipo de orden desconocido");

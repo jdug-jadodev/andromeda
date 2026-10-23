@@ -20,6 +20,7 @@ public final class LightDeviceResolver {
     public static final String LOTUS_NAME = "MELK-OA10 17";
     public static final String MR_STAR_NAME = "GATT--DEMO";
     private static final long TIMEOUT_MS = 15000L;
+    private static final long CONNECT_GUARD_MS = 1200L;
 
     public enum Status { RESOLVED, INVALID_ORDER, BLUETOOTH_UNAVAILABLE, PERMISSION_DENIED, SCAN_UNAVAILABLE, SCAN_FAILED, TARGET_NOT_FOUND }
     public interface Callback { void onResolved(Result result); }
@@ -117,10 +118,11 @@ public final class LightDeviceResolver {
         if (scanner != null && scanCallback != null) scanner.stopScan(scanCallback);
         handler.removeCallbacksAndMessages(null);
         if (resultCallback == null) return;
-        // Some Android 10 stacks return GATT 133 when connectGatt starts in
-        // the same callback turn as stopScan. This is a scheduling guard, not
-        // a retry: the resolver still connects at most once.
-        if (result.status == Status.RESOLVED) handler.postDelayed(() -> resultCallback.onResolved(result), 350L);
+        // Some Android 10 stacks return GATT 133 when connectGatt starts too
+        // soon after stopScan. This is a scheduling guard, not a retry: the
+        // resolver still connects at most once.
+        if (result.status == Status.RESOLVED)
+            handler.postDelayed(() -> resultCallback.onResolved(result), CONNECT_GUARD_MS);
         else resultCallback.onResolved(result);
     }
 }

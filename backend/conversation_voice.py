@@ -98,14 +98,14 @@ def record_protocol_technical(inference_key,value):
 
 TOOLS_TECHNICAL_ENUMS = {
     'choice': ('text', 'native', 'local'),
-    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'list_reminders', 'delete_reminder'),
+    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder'),
     'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
-               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'reminder_list_request', 'reminder_delete_request'),
+               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request'),
     'validation': ('invalid_native_call', 'missing_native_call', 'unsupported_reply', 'volume_request_rejected',
                    'agenda_request_rejected', 'timer_request_rejected', 'accepted', 'reply', 'agenda_question',
                    'web_query_rejected', 'web_results', 'web_no_results', 'web_provider_unavailable',
                    'local_web_followup', 'web_invalid_request', 'web_explicit_request_required',
-                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question', 'reminder_read_rejected', 'read_requested', 'local_arithmetic', 'reminder_delete_rejected', 'reminder_delete_requested'),
+                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question', 'light_request_rejected', 'reminder_read_rejected', 'read_requested', 'local_arithmetic', 'reminder_delete_rejected', 'reminder_delete_requested'),
     'generation_error': ('TimeoutError', 'ValueError', 'OSError', 'RuntimeError', 'KeyError', 'TypeError'),
 }
 TOOLS_TECHNICAL_KEYS = frozenset({'version', 'at_ms', 'sequence', 'phase', 'elapsed_ms', 'choice', 'tool',
@@ -694,11 +694,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     emit({'type': 'ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
                       'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
                       **({'assistant_tools': True} if assistant_tools else {}),
-                        'timer_trial': timer_trial, 'allowed_tools': (['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume'] + (['list_reminders'] if reminder_read else []) + (['delete_reminder'] if reminder_deletion else [])) if assistant_tools else ['create_timer'] if timer_trial else [],
+                         'timer_trial': timer_trial, 'allowed_tools': (['create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights'] + (['list_reminders'] if reminder_read else []) + (['delete_reminder'] if reminder_deletion else [])) if assistant_tools else ['create_timer'] if timer_trial else [],
                       'timer_policy': 'request_authorized_close' if timer_trial else '',
                      'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': limit,
                       'response_start_ms': response_start_ms, 'input_source': source, 'context_version': 1,
-                         **({'web_response_mode': 'worker_first_v3_spanish', 'phone_volume_policy': 'confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'} if assistant_tools else {}),
+                          **({'web_response_mode': 'worker_first_v3_spanish', 'phone_volume_policy': 'confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1', 'light_control_policy': 'voice_light_command_v1'} if assistant_tools else {}),
                          **({'reminder_read_policy':'android_reminder_read_v1'} if reminder_read else {}),
                           **({'reminder_creation_policy':'confirmed_reminder_intent_v1'} if reminder_clarification else {}),
                           **({'reminder_delete_policy':'confirmed_reminder_delete_v1'} if reminder_deletion else {}),
@@ -1061,6 +1061,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             hello = read_hello(conn, authentication_end)
                             if assistant_tools and hello.get('web_response_mode') != 'worker_first_v3_spanish': continue
                             if assistant_tools and hello.get('phone_volume_policy') != ('confirmed_media_v3' if confirmed_volume else 'absolute_media_v2_turn60' if guided_agenda else 'absolute_media_v1'): continue
+                            if assistant_tools and hello.get('light_control_policy') != 'voice_light_command_v1': continue
                             if reminder_read and hello.get('reminder_read_policy')!='android_reminder_read_v1': continue
                             if reminder_clarification and hello.get('reminder_creation_policy')!='confirmed_reminder_intent_v1': continue
                             if reminder_deletion and hello.get('reminder_delete_policy')!='confirmed_reminder_delete_v1': continue

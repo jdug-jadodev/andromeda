@@ -15,16 +15,19 @@ public final class LotusLampProtocolTest {
     public static void main(String[] args) {
         checkHex("7E 07 05 03 F2 A3 F6 10 EF", LotusLampProtocol.color(LightColor.parseHex("#F2A3F6")));
         checkHex("7E 04 01 19 01 FF 02 01 EF", LotusLampProtocol.brightness(25));
+        checkHex("7E 04 01 32 01 FF 02 01 EF", LotusLampProtocol.brightness(50));
         checkHex("7E 07 04 FF 00 01 02 01 EF", LotusLampProtocol.power(true));
-        checkHex("7E 07 04 00 00 02 01 EF", LotusLampProtocol.power(false));
+        checkHex("7E 07 04 00 00 00 02 01 EF", LotusLampProtocol.power(false));
 
         List<byte[]> frames = LotusLampProtocol.framesFor(
             LightCommand.color(LightTarget.LOTUS, LightColor.parseHex("F2A3F6"), 25));
         check(frames.size() == 2);
         checkHex("7E 07 05 03 F2 A3 F6 10 EF", frames.get(0));
         checkHex("7E 04 01 19 01 FF 02 01 EF", frames.get(1));
-        checkHex("7E 07 04 FF 00 01 02 01 EF",
+        checkHex("7E 07 04 FF 00 01 02 01 EF", 
             LotusLampProtocol.framesFor(LightCommand.power(LightTarget.LOTUS, true)).get(0));
+        checkHex("7E 04 01 32 01 FF 02 01 EF",
+            LotusLampProtocol.framesFor(LightCommand.brightness(LightTarget.LOTUS, 50)).get(0));
 
         invalid(LightCommand.preset(LightTarget.LOTUS, "calido_tranquilo"));
         invalid(LightCommand.pattern(LightTarget.LOTUS, "gamer"));

@@ -10,7 +10,8 @@ import java.util.concurrent.Executors;
 
 /**
  * Resolves authorized names and executes independent device orders off the UI
- * and audio threads. It performs no retry and never persists addresses.
+ * and audio threads. It retries only pre-write transport failures and never
+ * persists addresses.
  */
 public final class LightCommandDispatcher implements AutoCloseable {
     public enum Status { COMPLETE_UNCONFIRMED, AUTHORIZATION_REQUIRED, UNSUPPORTED_ORDER,
@@ -83,27 +84,48 @@ public final class LightCommandDispatcher implements AutoCloseable {
             finish(callback, new Result(Status.DEVICE_NOT_FOUND, commands.size(), index, acceptedFrames, "target_not_resolved"));
             return;
         }
+        sendTargetAttempt(commands, index, devices, acceptedFrames, callback, 1);
+    }
+
+    private void sendTargetAttempt(List<LightCommand> commands, int index,
+            Map<LightTarget, BluetoothDevice> devices, int acceptedFrames,
+            Callback callback, int attempt) {
+        LightCommand command = commands.get(index);
+        BluetoothDevice device = devices.get(command.target);
         if (command.target == LightTarget.LOTUS) {
-            new LotusLampBleAdapter(context, device).send(command, result -> {
-                if (!result.isSuccessfulSubmission()) {
-                    finish(callback, new Result(index == 0 ? Status.TRANSPORT_ERROR : Status.PARTIAL_OR_UNCERTAIN,
-                        commands.size(), index, acceptedFrames + result.acceptedFrameCount, result.status.name()));
-                    return;
-                }
-                worker.execute(() -> writeNext(commands, index + 1, devices,
-                    acceptedFrames + result.acceptedFrameCount, callback));
-            });
+            new LotusLampBleAdapter(context, device).send(command, result -> targetResult(
+                commands, index, devices, acceptedFrames, callback, attempt, result.status.name(),
+                result.isSuccessfulSubmission(), result.acceptedFrameCount));
         } else {
-            new MrStarBleAdapter(context, device).send(command, result -> {
-                if (!result.isSuccessfulSubmission()) {
-                    finish(callback, new Result(index == 0 ? Status.TRANSPORT_ERROR : Status.PARTIAL_OR_UNCERTAIN,
-                        commands.size(), index, acceptedFrames + result.acceptedFrameCount, result.status.name()));
-                    return;
-                }
-                worker.execute(() -> writeNext(commands, index + 1, devices,
-                    acceptedFrames + result.acceptedFrameCount, callback));
-            });
+            new MrStarBleAdapter(context, device).send(command, result -> targetResult(
+                commands, index, devices, acceptedFrames, callback, attempt, result.status.name(),
+                result.isSuccessfulSubmission(), result.acceptedFrameCount));
         }
+    }
+
+    private void targetResult(List<LightCommand> commands, int index,
+            Map<LightTarget, BluetoothDevice> devices, int acceptedFrames,
+            Callback callback, int attempt, String status, boolean success,
+            int acceptedThisAttempt) {
+        int totalAccepted = acceptedFrames + acceptedThisAttempt;
+        if (!success && LightBleRetryPolicy.mayRetry(status, acceptedThisAttempt, attempt)) {
+            int nextAttempt = attempt + 1;
+            worker.execute(() -> {
+                SystemClock.sleep(LightBleRetryPolicy.backoffMs(nextAttempt));
+                sendTargetAttempt(commands, index, devices, acceptedFrames, callback, nextAttempt);
+            });
+            return;
+        }
+        if (!success) {
+            Status finalStatus = index == 0 ? Status.TRANSPORT_ERROR : Status.PARTIAL_OR_UNCERTAIN;
+            String detail = (attempt > 1 ? "retry_exhausted_" : "") + status;
+            finish(callback, new Result(finalStatus, commands.size(), index, totalAccepted, detail));
+            return;
+        }
+        worker.execute(() -> {
+            if (index + 1 < commands.size()) SystemClock.sleep(LightBleRetryPolicy.BETWEEN_TARGETS_MS);
+            writeNext(commands, index + 1, devices, totalAccepted, callback);
+        });
     }
 
     private synchronized void finish(Callback callback, Result result) {

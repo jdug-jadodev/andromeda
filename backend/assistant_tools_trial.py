@@ -7,10 +7,12 @@ from agenda_requests import BOGOTA, request
 from timer_trial import TimerTrial
 from conversation_flow import ConversationFlow
 from phone_volume import VolumeTrial
+from light_trial import LightTrial
 
 REJECTION = ('No he confirmado ninguna acción ni búsqueda con esa petición. '
              'Indica una sola petición completa: fecha y hora inequívocas para la alarma, '
-              'contenido y momento para el recordatorio, «busca en Internet» y la consulta, o volumen de 0 a 100 por ciento.')
+             'contenido y momento para el recordatorio, «busca en Internet» y la consulta, volumen de 0 a 100 por ciento, '
+             'o una orden clara para una luz.')
 
 
 def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False, weekday=0, minute_of_day=-1):
@@ -41,6 +43,7 @@ class AssistantToolsTrial:
         self.consumed = set()
         if confirmed_volume and not guided_agenda: raise ValueError('Confirmed volume requires guided tools')
         self.volume = VolumeTrial(clock,60000 if guided_agenda else 30000,confirmed_volume,maximum_sequence)
+        self.lights = LightTrial(clock, maximum_sequence)
         self.guided_agenda = guided_agenda
         from reminder_read import ReminderRead
         if reminder_read and not guided_agenda: raise ValueError('Reminder reading requires guided tools')
@@ -57,7 +60,7 @@ class AssistantToolsTrial:
         self.reminder_delete_enabled=reminder_deletion; self.reminder_delete=ReminderDeletion(clock,maximum_sequence)
 
     @property
-    def pending_dialogue(self): return self.dialogue.active or self.deletion.active or self.volume.dialogue.active or self.reminder_delete.active
+    def pending_dialogue(self): return self.dialogue.active or self.deletion.active or self.volume.dialogue.active or self.reminder_delete.active or self.lights.active or self.lights.inflight is not None
 
     @staticmethod
     def deletion_response(response):
@@ -74,6 +77,12 @@ class AssistantToolsTrial:
 
     def human(self, turn, session, context, session_end):
         if not self.guided_agenda: return None
+        if self.lights.active:
+            response = self.lights.human(turn, session, context, session_end)
+            if response and response.get('executing'):
+                if turn['id'] in self.consumed or len(self.consumed) >= 24: raise ValueError('Second mutation')
+                self.consumed.add(turn['id'])
+            return response
         if self.reminder_delete.active:
             response=self.reminder_delete.human(turn,session,context,session_end)
             if response and response.get('event',{}).get('type')=='reminder_delete_execute':
@@ -100,6 +109,7 @@ class AssistantToolsTrial:
         self.dialogue.spoken(turn_id, completed, self.clock()); self.deletion.spoken(turn_id,completed)
         self.volume.dialogue.spoken(turn_id,completed,self.clock())
         self.reminder_delete.spoken(turn_id,completed)
+        self.lights.spoken(turn_id, completed)
 
     @staticmethod
     def volume_dialogue_response(result):
@@ -130,6 +140,13 @@ class AssistantToolsTrial:
                     or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed):
                 raise ValueError('Volume form unavailable')
             return self.volume_dialogue_response(self.volume.dialogue.begin(turn,self.clock()))
+        if result['kind'] == 'light_proposal':
+            if (self.pending_dialogue or self.inflight or self.timer.inflight or self.volume.inflight
+                    or self.deletion.grant or turn['id'] in self.consumed or len(self.consumed) >= 24):
+                raise ValueError('Light form unavailable')
+            response = self.lights.begin(turn)
+            response['timer_control'] = 'light_question'
+            return response
         if result['kind']=='confirmed_volume_proposal':
             if (self.inflight or self.timer.inflight or self.volume.inflight or self.deletion.grant
                     or turn['id'] in self.consumed or len(self.consumed)>=24): raise ValueError('Second mutation')
@@ -197,6 +214,7 @@ class AssistantToolsTrial:
         if packet.get('action')=='alarm_selection': return self.deletion_response(self.deletion.selection(packet,session,context))
         if packet.get('action')=='alarm_delete_result': return self.deletion_response(self.deletion.result(packet,session,context))
         if packet.get('action') == 'volume_result': return self.completion(self.volume.result(packet, session, context))
+        if packet.get('action') == 'light_result': return self.completion(self.lights.result(packet, session, context))
         if packet.get('action') == 'timer_result': return self.completion(self.timer.result(packet, session, context))
         grant = self.inflight
         if grant is None: return None
@@ -217,11 +235,13 @@ class AssistantToolsTrial:
         if deletion is not None: return self.deletion_response(deletion)
         volume = self.volume.timed_out()
         if volume is not None: return self.completion(volume)
+        light = self.lights.timed_out()
+        if light is not None: return self.completion(light)
         if self.inflight is not None and self.clock() >= self.inflight['execute_before_ms'] + 500:
             grant, self.inflight = self.inflight, None
             return self.completion({'text': result_text('UNKNOWN', grant['event_kind'], grant['due_ms']), 'timer_control': 'agenda_result',
                     'actions_executed': 0, 'close_reason': 'action_result', 'offered_more': False})
         return self.completion(self.timer.timed_out())
 
-    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.dialogue.clear(); self.deletion.clear(); self.read.cancel(); self.reminder_delete.clear()
-    def close(self): self.timer.close(); self.volume.close(); self.dialogue.clear(); self.deletion.clear(); self.read.close(); self.reminder_delete.clear(); self.inflight = None
+    def cancel(self): self.timer.cancel(); self.volume.cancel(); self.lights.cancel(); self.dialogue.clear(); self.deletion.clear(); self.read.cancel(); self.reminder_delete.clear()
+    def close(self): self.timer.close(); self.volume.close(); self.lights.close(); self.dialogue.clear(); self.deletion.clear(); self.read.close(); self.reminder_delete.clear(); self.inflight = None

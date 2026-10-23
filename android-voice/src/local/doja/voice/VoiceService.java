@@ -58,6 +58,8 @@ public class VoiceService extends Service {
     volatile AgendaActionChannel agendaChannel;
     volatile AlarmActionChannel alarmChannel;
     volatile PhoneVolumeChannel volumeChannel;
+    volatile LightVoiceChannel lightChannel;
+    LightCommandDispatcher lightDispatcher;
     volatile ReminderReadChannel reminderReadChannel;
     volatile ReminderDeleteChannel reminderDeleteChannel;
     volatile String activeTimerControl = "";
@@ -81,6 +83,7 @@ public class VoiceService extends Service {
     public IBinder onBind(Intent intent) { return null; }
     public void onCreate() {
         super.onCreate();
+        lightDispatcher = new LightCommandDispatcher(this);
     }
     void initializeTts() {
         tts = new TextToSpeech(this, status -> {
@@ -261,6 +264,7 @@ public class VoiceService extends Service {
         TimerActionChannel oldTimer = timerChannel;
         AgendaActionChannel oldAgenda = agendaChannel;
         PhoneVolumeChannel oldVolume = volumeChannel;
+        LightVoiceChannel oldLight = lightChannel;
         ReminderReadChannel oldRead = reminderReadChannel;
         AlarmActionChannel oldAlarm=alarmChannel;
         ReminderDeleteChannel oldDelete=reminderDeleteChannel;
@@ -268,11 +272,13 @@ public class VoiceService extends Service {
         if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice,continuousVoice && AssistantConfig.ALARM_LIFECYCLE,AssistantConfig.GUIDED_AGENDA);
         if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) alarmChannel=new AlarmActionChannel(contextChannel.sessionId,contextChannel.contextId);
         if (assistantTools) volumeChannel = new PhoneVolumeChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice);
+        if (assistantTools) lightChannel = new LightVoiceChannel(contextChannel.sessionId,contextChannel.contextId);
         if(assistantTools && AssistantConfig.GUIDED_AGENDA) reminderReadChannel=new ReminderReadChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,continuousVoice);
         if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) reminderDeleteChannel=new ReminderDeleteChannel(contextChannel.sessionId,contextChannel.contextId);
         if (oldTimer != null) oldTimer.close();
         if (oldAgenda != null) oldAgenda.close();
         if (oldVolume != null) oldVolume.close();
+        if (oldLight != null) oldLight.close();
         if (oldRead != null) oldRead.close();
         if(oldAlarm!=null) oldAlarm.close();
         if(oldDelete!=null) oldDelete.close();
@@ -651,6 +657,47 @@ public class VoiceService extends Service {
             } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
         });
     }
+    void executeLight(JSONObject event) throws Exception {
+        if (!running || !assistantTools || lightChannel == null || agendaChannel == null || lightDispatcher == null)
+            throw new IOException("Lights not enabled");
+        agendaChannel.lightExecution();
+        LightVoiceChannel channel = lightChannel;
+        LightVoiceChannel.Execution execution = channel.execution(event, SystemClock.elapsedRealtime());
+        timerExecutor.execute(() -> {
+            if (!running || channel != lightChannel) return;
+            if (continuousVoice && audioYielded) {
+                sendLightReceipt(channel, event, execution, "CLOSED", 1, 0, 0, "audio_yield");
+                return;
+            }
+            if (execution.command == null) {
+                sendLightReceipt(channel, event, execution, "UNSUPPORTED_ORDER", 1, 0, 0, execution.rejection);
+                return;
+            }
+            lightDispatcher.send(execution.command, LightWriteAuthorization.issueForUser(SystemClock.elapsedRealtime()), result ->
+                sendLightReceipt(channel, event, execution, result.status.name(), result.targetCount,
+                    result.completedTargetCount, result.acceptedFrameCount, result.detail));
+        });
+    }
+    void sendLightReceipt(LightVoiceChannel channel, JSONObject event, LightVoiceChannel.Execution execution,
+            String status, int targetCount, int completed, int accepted, String detail) {
+        if (!running || controls.isShutdown() || channel != lightChannel) return;
+        controls.execute(() -> {
+            try {
+                JSONObject result = new JSONObject().put("action", "light_result")
+                    .put("session_id", contextChannel.sessionId).put("context_id", contextChannel.contextId)
+                    .put("nonce", execution.nonce).put("origin_turn_id", event.optString("origin_turn_id"))
+                    .put("origin_sequence", event.optLong("origin_sequence"))
+                    .put("request_turn_id", event.optString("request_turn_id"))
+                    .put("request_sequence", event.optLong("request_sequence"))
+                    .put("status", status).put("target_count", targetCount == 0 ? 1 : targetCount)
+                    .put("completed_target_count", completed).put("accepted_frame_count", accepted)
+                    .put("actions_executed", "COMPLETE_UNCONFIRMED".equals(status) ? 1 : 0)
+                    .put("detail", detail == null ? "" : detail);
+                channel.receipt(result);
+                byte[] data = result.toString().getBytes(StandardCharsets.UTF_8); frame(3, data, data.length);
+            } catch (Exception failure) { if (running) main.post(() -> stopSelf()); }
+        });
+    }
     void toolResult(String id, boolean ok, String message) {
         if (!running || controls.isShutdown() || output == null) return;
         try { controls.execute(() -> {
@@ -782,6 +829,7 @@ public class VoiceService extends Service {
                         if (timerTrial || assistantTools) timerChannel.human(event,SystemClock.elapsedRealtime());
                         if (assistantTools) agendaChannel.human(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
                         if (assistantTools) volumeChannel.human(event,SystemClock.elapsedRealtime());
+                        if (assistantTools) lightChannel.human(event,SystemClock.elapsedRealtime());
                         if(reminderReadChannel!=null) reminderReadChannel.human(event,SystemClock.elapsedRealtime());
                         if(alarmChannel!=null) alarmChannel.human(event,SystemClock.elapsedRealtime());
                         if(reminderDeleteChannel!=null) reminderDeleteChannel.human(event,SystemClock.elapsedRealtime());
@@ -806,6 +854,9 @@ public class VoiceService extends Service {
                     } else if ("volume_execute".equals(type) && assistantTools) {
                         mutationRequested=true;
                         executeVolume(event);
+                    } else if ("light_execute".equals(type) && assistantTools) {
+                        mutationRequested=true;
+                        executeLight(event);
                     } else if("reminder_read".equals(type)) {
                         readReminders(event); // Read-only; never reserve or execute an agenda mutation.
                     } else if("reminder_delete_step".equals(type)) {
@@ -915,7 +966,7 @@ public class VoiceService extends Service {
                     String localDelete=reminderDeleteChannel==null?null:reminderDeleteChannel.speech(event);
                     if(localRead!=null) message=localRead;
                     else if(localDelete!=null) message=localDelete;
-                    else if (!(alarmChannel!=null && alarmChannel.speech(event)) && !volumeChannel.speech(event) && !agendaChannel.speech(event)) timerChannel.validateSpeech(event);
+                    else if (!(alarmChannel!=null && alarmChannel.speech(event)) && !lightChannel.speech(event) && !volumeChannel.speech(event) && !agendaChannel.speech(event)) timerChannel.validateSpeech(event);
                 }
                 else if (timerTrial) timerChannel.validateSpeech(event);
                 activeWebAnswer = !workerRead ? "" : event.getJSONObject("web_answer").getString(
@@ -1020,6 +1071,7 @@ public class VoiceService extends Service {
             }
             if (assistantTools && agendaChannel != null) agendaChannel.spoken(activeSpeechId, completed);
             if (assistantTools && volumeChannel != null) volumeChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
+            if (assistantTools && lightChannel != null) lightChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
             if(reminderReadChannel!=null) reminderReadChannel.spoken(activeSpeechId);
             if(alarmChannel!=null) alarmChannel.spoken(activeSpeechId,completed);
             if(reminderDeleteChannel!=null) reminderDeleteChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
@@ -1062,6 +1114,7 @@ public class VoiceService extends Service {
         if (agendaChannel != null) agendaChannel.close();
         if(alarmChannel!=null) alarmChannel.close();
         if (volumeChannel != null) volumeChannel.close();
+        if (lightChannel != null) lightChannel.close();
         if (reminderReadChannel != null) reminderReadChannel.close();
         if (reminderDeleteChannel != null) reminderDeleteChannel.close();
         timerExecutor.shutdown(); // Accepted durable work is not a timer cancellation.
@@ -1072,6 +1125,7 @@ public class VoiceService extends Service {
         lastTranscript = ""; activeSpeechId = activeSpeechText = activeWebAnswer = "";
         expiresAt = 0;
         controls.shutdownNow();
+        if (lightDispatcher != null) lightDispatcher.close();
         closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
         if (tts != null) { stopSpeechOutput(); try { tts.shutdown(); } catch(RuntimeException ignored) { /* Stop failure is not a successful playback receipt. */ } }

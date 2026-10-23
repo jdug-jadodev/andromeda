@@ -74,7 +74,7 @@ final class VoiceConnection implements Closeable {
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
             JSONObject hello = new JSONObject().put("protocol", lifecycle ? 13 : continuousVoice ? 12 : guidedAgenda ? 11 : assistantTools ? 10 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
                 .put("token", token).put("context", ConversationChannel.encode(snapshot));
-            if (assistantTools) hello.put("web_response_mode", "worker_first_v3_spanish").put("phone_volume_policy", guidedAgenda?"confirmed_media_v3":"absolute_media_v1");
+             if (assistantTools) hello.put("web_response_mode", "worker_first_v3_spanish").put("phone_volume_policy", guidedAgenda?"confirmed_media_v3":"absolute_media_v1").put("light_control_policy", "voice_light_command_v1");
             if (guidedAgenda) hello.put("agenda_dialogue_policy", "guided_agenda_v1").put("action_completion_policy", "continue_v1");
             if(guidedAgenda) hello.put("reminder_read_policy",ReminderListPolicy.POLICY);
             if(guidedAgenda) hello.put("reminder_creation_policy",AgendaDialogue.REMINDER_POLICY);
@@ -106,14 +106,15 @@ final class VoiceConnection implements Closeable {
                     || timerTrial && !"request_authorized_close".equals(ready.optString("timer_policy"))
                     || timerTrial && (ready.optJSONArray("allowed_tools") == null || ready.getJSONArray("allowed_tools").length() != 1
                          || !"create_timer".equals(ready.getJSONArray("allowed_tools").optString(0)))
-                    || assistantTools && !(lifecycle?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"list_reminders\",\"delete_reminder\"]":guidedAgenda?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"list_reminders\"]":"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\"]").equals(String.valueOf(ready.optJSONArray("allowed_tools")))
+                     || assistantTools && !(lifecycle?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"control_lights\",\"list_reminders\",\"delete_reminder\"]":guidedAgenda?"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"control_lights\",\"list_reminders\"]":"[\"create_timer\",\"create_alarm\",\"create_reminder\",\"search_web\",\"set_phone_volume\",\"control_lights\"]").equals(String.valueOf(ready.optJSONArray("allowed_tools")))
                     || guidedAgenda && !ReminderListPolicy.POLICY.equals(ready.optString("reminder_read_policy"))
                     || guidedAgenda && !AgendaDialogue.REMINDER_POLICY.equals(ready.optString("reminder_creation_policy"))
                     || !source.equals(ready.optString("input_source")) || !"boottime_ms".equals(ready.optString("clock"))
                     || "microphone".equals(source) && ready.optBoolean("test_fixture")
                     || ready.optInt("response_start_ms") != (assistantTools ? 60000 : 30000) || ready.optInt("context_version") != 1
                     || assistantTools && !"worker_first_v3_spanish".equals(ready.optString("web_response_mode"))
-                    || assistantTools && !(guidedAgenda?"confirmed_media_v3":"absolute_media_v1").equals(ready.optString("phone_volume_policy"))
+                     || assistantTools && !(guidedAgenda?"confirmed_media_v3":"absolute_media_v1").equals(ready.optString("phone_volume_policy"))
+                     || assistantTools && !"voice_light_command_v1".equals(ready.optString("light_control_policy"))
                     || guidedAgenda && (!"guided_agenda_v1".equals(ready.optString("agenda_dialogue_policy")) || !"continue_v1".equals(ready.optString("action_completion_policy")))
                     || continuousVoice && !ContinuousVoicePolicy.ready(ready.optInt("protocol"),ready.optInt("seconds",-1),ready.optString("voice_lifetime_policy"),
                         ready.optString("dialogue_reset_policy"),ready.optLong("action_window_ms"),ready.optLong("stream_start_ms"),ready.optLong("stream_idle_ms"),lifecycle)

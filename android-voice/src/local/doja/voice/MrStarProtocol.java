@@ -7,9 +7,11 @@ import java.util.List;
 /**
  * Locally captured MR Star frames for the observed GATT--DEMO hardware.
  *
- * Only red, green, blue, brightness 25%, and power are currently reproducible. The
- * remaining colors/brightness values stay rejected until captured rather than
- * being guessed from a public library.
+ * The controller represents chromatic colors as 16-bit hue plus saturation
+ * fields, not Lotus-style RGB bytes. The field layout is validated by primary
+ * colors and an observed orange selector position. White uses the exact
+ * low-saturation frame captured from the original app; pure grayscale/black
+ * remain rejected.
  */
 public final class MrStarProtocol {
     public static final int PREFIX = 0xBC;
@@ -19,16 +21,30 @@ public final class MrStarProtocol {
 
     public static byte[] color(LightColor color) {
         if (color == null) throw new IllegalArgumentException("Falta el color");
-        if (color.equals(LightColor.parseHex("#FF0000"))) {
-            return command(0x04, 0x00, 0x00, 0x03, 0xE8, 0x00, 0x00);
-        }
-        if (color.equals(LightColor.parseHex("#00FF00"))) {
-            return command(0x04, 0x00, 0x78, 0x03, 0xE8, 0x00, 0x00);
-        }
-        if (color.equals(LightColor.parseHex("#0000FF"))) {
-            return command(0x04, 0x00, 0xF0, 0x03, 0xE8, 0x00, 0x00);
-        }
-        throw new IllegalArgumentException("Color MR Star aún no capturado");
+        if (color.red == 255 && color.green == 255 && color.blue == 255)
+            return hsvFrame(105, 47); // Captured visual white; not pure S=0.
+        if (color.red == 0 && color.green == 0 && color.blue == 0)
+            throw new IllegalArgumentException("Negro MR Star aún no capturado");
+        int max = Math.max(color.red, Math.max(color.green, color.blue));
+        int min = Math.min(color.red, Math.min(color.green, color.blue));
+        if (max == min) throw new IllegalArgumentException("Gris MR Star aún no capturado");
+        double delta = max - min;
+        double hue;
+        if (max == color.red) hue = 60.0 * ((color.green - color.blue) / delta);
+        else if (max == color.green) hue = 60.0 * (2.0 + (color.blue - color.red) / delta);
+        else hue = 60.0 * (4.0 + (color.red - color.green) / delta);
+        if (hue < 0) hue += 360.0;
+        int hueDegrees = ((int) Math.round(hue)) % 360;
+        int saturation = (int) Math.round((delta / max) * 1000.0);
+        return hsvFrame(hueDegrees, saturation);
+    }
+
+    /** Builds the observed BC 04 hue/saturation command; values are not RGB bytes. */
+    static byte[] hsvFrame(int hueDegrees, int saturation) {
+        if (hueDegrees < 0 || hueDegrees > 359) throw new IllegalArgumentException("Tono MR Star fuera de rango");
+        if (saturation < 0 || saturation > 1000) throw new IllegalArgumentException("Saturación MR Star fuera de rango");
+        return command(0x04, (hueDegrees >> 8) & 0xFF, hueDegrees & 0xFF,
+            (saturation >> 8) & 0xFF, saturation & 0xFF, 0x00, 0x00);
     }
 
     /** The only brightness point captured without ambiguity: the device's 25% UI position. */
@@ -37,8 +53,13 @@ public final class MrStarProtocol {
     }
 
     public static byte[] brightness(int percent) {
-        if (percent != 25) throw new IllegalArgumentException("Solo brillo 25% MR Star está validado");
-        return brightness25();
+        switch (percent) {
+            case 25: return command(0x05, 0x01, 0x0D, 0x00, 0x00, 0x00, 0x00);
+            case 50: return command(0x05, 0x02, 0x0B, 0x00, 0x00, 0x00, 0x00);
+            case 75: return command(0x05, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00);
+            case 100: return command(0x05, 0x03, 0xE8, 0x00, 0x00, 0x00, 0x00);
+            default: throw new IllegalArgumentException("Brillo MR Star no capturado: usa 25, 50, 75 o 100");
+        }
     }
 
     public static byte[] power(boolean on) {
@@ -58,6 +79,9 @@ public final class MrStarProtocol {
             case COLOR:
                 frames.add(color(command.color));
                 if (command.brightnessPercent >= 0) frames.add(brightness(command.brightnessPercent));
+                break;
+            case BRIGHTNESS:
+                frames.add(brightness(command.brightnessPercent));
                 break;
             case PRESET:
             case PATTERN:

@@ -131,7 +131,9 @@ public final class LotusLampBleAdapter {
                 return;
             }
         }
-        try {
+        handler.post(() -> {
+          if (finished) return;
+          try {
             gatt = device.connectGatt(context, false, new BluetoothGattCallback() {
                 @Override public void onConnectionStateChange(BluetoothGatt value, int status, int state) {
                     if (finished) return;
@@ -178,13 +180,12 @@ public final class LotusLampBleAdapter {
                     writeNext();
                 }
             }, BluetoothDevice.TRANSPORT_LE);
-        } catch (SecurityException denied) {
+          } catch (SecurityException denied) {
             finish(new Result(Status.PERMISSION_DENIED, frames.size(), 0));
-            return;
-        } catch (RuntimeException failure) {
+          } catch (RuntimeException failure) {
             finish(new Result(Status.CONNECTION_FAILED, frames.size(), 0));
-            return;
-        }
+          }
+        });
         handler.postDelayed(() -> finish(new Result(
                 acceptedFrames == 0 ? Status.TIMEOUT : Status.PARTIAL_OR_UNCERTAIN,
                 frames.size(), acceptedFrames)), TIMEOUT_MS);

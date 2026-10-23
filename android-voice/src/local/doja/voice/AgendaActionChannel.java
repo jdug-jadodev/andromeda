@@ -11,7 +11,7 @@ final class AgendaActionChannel {
     private long sessionEnd;
     private String turn = "", human = "", nonce = "", eventId = "";
     private long sequence, speechEnd, wall, boot;
-    private boolean closed, timerAccepted, volumeAccepted,alarmAccepted;
+    private boolean closed, timerAccepted, volumeAccepted, alarmAccepted, lightAccepted;
     private final Set<String> consumed = new HashSet<>();
     private AgendaPermit accepted;
     private AgendaStore.Status receipt;
@@ -47,7 +47,7 @@ final class AgendaActionChannel {
         if (closed) throw new IOException("Revoked tools channel");
         turn = text(event, "turn_id"); human = text(event, "text"); sequence = integer(event, "turn_seq"); speechEnd = integer(event, "speech_end_ms");
         wall = integer(event, "calendar_anchor_ms"); boot = integer(event, "calendar_boot_ms"); accepted = null; receipt = null;
-        nonce = eventId = ""; timerAccepted = volumeAccepted = alarmAccepted = false;
+        nonce = eventId = ""; timerAccepted = volumeAccepted = alarmAccepted = lightAccepted = false;
         if (boot > now + 100 || now - boot > 1500 || Math.abs((nowWall - wall) - (now - boot)) > 1500) throw new IOException("Calendar clock mismatch");
         if (guided) {
             if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(integer(event,"action_window_end_ms"),speechEnd,now);
@@ -56,18 +56,22 @@ final class AgendaActionChannel {
         }
     }
     synchronized void timerExecution() throws IOException {
-        if (closed || accepted != null || volumeAccepted || alarmAccepted || !timerAccepted && consumed.contains(turn) || consumed.size() >= 24 && !timerAccepted)
+        if (closed || accepted != null || volumeAccepted || alarmAccepted || lightAccepted || !timerAccepted && consumed.contains(turn) || consumed.size() >= 24 && !timerAccepted)
             throw new IOException("Second mutation in current turn");
         timerAccepted = true; consumed.add(turn);
     }
     synchronized void volumeExecution() throws IOException {
-        if (closed || accepted != null || timerAccepted || volumeAccepted || alarmAccepted || consumed.contains(turn) || consumed.size() >= 24)
+        if (closed || accepted != null || timerAccepted || volumeAccepted || alarmAccepted || lightAccepted || consumed.contains(turn) || consumed.size() >= 24)
             throw new IOException("Second mutation in current turn");
         volumeAccepted = true; consumed.add(turn);
     }
     synchronized void alarmExecution() throws IOException {
-        if(closed || accepted!=null || timerAccepted || volumeAccepted || alarmAccepted || consumed.contains(turn) || consumed.size()>=24) throw new IOException("Second action in current turn");
+        if(closed || accepted!=null || timerAccepted || volumeAccepted || alarmAccepted || lightAccepted || consumed.contains(turn) || consumed.size()>=24) throw new IOException("Second action in current turn");
         alarmAccepted=true; consumed.add(turn);
+    }
+    synchronized void lightExecution() throws IOException {
+        if(closed || accepted!=null || timerAccepted || volumeAccepted || alarmAccepted || lightAccepted || consumed.contains(turn) || consumed.size()>=24) throw new IOException("Second action in current turn");
+        lightAccepted=true; consumed.add(turn);
     }
     synchronized AgendaPermit execution(JSONObject event, long now, long nowWall) throws Exception {
         if(alarmAccepted) throw new IOException("Alarm operation already reserved this turn");

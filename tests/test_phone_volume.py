@@ -26,8 +26,8 @@ class PhoneVolumeTests(unittest.TestCase):
         payload=AssistantToolsModel.payload([{'role':'system','content':'fixture'},{'role':'user','content':self.turn()['text']}])
         self.assertEqual(payload['tool_choice'],'auto'); self.assertFalse(payload['parallel_tool_calls'])
         self.assertEqual([tool['function']['name'] for tool in payload['tools']],
-            ['create_timer','create_alarm','create_reminder','search_web','set_phone_volume'])
-        spec=payload['tools'][-1]['function']
+            ['create_timer','create_alarm','create_reminder','search_web','set_phone_volume','control_lights'])
+        spec=next(tool['function'] for tool in payload['tools'] if tool['function']['name']=='set_phone_volume')
         self.assertIn('a la mitad',spec['description']); self.assertIn('sin argumentos',spec['description'].lower())
         self.assertIn('cien por ciento',spec['description']); self.assertIn('veinte por ciento',spec['description'])
         self.assertEqual(spec['parameters'],{'type':'object','properties':{}})

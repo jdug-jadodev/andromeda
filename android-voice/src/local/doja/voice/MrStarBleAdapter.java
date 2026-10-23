@@ -58,6 +58,7 @@ public final class MrStarBleAdapter {
     private Callback callback;
     private int nextFrame;
     private int acceptedFrames;
+    private int writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
     private boolean started;
     private boolean finished;
 
@@ -109,7 +110,9 @@ public final class MrStarBleAdapter {
                 return;
             }
         }
-        try {
+        handler.post(() -> {
+          if (finished) return;
+          try {
             gatt = device.connectGatt(context, false, new BluetoothGattCallback() {
                 @Override public void onConnectionStateChange(BluetoothGatt value, int status, int state) {
                     if (finished) return;
@@ -129,16 +132,23 @@ public final class MrStarBleAdapter {
                     BluetoothGattService service = value.getService(SERVICE_UUID);
                     writeCharacteristic = service == null ? null : service.getCharacteristic(WRITE_UUID);
                     notifyCharacteristic = service == null ? null : service.getCharacteristic(NOTIFY_UUID);
-                    if (writeCharacteristic == null
-                            || (writeCharacteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) == 0
+                    int writeProperties = writeCharacteristic == null ? 0 : writeCharacteristic.getProperties();
+                    int notifyProperties = notifyCharacteristic == null ? 0 : notifyCharacteristic.getProperties();
+                    boolean noResponse = (writeProperties & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0;
+                    boolean withResponse = (writeProperties & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0;
+                    if (writeCharacteristic == null || (!noResponse && !withResponse)
                             || notifyCharacteristic == null
-                            || (notifyCharacteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) == 0) {
+                            || (notifyProperties & (BluetoothGattCharacteristic.PROPERTY_NOTIFY
+                                | BluetoothGattCharacteristic.PROPERTY_INDICATE)) == 0) {
                         finish(new Result(Status.CHARACTERISTIC_UNAVAILABLE, frames.size(), 0));
                         return;
                     }
+                    writeType = noResponse ? BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                        : BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
                     nextFrame = 0;
                     acceptedFrames = 0;
-                    writeNext();
+                    // Android 10 can reject a write queued inside the discovery callback.
+                    handler.postDelayed(MrStarBleAdapter.this::writeNext, 250L);
                 }
 
                 @Override public void onCharacteristicWrite(BluetoothGatt value,
@@ -152,13 +162,12 @@ public final class MrStarBleAdapter {
                     writeNext();
                 }
             }, BluetoothDevice.TRANSPORT_LE);
-        } catch (SecurityException denied) {
+          } catch (SecurityException denied) {
             finish(new Result(Status.PERMISSION_DENIED, frames.size(), 0));
-            return;
-        } catch (RuntimeException failure) {
+          } catch (RuntimeException failure) {
             finish(new Result(Status.CONNECTION_FAILED, frames.size(), 0));
-            return;
-        }
+          }
+        });
         handler.postDelayed(() -> finish(new Result(
                 acceptedFrames == 0 ? Status.TIMEOUT : Status.PARTIAL_OR_UNCERTAIN,
                 frames.size(), acceptedFrames)), TIMEOUT_MS);
@@ -171,7 +180,7 @@ public final class MrStarBleAdapter {
             return;
         }
         byte[] frame = frames.get(nextFrame++);
-        writeCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+        writeCharacteristic.setWriteType(writeType);
         writeCharacteristic.setValue(frame);
         boolean accepted;
         try { accepted = gatt != null && gatt.writeCharacteristic(writeCharacteristic); }

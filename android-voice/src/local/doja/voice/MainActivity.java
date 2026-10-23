@@ -41,7 +41,7 @@ public class MainActivity extends Activity {
     private WeatherData weatherData;
     private volatile boolean weatherBusy;
     private boolean weatherFailed, resumed, preview, showingFace, ambientGesture;
-    private int lightBrightnessPercent = 25;
+    private final java.util.EnumMap<LightTarget,Integer> lightBrightness = new java.util.EnumMap<>(LightTarget.class);
     private boolean pendingVoiceActivation;
     private int weatherGeneration, previewIndex;
     private long previewEnds, lastWeatherFetch;
@@ -280,11 +280,12 @@ public class MainActivity extends Activity {
     }
     private void lightOptions() {
         showDialog(new AlertDialog.Builder(this).setTitle("Luces · elige objetivo")
-            .setItems(new String[]{"Ambas luces", "LotusLamp X · MELK-OA10 17", "MR Star · GATT--DEMO"}, (dialog, index) ->
+            .setItems(new String[]{"Ambas luces", "Luz mueble", "Luz del televisor"}, (dialog, index) ->
                 lightCommandOptions(index == 0 ? LightTarget.BOTH : index == 1 ? LightTarget.LOTUS : LightTarget.MR_STAR))
             .setNegativeButton("Volver", null).create());
     }
     private void lightCommandOptions(LightTarget target) {
+        if (!lightBrightness.containsKey(target)) lightBrightness.put(target, 25);
         java.util.ArrayList<String> labels = new java.util.ArrayList<>();
         java.util.ArrayList<Runnable> actions = new java.util.ArrayList<>();
         labels.add("Encender"); actions.add(() -> simulateLightCommand(LightCommand.power(target,true)));
@@ -298,45 +299,54 @@ public class MainActivity extends Activity {
             addLightColor(labels, actions, target, "Rojo", "#FF0000");
             addLightColor(labels, actions, target, "Verde", "#00FF00");
             addLightColor(labels, actions, target, "Azul", "#0000FF");
+            addLightColor(labels, actions, target, "Blanco visual · capturado", "#FFFFFF");
         }
-        labels.add("Brillo · "+lightBrightnessPercent+"%"); actions.add(() -> lightBrightnessOptions(target));
+        labels.add("Brillo · "+lightBrightness.get(target)+"%"); actions.add(() -> lightBrightnessOptions(target));
         labels.add("Usar hexadecimal…"); actions.add(() -> lightHexDialog(target,false));
         labels.add("Guardar hexadecimal…"); actions.add(() -> lightHexDialog(target,true));
         for (java.util.Map.Entry<String,LightColor> entry:LightPresetStore.list(this).entrySet()) {
             final LightColor color=entry.getValue(); final String name=entry.getKey();
-            labels.add("Guardado · "+name+" "+color.hex()); actions.add(() -> simulateLightCommand(LightCommand.color(target,color,lightBrightnessPercent)));
+            labels.add("Guardado · "+name+" "+color.hex()); actions.add(() -> simulateLightCommand(LightCommand.color(target,color)));
         }
         showDialog(new AlertDialog.Builder(this).setTitle("Orden de luces · "+lightTargetLabel(target))
             .setItems(labels.toArray(new String[0]), (dialog, index) -> actions.get(index).run())
             .setNegativeButton("Cambiar objetivo", (dialog, which) -> lightOptions()).create());
     }
     private void addLightColor(java.util.ArrayList<String> labels,java.util.ArrayList<Runnable> actions,LightTarget target,String name,String hex) {
-        labels.add(name+" "+hex); actions.add(() -> simulateLightCommand(LightCommand.color(target,LightColor.parseHex(hex),lightBrightnessPercent)));
+        labels.add(name+" "+hex); actions.add(() -> simulateLightCommand(LightCommand.color(target,LightColor.parseHex(hex))));
     }
     private void lightBrightnessOptions(LightTarget target) {
         if (target == LightTarget.MR_STAR || target == LightTarget.BOTH) {
-            showDialog(new AlertDialog.Builder(this).setTitle("Brillo · "+lightTargetLabel(target))
-                .setMessage("Solo 25% está validado para MR Star; no se enviarán otros valores.")
-                .setPositiveButton("Usar 25%", (dialog, which) -> { lightBrightnessPercent=25; lightCommandOptions(target); })
+            String[] captured={"100% · máximo","75%","50%","25%"};
+            showDialog(new AlertDialog.Builder(this).setTitle("Brillo · "+lightTargetLabel(target)+" · elige un nivel")
+                .setItems(captured,(dialog,index) -> chooseBrightness(target,new int[]{100,75,50,25}[index]))
                 .setNegativeButton("Volver", (dialog, which) -> lightCommandOptions(target)).create());
             return;
         }
         String[] values={"100% · máximo","75%","50%","25%","0% · apagado","Personalizado…"};
         showDialog(new AlertDialog.Builder(this).setTitle("Brillo · "+lightTargetLabel(target))
             .setItems(values,(dialog,index) -> {
-                if(index<5){lightBrightnessPercent=new int[]{100,75,50,25,0}[index];lightCommandOptions(target);}
+                if(index<5){chooseBrightness(target,new int[]{100,75,50,25,0}[index]);}
                 else lightCustomBrightness(target);
             }).setNegativeButton("Volver",(dialog,which)->lightCommandOptions(target)).create());
     }
     private void lightCustomBrightness(LightTarget target) {
-        EditText input=new EditText(this); input.setSingleLine(true); input.setHint("0 a 100"); input.setText(String.valueOf(lightBrightnessPercent));
+        EditText input=new EditText(this); input.setSingleLine(true); input.setHint("0 a 100"); input.setText(String.valueOf(lightBrightness.get(target)));
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Brillo personalizado")
             .setMessage("Escribe un porcentaje entero entre 0 y 100.").setView(input)
             .setNegativeButton("Volver",(d,w)->lightBrightnessOptions(target)).setPositiveButton("Usar",null).create();
         showDialog(dialog); dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-            try{int value=Integer.parseInt(input.getText().toString().trim());if(value<0||value>100)throw new NumberFormatException();lightBrightnessPercent=value;dialog.dismiss();lightCommandOptions(target);}
+            try{int value=Integer.parseInt(input.getText().toString().trim());if(value<0||value>100)throw new NumberFormatException();dialog.dismiss();chooseBrightness(target,value);}
             catch(NumberFormatException error){input.setError("Usa un entero de 0 a 100");}
         });
+    }
+    private void chooseBrightness(LightTarget target,int percent) {
+        lightBrightness.put(target,percent);
+        if (target == LightTarget.BOTH) {
+            lightBrightness.put(LightTarget.LOTUS,percent);
+            lightBrightness.put(LightTarget.MR_STAR,percent);
+        }
+        simulateLightCommand(LightCommand.brightness(target,percent));
     }
     private void lightHexDialog(LightTarget target,boolean save) {
         LinearLayout fields=new LinearLayout(this); fields.setOrientation(LinearLayout.VERTICAL); fields.setPadding(dp(10),dp(4),dp(10),0);
@@ -351,21 +361,22 @@ public class MainActivity extends Activity {
             try {
                 LightColor color=LightColor.parseHex(hex.getText().toString());
                 if(save)LightPresetStore.save(this,name.getText().toString(),color);
-                dialog.dismiss(); simulateLightCommand(LightCommand.color(target,color,lightBrightnessPercent));
+                dialog.dismiss(); simulateLightCommand(LightCommand.color(target,color));
             } catch (IllegalArgumentException error) {
                 if(save&&name.getText().toString().trim().isEmpty())name.setError("Escribe un nombre"); else hex.setError(error.getMessage());
             }
         });
     }
     private String lightTargetLabel(LightTarget target) {
-        switch(target){case LOTUS:return "LotusLamp X";case MR_STAR:return "MR Star";default:return "ambas";}
+        switch(target){case LOTUS:return "Luz mueble";case MR_STAR:return "Luz del televisor";default:return "ambas luces";}
     }
     private String lightCommandLabel(LightCommand command) {
         String value=command.kind==LightCommand.Kind.POWER?(command.powerOn?"encender":"apagar")
             :(command.kind==LightCommand.Kind.COLOR?"color "+command.color.hex()
-            :(command.kind==LightCommand.Kind.PATTERN?"patrón "+command.name:"preset "+command.name));
+            :(command.kind==LightCommand.Kind.BRIGHTNESS?"brillo "+command.brightnessPercent+"%"
+            :(command.kind==LightCommand.Kind.PATTERN?"patrón "+command.name:"preset "+command.name)));
         
-        return command.brightnessPercent>=0?value+" · brillo "+command.brightnessPercent+"%":value;
+        return command.brightnessPercent>=0&&command.kind!=LightCommand.Kind.BRIGHTNESS?value+" · brillo "+command.brightnessPercent+"%":value;
     }
     private void simulateLightCommand(LightCommand command) {
         noteOptionsInteraction();
@@ -380,7 +391,7 @@ public class MainActivity extends Activity {
             return;
         }
         AlertDialog previewDialog = new AlertDialog.Builder(this).setTitle("Vista previa de luces")
-            .setMessage(message + "\n\nEnviar una vez abrirá una conexión breve por dispositivo, sin reintentos."
+            .setMessage(message + "\n\nEnviar una vez abrirá una conexión breve por dispositivo, con reintentos acotados solo antes de aceptar un frame."
                 + " El resultado no confirma por sí solo el cambio visual.")
             .setNegativeButton("Cerrar", null).setPositiveButton("Enviar una vez", null).create();
         showDialog(previewDialog);
@@ -390,7 +401,7 @@ public class MainActivity extends Activity {
     }
     private void sendLightCommand(LightCommand command) {
         AlertDialog loading = new AlertDialog.Builder(this).setTitle("Luces")
-            .setMessage("Resolviendo solo Lotus/MR Star autorizados…").setCancelable(false).create();
+            .setMessage("Resolviendo Luz mueble/Luz del televisor autorizadas…").setCancelable(false).create();
         showDialog(loading);
         LightWriteAuthorization authorization = LightWriteAuthorization.issueForUser(SystemClock.elapsedRealtime());
         lightDispatcher.send(command, authorization, result -> handler.post(() -> {

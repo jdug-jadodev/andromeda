@@ -70,14 +70,29 @@ tonos/saturaciones (`30/984`, `78/39`, `84/39`, `100/47`, `105/47`) además de
 eventos de energía. No apareció un frame inequívoco de saturación cero, por lo
 que blanco sigue sin estar validado y esos intentos no se reproducirán.
 
-La captura de brillo al 25% produjo `BC 05 06 01 0D 00 00 00 00 55`.
-El valor `0D` queda registrado como código observado para ese ajuste; no se
-tratará como porcentaje lineal sin más muestras.
+Una captura posterior, hecha con un único toque visual sobre el blanco y sin
+mover el selector, terminó en `BC 04 06 00 69 00 2F 00 00 55`: tono `105`,
+saturación `47`. La luz se vio blanca, pero el frame no representa saturación
+cero; queda registrado como blanco visual aproximado del selector, no como
+blanco RGB puro. Recibo sanitizado:
+`artifacts/android-voice/mr-star-color-capture-v1/white-analysis.json`.
 
-Al mover el control dos veces para aproximar la mitad, se observaron dos
-writes, `BC 05 06 01 E6 00 00 00 00 55` y `BC 05 06 02 4A 00 00 00 00 55`.
-La acción fue deliberadamente aproximada y no se etiqueta como 50%; el control
-puede enviar eventos intermedios o códigos no lineales.
+La captura de un naranja elegido a ojo terminó en dos frames estables:
+`BC 04 06 00 19 03 99 00 00 55` y
+`BC 04 06 00 19 03 95 00 00 55` (tono `25`, saturación `917–921`). Esto
+confirma que el controlador acepta otros puntos de tono/saturación, pero no
+permite llamar al resultado `#FF8000` exacto porque la aplicación fuente no
+acepta hexadecimales. Recibo: `artifacts/android-voice/mr-star-color-capture-v1/orange-capture.json`.
+
+La captura de brillo al 25% produjo `BC 05 06 01 0D 00 00 00 00 55` (269).
+Con la app original abierta y el control movido por ADB se capturaron los
+otros niveles: 50% `BC 05 06 02 0B 00 00 00 00 55` (523), 75%
+`BC 05 06 03 05 00 00 00 00 55` (773) y 100%
+`BC 05 06 03 E8 00 00 00 00 55` (1000). El campo es un entero de 16 bits
+big-endian de 0 a 1000, no un byte de porcentaje. Una segunda muestra al 50%
+dio 551 por la geometría del control; 523 es el valor elegido. Solo se
+habilitan esos cuatro niveles; porcentajes arbitrarios siguen bloqueados.
+Recibo: `artifacts/android-voice/mr-star-brightness-capture-v1/`.
 
 La captura diferencial de apagado produjo el frame corto `BC 01 01 00 55`.
 Sigue pendiente comparar el encendido; ningún frame MR Star se ha reproducido

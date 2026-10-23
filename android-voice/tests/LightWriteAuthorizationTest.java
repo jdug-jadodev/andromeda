@@ -13,8 +13,12 @@ public final class LightWriteAuthorizationTest {
         check(!expired.consume(1000L + LightWriteAuthorization.TTL_MS + 1L));
         check(LightCommandExecutionPolicy.canExecute(
             LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#FF0000"), 25)));
-        check(!LightCommandExecutionPolicy.canExecute(
+        check(LightCommandExecutionPolicy.canExecute(
             LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#FFFFFF"), 25)));
+        check(LightCommandExecutionPolicy.canExecute(
+            LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#FF8000"), 25)));
+        check(!LightCommandExecutionPolicy.canExecute(
+            LightCommand.color(LightTarget.MR_STAR, LightColor.parseHex("#000000"), 25)));
         check(LightCommandExecutionPolicy.canExecute(
             LightCommand.color(LightTarget.BOTH, LightColor.parseHex("#FF0000"), 25)));
         System.out.println("Light authorization: " + checks + " assertions passed (single-use confirmation, no I/O).");

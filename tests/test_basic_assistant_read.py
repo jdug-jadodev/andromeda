@@ -40,8 +40,8 @@ class BasicAssistantReadTests(unittest.TestCase):
         self.assertEqual(body['tools'][-1]['function']['name'],'list_reminders')
         self.assertEqual(body['tools'][-1]['function']['parameters'],{'type':'object','properties':{}})
         self.assertEqual(body['tool_choice'],'auto'); self.assertFalse(body['parallel_tool_calls'])
-        self.assertEqual(body['max_tokens'],96); self.assertEqual(len(TOOLS),5)
-        self.assertEqual(len(AssistantToolsModel.payload(body['messages'])['tools']),5)
+        self.assertEqual(body['max_tokens'],96); self.assertEqual(len(TOOLS),6)
+        self.assertEqual(len(AssistantToolsModel.payload(body['messages'])['tools']),6)
 
     def test_only_selected_negotiated_zero_argument_read_request_is_accepted(self):
         model=self.model()

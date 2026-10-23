@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot 'src\local\doja\voice'
 $output = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\android-voice\policy-tests'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
-& javac -encoding UTF-8 -d $output "$source\LightColor.java" "$source\LightTarget.java" "$source\LightCommand.java" "$source\LightCommandParser.java" "$PSScriptRoot\tests\LightCommandTest.java"
+& javac -encoding UTF-8 -d $output "$source\LightColor.java" "$source\LightTarget.java" "$source\LightCommand.java" "$source\TimerRequestGuard.java" "$source\LightCommandParser.java" "$PSScriptRoot\tests\LightCommandTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Light command parser compilation failed' }
 & java -cp $output local.doja.voice.LightCommandTest
 if ($LASTEXITCODE -ne 0) { throw 'Light command parser tests failed' }
@@ -22,6 +22,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Light routing tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Light authorization compilation failed' }
 & java -cp $output local.doja.voice.LightWriteAuthorizationTest
 if ($LASTEXITCODE -ne 0) { throw 'Light authorization tests failed' }
+& javac -encoding UTF-8 -cp $output -d $output "$source\LightBleRetryPolicy.java" "$PSScriptRoot\tests\LightBleRetryPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'BLE retry policy compilation failed' }
+& java -cp $output local.doja.voice.LightBleRetryPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'BLE retry policy tests failed' }
+$voiceSource = Get-Content "$source\VoiceService.java" -Raw
+foreach ($channel in @('agendaChannel','volumeChannel','lightChannel')) {
+    if ($voiceSource -notmatch [regex]::Escape("$channel.spoken(")) { throw "Missing $channel.spoken wiring" }
+}
+Write-Output 'Voice channel wiring: agenda, volume and light confirmation callbacks present.'
 & javac -encoding UTF-8 -d $output "$source\VoiceLifecyclePolicy.java" "$PSScriptRoot\tests\VoiceLifecyclePolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Voice lifecycle policy compilation failed' }
 & java -cp $output local.doja.voice.VoiceLifecyclePolicyTest

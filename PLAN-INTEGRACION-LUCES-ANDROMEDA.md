@@ -2,8 +2,8 @@
 
 ## Objetivo
 
-Permitir órdenes por voz y por interfaz para LotusLamp X (`MELK-OA10 17`) y
-MR Star (`GATT--DEMO`), con colores RGB hexadecimales, nombres, escenas,
+Permitir órdenes por voz y por interfaz para **Luz mueble** (LotusLamp X,
+`MELK-OA10 17`) y **Luz del televisor** (MR Star, `GATT--DEMO`), con colores RGB hexadecimales, nombres, escenas,
 patrones y colores personalizados guardados localmente.
 
 Ejemplos previstos:
@@ -140,10 +140,12 @@ todavía no se ha escrito desde Andrómeda.
 Las capturas diferenciales de energía completaron el contrato Lotus `17`:
 
 - encender: `7E 07 04 FF 00 01 02 01 EF`;
-- apagar: `7E 07 04 00 00 02 01 EF`.
+- apagar: `7E 07 04 00 00 00 02 01 EF`.
 
 Ambos se observaron como Write Without Response en `FFF3`; aún no se han
-reproducido desde Andrómeda.
+reproducido correctamente desde Andrómeda. La primera prueba de apagado mostró
+que el constructor omitía un `00`; la captura real y el test ahora exigen los
+nueve bytes completos.
 
 El contrato local quedó implementado en `LotusLampProtocol` y probado contra
 los cuatro payloads capturados. `LotusLampBleAdapter` exige la dirección local,
@@ -196,13 +198,14 @@ La tentativa de blanco generó varios eventos de tono/saturación y energía,
 pero ningún frame inequívoco de saturación cero. Blanco queda fuera del
 adaptador hasta una captura limpia; no se reutilizarán esos intentos.
 
-La captura diferencial de brillo al 25% produjo `BC 05 06 01 0D 00 00 00 00 55`.
-`0D` es el código observado para ese ajuste; se requieren más puntos antes de
-mapear porcentajes arbitrarios.
-
-La muestra aproximada de mitad, realizada con dos movimientos del control,
-produjo `BC 05 06 01 E6 00 00 00 00 55` y `BC 05 06 02 4A 00 00 00 00 55`.
-Se conserva como dos eventos, no como un 50% exacto.
+La captura de brillo al 25% produjo `BC 05 06 01 0D 00 00 00 00 55` (269).
+Con la app original en el A56 y el control movido por ADB se capturaron los
+otros niveles: 50% `BC 05 06 02 0B 00 00 00 00 55` (523), 75%
+`BC 05 06 03 05 00 00 00 00 55` (773) y 100%
+`BC 05 06 03 E8 00 00 00 00 55` (1000). El campo es un entero de 16 bits
+big-endian de 0 a 1000. Una segunda muestra al 50% dio 551 por la geometría
+del control; se eligió 523. Recibo sanitizado:
+`artifacts/android-voice/mr-star-brightness-capture-v1/sanitized-brightness-capture.json`.
 
 El apagado MR Star produjo `BC 01 01 00 55`, un frame corto de 5 bytes. Falta
 capturar el encendido diferencial antes de implementar energía.
@@ -232,11 +235,110 @@ conservadora (`-r`), preservando datos. La instalación no abrió BLE ni escribi
 la interfaz ahora prioriza color/energía, oculta presets/patrones y deja el
 envío real detrás de `Enviar una vez`.
 
+La corrección v3 resolvió el fallo de conexión GATT `133` al separar el fin del
+escaneo del inicio de `connectGatt`. La interfaz logró controlar Lotus y el
+azul al 25% quedó confirmado visualmente; recibo local:
+`artifacts/android-voice/lights-color-ui-v3/receipt.json`. No hubo retries
+automáticos ni se guardó contenido humano.
+
+MR Star también quedó confirmado desde la interfaz: después de reiniciar el
+Bluetooth del Moto y ampliar la guarda escaneo→GATT a 1,2 s en v4, verde al 25%
+funcionó visualmente. La conexión y el descubrimiento de servicios terminaron
+con estado 0; recibo: `artifacts/android-voice/lights-color-ui-v4/mr-star-green-receipt.json`.
+El color queda confirmado solo para rojo, verde y azul; `#FF8000`, blanco y
+otros colores siguen rechazados honestamente.
+
+La captura diferencial de colores adicionales confirmó el modelo tono/saturación:
+naranja elegido a ojo produjo tono `25` y saturación `917–921`; el blanco visual
+elegido sin arrastre produjo tono `105` y saturación `47` con brillo de la app al
+100%. El segundo es visualmente blanco, pero no saturación cero, así que queda
+registrado como aproximación del selector y no como blanco RGB puro. Recibos
+sanitizados en `artifacts/android-voice/mr-star-color-capture-v1/`.
+
+Con esa evidencia, `MrStarProtocol` ya convierte colores cromáticos hexadecimales
+RGB a los campos de tono/saturación observados; `#FFFFFF` usa el frame visual
+capturado y negro/grises siguen rechazados. La UI MR Star incluye blanco visual y
+hexadecimal dinámico. `lights-color-ui-v5` pasó la suite y se instaló sobre el
+Moto sin abrir BLE ni escribir; voz sigue sin invocar el dispatcher. Recibo:
+`artifacts/android-voice/lights-color-ui-v5/receipt.json`.
+
+La inestabilidad `GATT 133/0x3E` de Android 10 se aisló como fallo de enlace
+BLE previo a cualquier write, no como error de color. v7 inicia `connectGatt`
+en el handler principal, espera 1,4 s entre destinos de `BOTH` y permite hasta
+tres intentos solo para conexión/descubrimiento/timeout sin frames aceptados,
+con backoff de 0,9/1,8 s. Nunca repite después de un frame aceptado o incierto.
+La suite pasó y `lights-stable-ble-v7` quedó instalada sin write automático;
+recibo: `artifacts/android-voice/lights-stable-ble-v7/receipt.json`.
+
+La primera prueba real de `BOTH` con v7 encendió visualmente las dos luces:
+Lotus completó primero; MR Star necesitó tres conexiones (dos fallos `133`
+previos al write y una conexión final con estado 0). Recibo:
+`artifacts/android-voice/lights-stable-ble-v7/both-power-on-receipt.json`.
+
+La prueba de colores del usuario reveló un error en MR Star: el tono es un
+campo de 16 bits big-endian (`00 78` verde, `00 F0` azul), no un byte. Los
+tonos mayores de 255 se truncaban y producían colores incorrectos. v9 corrige
+el constructor; por ejemplo `#FF00E6` ahora genera
+`BC 04 06 01 32 03 E8 00 00 55` y `#F35CE3` genera
+`BC 04 06 01 32 02 6D 00 00 55`. Pruebas y recibo:
+`artifacts/android-voice/lights-color-hue16-v9/receipt.json`.
+
+También se añadió `BRIGHTNESS` al contrato común y al parser de voz. Lotus
+acepta el patrón local de 0–100%; MR Star tiene capturados y habilitados los
+niveles 25, 50, 75 y 100. Otros porcentajes siguen bloqueados: no se ha
+validado un mapeo arbitrario del control de la app original.
+
+La prueba del usuario detectó una regresión: el brillo era una variable global
+y se añadía a todos los colores. Tras subir Luz mueble a 50%, los colores de
+Luz del televisor y de `BOTH` enviaban también brillo 50%, que MR Star rechaza.
+v10 separa el brillo por objetivo y los colores ya no incluyen brillo; elegir
+“Brillo” envía una orden `BRIGHTNESS` independiente. Recibo:
+`artifacts/android-voice/lights-brightness-split-v10/receipt.json`.
+
+v13 habilita en la UI y en la voz los cuatro niveles capturados de MR Star
+(25/50/75/100), también para `BOTH`, y mantiene sincronizadas las etiquetas de
+brillo cuando se elige `BOTH`. El parser acepta dígitos y números hablados en
+español («cincuenta», «setenta y cinco», «cien»). Los colores siguen sin
+arrastrar brillo. Recibo:
+`artifacts/android-voice/lights-brightness-levels-v13/receipt.json`.
+
+La prueba de brillo de MR Star mostró una conexión que descubrió servicios y
+se cerró antes de cualquier `onCharacteristicWrite`; además el A56 seguía con
+Bluetooth activo. v14b acepta escritura con o sin respuesta, espera 250 ms tras
+el descubrimiento y acepta notificación o indicación. Se apagó el Bluetooth del
+A56. Recibo: `artifacts/android-voice/lights-ble-robust-v14b/receipt.json`.
+
+El backend del Moto no tenía `control_lights`. Con autorización del usuario se
+respaldaron los tres módulos anteriores y se desplegaron
+`assistant_tools_model.py`, `assistant_tools_trial.py`,
+`conversation_voice.py` y el nuevo `light_trial.py`, con hashes verificados e
+importación correcta dentro del chroot. No había motor de voz activo, no se
+inició, no se abrió micrófono ni se cargó el modelo. Recibo:
+`artifacts/android-voice/lights-voice-backend-v1/receipt.json`.
+
+La primera prueba de voz de luces cerró el micrófono. El recibo técnico fue
+`phase=RESPONSES`, `error=IO`, `VoiceService.java:665`, con micrófono iniciado.
+La causa era un cableado faltante: `VoiceService.finishSpeech` llamaba a los
+canales de agenda y volumen, pero no a `lightChannel.spoken`. El backend sí
+armaba la confirmación; Android la borraba, y al llegar `light_execute` el
+permiso se rechazaba y se detenía todo el servicio. v15 añade esa llamada.
+También se cambió el diálogo de brillo de MR Star/`BOTH` para mostrar
+directamente 25/50/75/100, sin el texto que parecía un error. Recibo:
+`artifacts/android-voice/lights-voice-fix-v15/receipt.json`. Falta repetir la
+prueba humana de color y brillo por voz.
+
 ### Fase 5 — voz y ambas luces
 
-- Añadir intención tipada al canal local de herramientas.
-- Ejecutar Lotus/MR Star mediante adaptadores independientes.
-- Probar primero cada luz por separado y luego la orden `BOTH`.
+- `control_lights` ya está negociada como herramienta local sin argumentos.
+- Android reconstruye la frase con `LightCommandParser`, conserva el contrato
+  común y ejecuta el `LightCommandDispatcher` existente; el modelo no decide
+  objetivos, colores, frames ni direcciones.
+- Toda orden de voz pide confirmación hablada; MR Star no puede escribir sin esa
+  confirmación. El resultado devuelve `COMPLETE_UNCONFIRMED`, parcial, error o
+  no validado, sin afirmar cambio visual.
+- Falta probar en el Moto: una luz por separado, después `BOTH`, y confirmar
+  que la pregunta/confirmación hablada no interfiere con agenda, alarmas,
+  volumen ni audio.
 - Mantener Andrómeda, agenda, alarmas, volumen y audio sin cambios no aprobados.
 
 ## Reglas de operación

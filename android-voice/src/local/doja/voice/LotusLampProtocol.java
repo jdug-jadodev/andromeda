@@ -9,8 +9,8 @@ import java.util.List;
  *
  * This class has no Android or Bluetooth dependency. It only builds frames
  * observed in the local A56 capture; it never sends, retries, or logs them.
- * The model's captured OFF command is the one observed 8-byte variant; the
- * other validated commands are 9 bytes.
+ * The model's captured OFF command is a 9-byte variant with three zero bytes
+ * after the command selector; it must not be shortened to eight bytes.
  */
 public final class LotusLampProtocol {
     public static final int MAX_FRAME_LENGTH = 9;
@@ -30,7 +30,7 @@ public final class LotusLampProtocol {
     public static byte[] power(boolean on) {
         return on
             ? frame(0x7E, 0x07, 0x04, 0xFF, 0x00, 0x01, 0x02, 0x01, 0xEF)
-            : frame(0x7E, 0x07, 0x04, 0x00, 0x00, 0x02, 0x01, 0xEF);
+            : frame(0x7E, 0x07, 0x04, 0x00, 0x00, 0x00, 0x02, 0x01, 0xEF);
     }
 
     /**
@@ -50,6 +50,9 @@ public final class LotusLampProtocol {
             case COLOR:
                 frames.add(color(command.color));
                 if (command.brightnessPercent >= 0) frames.add(brightness(command.brightnessPercent));
+                break;
+            case BRIGHTNESS:
+                frames.add(brightness(command.brightnessPercent));
                 break;
             case PRESET:
             case PATTERN:
