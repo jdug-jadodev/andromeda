@@ -15,7 +15,8 @@ YES = {'si', 'si por favor', 'si gracias', 'si hazlo', 'si adelante', 'si correc
        'correcto', 'exacto', 'adelante', 'hazlo', 'de acuerdo', 'confirmo', 'dale'}
 NO = {'no', 'no gracias', 'cancela', 'cancelar', 'dejalo', 'olvidalo'}
 STATUSES = {'COMPLETE_UNCONFIRMED', 'AUTHORIZATION_REQUIRED', 'UNSUPPORTED_ORDER',
-            'DEVICE_NOT_FOUND', 'TRANSPORT_ERROR', 'PARTIAL_OR_UNCERTAIN', 'BUSY', 'CLOSED'}
+            'DEVICE_NOT_FOUND', 'TRANSPORT_ERROR', 'PARTIAL_OR_UNCERTAIN', 'BUSY', 'CLOSED',
+            'SCHEDULE_SAVED'}
 
 
 def _text(value):
@@ -116,6 +117,9 @@ class LightTrial:
         self.inflight = None
         if status == 'COMPLETE_UNCONFIRMED':
             text = 'Orden de luces enviada al Bluetooth. No tengo confirmación visual; revisa las luces.'
+            actions = 1
+        elif status == 'SCHEDULE_SAVED':
+            text = 'Horario de luces actualizado. No cambié ninguna luz.'
             actions = 1
         elif status == 'PARTIAL_OR_UNCERTAIN':
             text = 'La orden de luces quedó parcial o incierta. No la repetiré; revisa las luces antes de pedir otra.'

@@ -38,6 +38,7 @@ public final class LightDeviceResolver {
     }
 
     private final Context context;
+    private final boolean preferCached;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private BluetoothLeScanner scanner;
     private ScanCallback scanCallback;
@@ -48,8 +49,13 @@ public final class LightDeviceResolver {
     private Callback resultCallback;
 
     public LightDeviceResolver(Context context) {
+        this(context, false);
+    }
+
+    public LightDeviceResolver(Context context, boolean preferCached) {
         if (context == null) throw new IllegalArgumentException("Falta el contexto BLE");
         this.context = context.getApplicationContext();
+        this.preferCached = preferCached;
     }
 
     public void resolve(LightCommand command, Callback callback) {
@@ -72,6 +78,13 @@ public final class LightDeviceResolver {
             finish(new Result(Status.PERMISSION_DENIED, 0, Collections.emptyMap()));
             return;
         }
+        if (preferCached) {
+            EnumMap<LightTarget, BluetoothDevice> cached = cached(adapter);
+            if (cached.keySet().containsAll(wanted)) {
+                finish(new Result(Status.RESOLVED, 0, Collections.unmodifiableMap(cached)));
+                return;
+            }
+        }
         scanner = adapter.getBluetoothLeScanner();
         if (scanner == null) {
             finish(new Result(Status.SCAN_UNAVAILABLE, 0, Collections.emptyMap()));
@@ -88,6 +101,8 @@ public final class LightDeviceResolver {
                 LightTarget target = targetForName(name);
                 if (target != null && wanted.contains(target) && !found.containsKey(target)) {
                     found.put(target, device);
+                    try { LightAddressStore.save(context, target, device.getAddress()); }
+                    catch (SecurityException ignored) { /* The next scan can try again. */ }
                     if (found.keySet().containsAll(wanted))
                         finish(new Result(Status.RESOLVED, scanResults, Collections.unmodifiableMap(new EnumMap<>(found))));
                 }
@@ -100,8 +115,27 @@ public final class LightDeviceResolver {
             finish(new Result(Status.SCAN_FAILED, scanResults, Collections.emptyMap()));
             return;
         }
-        handler.postDelayed(() -> finish(new Result(Status.TARGET_NOT_FOUND, scanResults,
-            Collections.unmodifiableMap(new EnumMap<>(found)))), TIMEOUT_MS);
+        handler.postDelayed(() -> {
+            if (finished) return;
+            // A lamp that is on may stop advertising under its public name.
+            // Try the last locally learned address before declaring it absent.
+            EnumMap<LightTarget, BluetoothDevice> fallback = cached(adapter);
+            if (fallback.keySet().containsAll(wanted))
+                finish(new Result(Status.RESOLVED, scanResults, Collections.unmodifiableMap(fallback)));
+            else finish(new Result(Status.TARGET_NOT_FOUND, scanResults,
+                Collections.unmodifiableMap(new EnumMap<>(found))));
+        }, TIMEOUT_MS);
+    }
+
+    private EnumMap<LightTarget, BluetoothDevice> cached(BluetoothAdapter adapter) {
+        EnumMap<LightTarget, BluetoothDevice> result = new EnumMap<>(LightTarget.class);
+        for (LightTarget target : wanted) {
+            String address = LightAddressStore.get(context, target);
+            if (address == null) continue;
+            try { result.put(target, adapter.getRemoteDevice(address)); }
+            catch (IllegalArgumentException | SecurityException invalid) { /* Scan will resolve it.   */ }
+        }
+        return result;
     }
 
     private static LightTarget targetForName(String name) {

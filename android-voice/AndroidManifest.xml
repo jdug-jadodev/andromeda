@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="55" android:versionName="0.13.27-engine-status-json">
+    android:versionCode="72" android:versionName="0.13.44-rest-mode">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Special user grant for the daily screen-brightness schedule. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <!-- Android 10 BLE discovery only; no location/network service is used. -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
@@ -18,15 +20,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".RingService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".AgendaDeliveryService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".LightScheduleService" android:exported="false"
+            android:foregroundServiceType="connectedDevice|location" />
+        <service android:name=".RestModeService" android:exported="false" />
+        <receiver android:name=".LightScheduleReceiver" android:exported="false" />
+        <receiver android:name=".RestModeReceiver" android:exported="false" />
         <receiver android:name=".AgendaReceiver" android:exported="false" />
         <receiver android:name=".TimerReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">
-            <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
         </receiver>
     </application>
     <instrumentation android:name=".FixtureInstrumentation" android:targetPackage="local.doja.voice"
@@ -71,4 +86,16 @@
         android:label="Una escritura Lotus explícitamente autorizada, sin reintentos" android:functionalTest="true" />
     <instrumentation android:name=".MrStarServiceDiscoveryInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Inventario GATT MR Star, solo lectura y sin escritura" android:functionalTest="true" />
+    <instrumentation android:name=".LightScheduleInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Crear horario 17:30–22:00 sin BLE ni micrófono" android:functionalTest="true" />
+    <instrumentation android:name=".LightScheduleUiInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Comprobar acciones editables del horario sin BLE ni micrófono" android:functionalTest="true" />
+    <instrumentation android:name=".LightAddressPowerInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Una escritura BLE directa por dirección, sin escaneo ni reintento" android:functionalTest="true" />
+    <instrumentation android:name=".RestModeInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Crear horario 23:00/06:00 sin audio ni BLE" android:functionalTest="true" />
+    <instrumentation android:name=".RestModeApplyInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Aplicar y restaurar brillo/volumen de descanso, sin audio ni BLE" android:functionalTest="true" />
+    <instrumentation android:name=".RestModeUiInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Comprobar acciones del modo descanso sin audio ni BLE" android:functionalTest="true" />
 </manifest>

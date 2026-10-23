@@ -7,7 +7,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.*;
+import android.provider.Settings;
 import android.util.Base64;
 import android.view.*;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -98,6 +100,10 @@ public class MainActivity extends Activity {
     public void onCreate(Bundle saved) {
         super.onCreate(saved);
         lightDispatcher = new LightCommandDispatcher(this);
+        try { LightScheduleScheduler.schedule(this); }
+        catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
+        try { RestModeScheduler.schedule(this); }
+        catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         for (SimpleDateFormat format : new SimpleDateFormat[]{clockFormat, dateFormat, weatherTimeFormat})
             format.setTimeZone(TimeZone.getTimeZone("America/Bogota"));
@@ -170,7 +176,7 @@ public class MainActivity extends Activity {
         GradientDrawable background = new GradientDrawable(); background.setColor(Color.rgb(15, 24, 42)); background.setCornerRadius(dp(22)); panel.setBackground(background);
         label(panel, "Andrómeda · opciones", 23, Color.WHITE);
         optionsCountdown = label(panel, "Se ocultan en 50 s sin interacción", 12, Color.rgb(151, 166, 195));
-        LinearLayout first = new LinearLayout(this), second = new LinearLayout(this), third = new LinearLayout(this), fourth = new LinearLayout(this);
+        LinearLayout first = new LinearLayout(this), second = new LinearLayout(this), third = new LinearLayout(this), fourth = new LinearLayout(this), fifth = new LinearLayout(this);
         button(first, "Color del brillo", this::chooseColor);
         button(first, "Contexto", this::contextOptions);
         button(first, "Fuentes web", () -> showDialog(new AlertDialog.Builder(this).setTitle("Última búsqueda · fuentes en RAM")
@@ -181,7 +187,9 @@ public class MainActivity extends Activity {
         assistantAction = button(third, UnifiedVoicePolicy.START, this::assistantVoice);
         button(third, "Volver", this::closeOptions);
         button(fourth, "Luces", this::lightOptions);
-        panel.addView(first); panel.addView(second); panel.addView(third); panel.addView(fourth);
+        button(fourth, "Horario de luces", () -> lightScheduleOptions(LightTarget.BOTH));
+        button(fifth, "Modo descanso", this::restModeOptions);
+        panel.addView(first); panel.addView(second); panel.addView(third); panel.addView(fourth); panel.addView(fifth);
         ScrollView optionsScroll = new ScrollView(this);
         optionsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
@@ -302,6 +310,8 @@ public class MainActivity extends Activity {
             addLightColor(labels, actions, target, "Blanco visual · capturado", "#FFFFFF");
         }
         labels.add("Brillo · "+lightBrightness.get(target)+"%"); actions.add(() -> lightBrightnessOptions(target));
+        labels.add(LightScheduleStore.forTarget(this,target)==null?"Programar horario de luces…":"Cambiar horario de luces…");
+        actions.add(() -> lightScheduleOptions(target));
         labels.add("Usar hexadecimal…"); actions.add(() -> lightHexDialog(target,false));
         labels.add("Guardar hexadecimal…"); actions.add(() -> lightHexDialog(target,true));
         for (java.util.Map.Entry<String,LightColor> entry:LightPresetStore.list(this).entrySet()) {
@@ -312,6 +322,192 @@ public class MainActivity extends Activity {
             .setItems(labels.toArray(new String[0]), (dialog, index) -> actions.get(index).run())
             .setNegativeButton("Cambiar objetivo", (dialog, which) -> lightOptions()).create());
     }
+    private void lightScheduleOptions(LightTarget target) {
+        LightSchedule schedule = LightScheduleStore.forTarget(this, target);
+        String title = "Horario · " + lightTargetLabel(target);
+        if (schedule == null) {
+            showDialog(new AlertDialog.Builder(this).setTitle(title)
+                .setMessage("Sin horario guardado.\n\nPredeterminado: 17:30 encender y 22:00 apagar, todos los días.")
+                .setPositiveButton("Crear 17:30–22:00", (dialog, which) -> {
+                    try {
+                        LightSchedule created = LightScheduleStore.ensureDefault(this, target);
+                        LightScheduleScheduler.schedule(this);
+                        lightScheduleOptions(created.target);
+                    } catch (Exception failure) {
+                        showDialog(new AlertDialog.Builder(this).setTitle("Horario")
+                            .setMessage("No se pudo guardar el horario en este teléfono.")
+                            .setPositiveButton("Cerrar", null).create());
+                    }
+                }).setNegativeButton("Volver", (dialog, which) -> lightCommandOptions(target)).create());
+            return;
+        }
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        java.util.ArrayList<Runnable> actions = new java.util.ArrayList<>();
+        labels.add("Cambiar encendido (" + LightSchedule.format(schedule.onMinute) + ")");
+        actions.add(() -> lightScheduleTime(schedule, true));
+        labels.add("Cambiar apagado (" + LightSchedule.format(schedule.offMinute) + ")");
+        actions.add(() -> lightScheduleTime(schedule, false));
+        labels.add("Días · " + LightSchedule.daysLabel(schedule.days));
+        actions.add(() -> lightScheduleDays(schedule));
+        labels.add(schedule.enabled ? "Desactivar horario" : "Activar horario");
+        actions.add(() -> saveLightSchedule(schedule.withEnabled(!schedule.enabled)));
+        labels.add("Borrar horario");
+        actions.add(() -> lightScheduleDelete(schedule));
+        String receipt = LightScheduleReceiptStore.describe(this, schedule);
+        TextView header = new TextView(this);
+        header.setText(title + "\n"
+            + (schedule.enabled ? "Activo" : "Desactivado") + " · "
+            + LightSchedule.daysLabel(schedule.days) + "\n"
+            + LightSchedule.format(schedule.onMinute) + " encender · "
+            + LightSchedule.format(schedule.offMinute) + " apagar"
+            + (receipt.isEmpty() ? "" : "\n" + receipt));
+        header.setTextSize(18);
+        header.setTextColor(Color.WHITE);
+        header.setPadding(dp(20), dp(12), dp(20), dp(8));
+        header.setLineSpacing(0, 1.12f);
+        // A message would replace the item list in this Android theme; use a
+        // custom title so the editable actions remain visible.
+        showDialog(new AlertDialog.Builder(this).setCustomTitle(header)
+            .setItems(labels.toArray(new String[0]), (dialog, index) -> actions.get(index).run())
+            .setNegativeButton("Volver", (dialog, which) -> lightCommandOptions(target)).create());
+    }
+
+    private void lightScheduleTime(LightSchedule schedule, boolean on) {
+        noteOptionsInteraction();
+        int minute = on ? schedule.onMinute : schedule.offMinute;
+        TimePickerDialog picker = new TimePickerDialog(this, (view, hour, selectedMinute) -> {
+            try {
+                int value = hour * 60 + selectedMinute;
+                saveLightSchedule(on ? schedule.withOn(value) : schedule.withOff(value));
+            } catch (IllegalArgumentException error) {
+                showDialog(new AlertDialog.Builder(this).setTitle("Horario")
+                    .setMessage("La hora de encendido y la de apagado no pueden coincidir.")
+                    .setPositiveButton("Cerrar", (dialog, which) -> lightScheduleOptions(schedule.target)).create());
+            }
+        }, minute / 60, minute % 60, android.text.format.DateFormat.is24HourFormat(this));
+        picker.setOnCancelListener(dialog -> lightScheduleOptions(schedule.target));
+        picker.show();
+    }
+
+    private void lightScheduleDays(LightSchedule schedule) {
+        String[] values = {"Todos los días", "Lunes a viernes", "Fin de semana"};
+        int[] masks = {LightSchedule.ALL_DAYS, LightSchedule.WEEKDAYS, LightSchedule.WEEKEND};
+        showDialog(new AlertDialog.Builder(this).setTitle("Días del horario")
+            .setItems(values, (dialog, index) -> saveLightSchedule(schedule.withDays(masks[index])))
+            .setNegativeButton("Volver", (dialog, which) -> lightScheduleOptions(schedule.target)).create());
+    }
+
+    private void saveLightSchedule(LightSchedule schedule) {
+        try {
+            LightScheduleStore.save(this, schedule);
+            LightScheduleScheduler.schedule(this);
+            lightScheduleOptions(schedule.target);
+        } catch (Exception failure) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Horario")
+                .setMessage("No se pudo guardar el horario. No se envió ninguna orden de luces.")
+                .setPositiveButton("Cerrar", null).create());
+        }
+    }
+
+    private void lightScheduleDelete(LightSchedule schedule) {
+        showDialog(new AlertDialog.Builder(this).setTitle("Borrar horario")
+            .setMessage("Se borrará " + LightSchedule.format(schedule.onMinute) + "–"
+                + LightSchedule.format(schedule.offMinute) + " de " + lightTargetLabel(schedule.target)
+                + ".\n\nNo se enviará ninguna orden ahora.")
+            .setNegativeButton("Volver", (dialog, which) -> lightScheduleOptions(schedule.target))
+            .setPositiveButton("Borrar", (dialog, which) -> {
+                LightScheduleScheduler.cancel(this, schedule.id);
+                try { LightScheduleStore.delete(this, schedule.id); }
+                catch (Exception ignored) { /* The UI verifies by reopening the store. */ }
+                lightScheduleOptions(schedule.target);
+            }).create());
+    }
+
+    private void restModeOptions() {
+        RestModeSchedule schedule = RestModeStore.load(this);
+        if (schedule == null) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Modo descanso")
+                .setMessage("Sin horario guardado.\n\n23:00: brillo mínimo y volumen 50%.\n06:00: brillo 70% y volumen 100%.\nTodos los días.")
+                .setPositiveButton("Activar 23:00/06:00", (dialog, which) -> {
+                    try {
+                        RestModeStore.save(this, RestModeSchedule.defaultSchedule());
+                        RestModeScheduler.schedule(this);
+                        restModeOptions();
+                    } catch (Exception failure) {
+                        showDialog(new AlertDialog.Builder(this).setTitle("Modo descanso")
+                            .setMessage("No se pudo guardar el modo descanso en este teléfono.")
+                            .setPositiveButton("Cerrar", null).create());
+                    }
+                }).setNegativeButton("Volver", null).create());
+            return;
+        }
+        java.util.ArrayList<String> labels = new java.util.ArrayList<>();
+        java.util.ArrayList<Runnable> actions = new java.util.ArrayList<>();
+        labels.add("Cambiar hora de descanso (" + LightSchedule.format(schedule.nightMinute) + ")");
+        actions.add(() -> restModeTime(schedule, true));
+        labels.add("Cambiar hora de despertar (" + LightSchedule.format(schedule.morningMinute) + ")");
+        actions.add(() -> restModeTime(schedule, false));
+        labels.add(schedule.enabled ? "Desactivar modo descanso" : "Activar modo descanso");
+        actions.add(() -> saveRestModeSchedule(schedule.withEnabled(!schedule.enabled)));
+        if (!Settings.System.canWrite(this)) {
+            labels.add("Permitir brillo (necesario)");
+            actions.add(this::requestWriteSettings);
+        }
+        String receipt = RestModeReceiptStore.describe(this);
+        TextView header = new TextView(this);
+        header.setText("Modo descanso\n"
+            + (schedule.enabled ? "Activo" : "Desactivado") + " · todos los días\n"
+            + LightSchedule.format(schedule.nightMinute) + " descanso: brillo mínimo · volumen 50%\n"
+            + LightSchedule.format(schedule.morningMinute) + " despertar: brillo 70% · volumen 100%"
+            + (Settings.System.canWrite(this) ? "" : "\nFalta permiso de brillo; el volumen sí se aplicará.")
+            + (receipt.isEmpty() ? "" : "\n" + receipt));
+        header.setTextSize(18); header.setTextColor(Color.WHITE);
+        header.setPadding(dp(20), dp(12), dp(20), dp(8)); header.setLineSpacing(0, 1.12f);
+        showDialog(new AlertDialog.Builder(this).setCustomTitle(header)
+            .setItems(labels.toArray(new String[0]), (dialog, index) -> actions.get(index).run())
+            .setNegativeButton("Volver", null).create());
+    }
+
+    private void restModeTime(RestModeSchedule schedule, boolean night) {
+        noteOptionsInteraction();
+        int minute = night ? schedule.nightMinute : schedule.morningMinute;
+        TimePickerDialog picker = new TimePickerDialog(this, (view, hour, selectedMinute) -> {
+            try {
+                int value = hour * 60 + selectedMinute;
+                saveRestModeSchedule(night ? schedule.withNight(value) : schedule.withMorning(value));
+            } catch (IllegalArgumentException error) {
+                showDialog(new AlertDialog.Builder(this).setTitle("Modo descanso")
+                    .setMessage("La hora de descanso y la de despertar no pueden coincidir.")
+                    .setPositiveButton("Cerrar", (dialog, which) -> restModeOptions()).create());
+            }
+        }, minute / 60, minute % 60, android.text.format.DateFormat.is24HourFormat(this));
+        picker.setOnCancelListener(dialog -> restModeOptions());
+        picker.show();
+    }
+
+    private void saveRestModeSchedule(RestModeSchedule schedule) {
+        try {
+            RestModeStore.save(this, schedule);
+            RestModeScheduler.schedule(this);
+            restModeOptions();
+        } catch (Exception failure) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Modo descanso")
+                .setMessage("No se pudo guardar el modo descanso. No se cambió brillo ni volumen.")
+                .setPositiveButton("Cerrar", null).create());
+        }
+    }
+
+    private void requestWriteSettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                Uri.parse("package:" + getPackageName())));
+        } catch (Exception unavailable) {
+            showDialog(new AlertDialog.Builder(this).setTitle("Permiso de brillo")
+                .setMessage("Abre Ajustes → Aplicaciones → Andrómeda → Permisos especiales → Modificar ajustes del sistema.")
+                .setPositiveButton("Cerrar", null).create());
+        }
+    }
+
     private void addLightColor(java.util.ArrayList<String> labels,java.util.ArrayList<Runnable> actions,LightTarget target,String name,String hex) {
         labels.add(name+" "+hex); actions.add(() -> simulateLightCommand(LightCommand.color(target,LightColor.parseHex(hex))));
     }
@@ -856,7 +1052,18 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (policy.optionsVisible()) closeOptions();
         else if (preview) { stopPreview(); refreshServiceState(); }
+        else if (isDefaultHome()) closeOptions();
         else super.onBackPressed();
+    }
+    private boolean isDefaultHome() {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo value = getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            return value != null && value.activityInfo != null && getPackageName().equals(value.activityInfo.packageName);
+        } catch (RuntimeException ignored) { return false; }
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent); setIntent(intent); refreshServiceState();
     }
     public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
         if (keyCode == android.view.KeyEvent.KEYCODE_MENU) { showOptions(); return true; }

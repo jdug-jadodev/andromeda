@@ -12,7 +12,7 @@ from unittest.mock import MagicMock,patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 import agenda_dialogue as form
-from assistant_tools_model import AssistantToolsModel
+from assistant_tools_model import AssistantToolsModel, TOOLS
 from assistant_tools_trial import AssistantToolsTrial, result_text
 from test_assistant_tools import native
 
@@ -76,7 +76,7 @@ class AgendaDialogueTests(unittest.TestCase):
                 (native('create_reminder'), 'tool_calls', 'ayer dije pon un recordatorio')]:
             self.assertEqual(model.interpret_result(message, finish, text)['kind'], 'tools_rejected')
         body = model.payload([{'role':'system','content':'old'}, {'role':'user','content':'pon un recordatorio'}])
-        self.assertEqual(body['tool_choice'], 'auto'); self.assertEqual(len(body['tools']), 5)
+        self.assertEqual(body['tool_choice'], 'auto'); self.assertEqual(len(body['tools']), len(TOOLS))
         self.assertEqual(body['max_tokens'], 96); self.assertFalse(body['parallel_tool_calls'])
 
     def test_questions_grant_nothing_and_receipt_continues_only_in_negotiated_mode(self):

@@ -29,9 +29,9 @@ TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('create_reminder', 'Programa el recordatorio solicitado, también «recuérdame».'),
          tool('search_web', 'Internet.'),
          tool('set_phone_volume', 'Ajusta el volumen multimedia del teléfono al porcentaje pedido. Ejemplos: sube el volumen al cien por ciento; baja el volumen al veinte por ciento; a la mitad. Sin argumentos.'),
-         tool('control_lights', 'Controla las luces por voz: encender, apagar, color validado o brillo con porcentaje. La frase actual contiene el objetivo y los valores; sin argumentos.')]
+         tool('control_lights', 'Controla o programa las luces por voz: encender, apagar, color validado, brillo con porcentaje y horario diario de encendido/apagado. La frase actual contiene el objetivo, las horas y los valores; sin argumentos.')]
 SYSTEM = ('Andrómeda. Sí puedes programar con herramientas. Alarmas/recordatorios usan el pedido actual, sin argumentos. '
-           'Para una orden actual de luces selecciona control_lights, sin argumentos. No inventes objetivo, color ni éxito. '
+           'Para una orden actual de luces o para programar su horario diario selecciona control_lights, sin argumentos. No inventes objetivo, horas, color ni éxito. '
            'Copia literal en español; no citas/negaciones.')
 READ_TOOL = tool('list_reminders', 'Consulta los recordatorios guardados en Andrómeda. Sin argumentos.')
 DELETE_REMINDER_TOOL = tool('delete_reminder', 'Delete one saved reminder. Code identifies the target and asks confirmation. No arguments.')
@@ -244,7 +244,7 @@ class AssistantToolsModel(ConversationModel):
         # data parser or execution authorization. Quotes/negations still go to
         # the unchanged native/current-request guards, never an inferred action.
         return bool(re.search(r'\b(?:busca|busques|buscar|consulta|consultes|investiga|investigues|'
-            r'pon|ponme|pongas|crea|crees|crear|programa|programes|inicia|inicies|'
+            r'pon|ponme|pongas|crea|crees|crear|programa|programar|programe|programen|programes|horario|horarios|inicia|inicies|'
             r'recuerdame|recuerdes|alarma|alarmas|recordatorio|recordatorios|temporizador|temporizadores|'
             r'timer|cuenta atras|cancela|canceles|apaga|enciende|luz|luces|televisor|mueble|volumen|baja|bajes|sube|subas|ajusta)\b', normalized(text)))
 

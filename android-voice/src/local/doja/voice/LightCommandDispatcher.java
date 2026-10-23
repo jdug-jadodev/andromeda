@@ -38,13 +38,19 @@ public final class LightCommandDispatcher implements AutoCloseable {
     }
 
     private final Context context;
+    private final boolean preferCached;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private boolean busy;
     private boolean closed;
 
     public LightCommandDispatcher(Context context) {
+        this(context, false);
+    }
+
+    public LightCommandDispatcher(Context context, boolean preferCached) {
         if (context == null) throw new IllegalArgumentException("Falta el contexto de luces");
         this.context = context.getApplicationContext();
+        this.preferCached = preferCached;
     }
 
     public synchronized void send(LightCommand command, LightWriteAuthorization authorization, Callback callback) {
@@ -62,7 +68,7 @@ public final class LightCommandDispatcher implements AutoCloseable {
         }
         final List<LightCommand> commands = LightCommandRouting.independent(command);
         busy = true;
-        new LightDeviceResolver(context).resolve(command, resolved -> {
+        new LightDeviceResolver(context, preferCached).resolve(command, resolved -> {
             if (!resolved.isResolved()) {
                 finish(callback, new Result(Status.DEVICE_NOT_FOUND, commands.size(), 0, 0, resolved.status.name()));
                 return;
@@ -75,6 +81,10 @@ public final class LightCommandDispatcher implements AutoCloseable {
             int acceptedFrames, Callback callback) {
         if (closed) { finish(callback, new Result(Status.PARTIAL_OR_UNCERTAIN, commands.size(), index, acceptedFrames, "dispatcher_closed")); return; }
         if (index >= commands.size()) {
+            // Only a fully accepted power order updates the local best-effort state.
+            for (LightCommand command : commands)
+                if (command.kind == LightCommand.Kind.POWER)
+                    LightStateStore.record(context, command.target, command.powerOn);
             finish(callback, new Result(Status.COMPLETE_UNCONFIRMED, commands.size(), index, acceptedFrames, "accepted_by_gatt_stack"));
             return;
         }

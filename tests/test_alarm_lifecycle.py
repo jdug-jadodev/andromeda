@@ -75,7 +75,7 @@ class AlarmLifecycleTests(unittest.TestCase):
 
     def test_same_five_native_tools_and_no_model_supplied_target_or_schedule(self):
         payload=AssistantToolsModel.alarm_payload([{'role':'system','content':'Public'},{'role':'user','content':'Hola.'}])
-        self.assertEqual(len(payload['tools']),5); self.assertEqual(payload['tool_choice'],'auto')
+        self.assertEqual(len(payload['tools']),len(TOOLS)); self.assertEqual(payload['tool_choice'],'auto')
         self.assertFalse(payload['parallel_tool_calls'])
         self.assertEqual([tool['function']['name'] for tool in payload['tools']],[tool['function']['name'] for tool in TOOLS])
         self.assertEqual(self.native('pon una alarma el lunes a las 17:00')['weekday'],1)

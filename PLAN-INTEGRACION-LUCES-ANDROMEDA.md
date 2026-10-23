@@ -396,9 +396,108 @@ nada. Recibo:
 El usuario confirmó finalmente el flujo completo por voz: color guardado,
 confirmación hablada, ejecución BLE, lectura del resultado y continuación de la
 escucha. Recibo:
-`artifacts/android-voice/lights-voice-confirmed-v22/receipt.json`. Quedan
-pendientes patrones/efectos, TV LG y habilitar más niveles de brillo en MR Star
-solo con capturas validadas.
+`artifacts/android-voice/lights-voice-confirmed-v22/receipt.json`.
+
+Estabilidad nocturna: el usuario dejó el teléfono encendido con el modelo
+cargado y por la mañana “Andrómeda” respondió bien. Verificación de solo
+lectura: servicio, modelo y backend llevaban ~10 h 50 min vivos; puertos
+11435/11436 activos; ventana móvil de 120 muestras con RAM disponible
+1.278–1.354 GB, modelo ~704 MB, backend ~164 MB; monitor de batería con 246
+muestras, 22.9–24.4 °C, 100% y salud Good. Recibo:
+`artifacts/android-voice/overnight-stability-v22/receipt.json`. La RAM sigue
+cerca del mínimo de arranque de 1.2 GB.
+
+Auditoría de memoria: 3.76 GB utilizables; con el motor cargado, MemAvailable
+~1.26 GB, modelo ~714 MB, backend ~179 MB, app ~162 MB, TTS ~149 MB, GMS
+~270 MB, servicios Motorola/Qualcomm ~400 MB. La cámara en reposo usa ~29 MB;
+la reserva CMA de ~204 MB es de hardware y no se libera desactivando la app. Se
+aplicó la limpieza segura: Mensajes, Motocare, Setup Wizard, Turbo, reporte
+nativo, datos de vida útil y Chrome deshabilitados; se detuvo `loc_launcher`
+(localización Qualcomm, que incluye `lowi-server` y `xtra-daemon`). El escaneo
+BLE siguió funcionando (90 dispositivos, sin writes); TTS y Bluetooth siguen
+vivos. La prueba de BLE reinició el proceso de la app y dejó el motor apagado,
+así que la medición posterior (1.69 GB disponibles) no es comparable. Rollback:
+`artifacts/android-voice/memory-cleanup-safe-v1/rollback.txt`. La limpieza
+media (GMS/pila celular) queda pendiente de medir con el motor cargado y probar
+voz/TTS/BLE. Recibo:
+`artifacts/android-voice/memory-cleanup-safe-v1/receipt.json`.
+
+Medición con el motor cargado después de la limpieza segura: MemAvailable
+1.44 GB (antes 1.26 GB, +173 MB), RAM usada 3.13 GB (antes 3.39 GB, −250 MB),
+swap en uso 639 MB (antes 880 MB, −241 MB), ZRAM físico 158 MB (antes 199 MB).
+Modelo 736 MB, app 168 MB, backend 138 MB, GMS 165 MB, TTS 118 MB. El margen
+sobre el mínimo de 1.2 GB subió a ~239 MB. `loc_launcher`/`lowi-server` siguen
+detenidos; Chrome y los paquetes seguros siguen deshabilitados. Falta probar
+voz/TTS/BLE después de la limpieza y decidir la limpieza media. Recibo:
+`artifacts/android-voice/memory-cleanup-safe-v1/after-engine-on.json`.
+
+El usuario reportó que la voz se cortaba al explicar un fallo largo (por
+ejemplo, las formas válidas de pedir alarma/recordatorio). La ventana de TTS de
+herramientas estaba fija en 20 s. v23 usa una ventana estimada por longitud:
+20–45 s para mensajes normales y 60 s para listas/web, con prueba pura
+`SpeechPlaybackPolicyTest`. No cambia acciones, confirmaciones ni reintentos.
+Recibo: `artifacts/android-voice/lights-long-speech-v23/receipt.json`.
+
+Limpieza media, primer paso: `com.google.android.gms` deshabilitado; app, TTS
+y Bluetooth siguen vivos. Medición con el motor apagado: +30 MB disponibles
+(1.741 → 1.772 GB), no comparable con el motor cargado. Queda probar TTS, BLE y
+la explicación larga antes de continuar con la pila celular/Motorola/launcher.
+Rollback: `pm enable --user 0 com.google.android.gms`. Recibo:
+`artifacts/android-voice/memory-cleanup-medium-v1/receipt.json`.
+
+El usuario activó modo avión, mantuvo Bluetooth y la voz/BLE funcionaron. El
+aviso de “Servicios de Google Play” venía de `com.motorola.config.wifi`, no de
+una reactivación: GMS sigue `disabled-user`. Google TTS registra
+`SERVICE_DISABLED` pero usa la voz offline. Con el motor cargado y modo avión:
+MemAvailable 1.49 GB, usados 2.98 GB, swap 549 MB. Android Auto y CCC/OTA se
+deshabilitaron (+40 MB) manteniendo app/modelo/backend/TTS/BT.
+
+v24 añade a Andrómeda como launcher: filtro HOME/DEFAULT, resolución por
+defecto `local.doja.voice/.MainActivity`, y Home/Back se quedan en la app. El
+launcher de Motorola fue deshabilitado por decisión explícita del usuario, sin
+fallback. Home/Back verificados; el proceso del launcher ya no existe. No hay
+cajón de apps hasta que Andrómeda añada accesos a apps/Ajustes; se puede
+recuperar el launcher con `pm enable --user 0 com.motorola.launcher3`. Recibos:
+`artifacts/android-voice/launcher-home-v24/receipt.json` y
+`artifacts/android-voice/launcher-disabled-v1/receipt.json`.
+
+Datos y RAM: las alarmas/recordatorios se guardan en SQLite `agenda.db` y se
+programan con `AlarmManager.setExactAndAllowWhileIdle`; los timers en
+`SharedPreferences` `timers.xml` + `AlarmManager`; las conversaciones y fuentes
+web viven solo en RAM acotada (fuente web 1 h, sin transcripción). No se usa
+Redis: en el mismo teléfono también consume RAM; en la nube añade red,
+credenciales y persistencia de contenido humano. La cámara se mantiene: ~23 MB
+de servicio en reposo y consumo temporal solo al abrirla; la reserva CMA de
+~204 MB es de hardware. La limpieza de datos no es la palanca; modelo, backend,
+TTS y sistema dominan el uso.
+
+TV LG: el Moto está en Wi-Fi local; tras encender el TV, SSDP lo encontró
+como webOS 4.1.0 (192.168.1.9) y el UPnP de 1176 confirmó el dispositivo. Los
+puertos 3000/3001 están abiertos, pero el pairing no completó: 3000 reinicia en
+claro y cierra TLS; 3001 responde HTTP 200 “Hello world”, no el WebSocket de
+webOS. El menú del TV **no ofrece LG Connect Apps ni IP Control**; solo
+“encender con dispositivo móvil/Wi-Fi”, que es Wake-on-LAN y solo enciende.
+Los puertos 3000/3001 aceptan conexión pero no responden al handshake SSAP:
+síntoma conocido de daemon de control webOS colgado o modo hotel. Un apagado
+normal del mando no reinicia webOS; hay que desenchufar el TV de la corriente
+unos 60 s. Antes de ThinQ/nube/IR/smart plug, probar ese arranque en frío y
+reintentar el pairing local; si vuelve, apagado por SSAP + encendido por WOL
+(con MAC y “TV On With Mobile”). No se envió ningún comando ni se guardó clave.
+ThinQ cloud es posible en teoría pero usa API de TV no oficial, cuenta/token e
+Internet, y el encendido en standby/ahorro sigue siendo incierto; no se adopta
+todavía. Recibos: `artifacts/android-voice/lg-discovery-v1/receipt.json` y
+`artifacts/android-voice/lg-pairing-v1/receipt.json`.
+
+Requisitos confirmados por el usuario: luces encendidas 17:30 y apagadas 22:00
+todos los días, editables por UI y voz; TV LG físico apagado una sola vez
+dentro de 15 minutos; no cambiar los controles de voz existentes. Idempotencia
+deseada: si el último estado ordenado ya coincide, no reenviar; sin lectura del
+dispositivo, un cambio externo puede dejar el estado desconocido, pero on/off
+es seguro de repetir. El TV necesita emparejamiento webOS local y, para
+encenderlo apagado, “Mobile TV On”/WOL. Implementación propuesta: almacén local
+de horarios + `AlarmManager` + servicio acotado para BLE; UI de lista/edición;
+luego herramienta de voz `schedule_lights`; TV después del pairing. No Redis,
+no nube para el modelo.
 
 ### Observación de RAM y temperatura
 
@@ -421,6 +520,48 @@ terminó antes de los 15 min; no se modificó el monitor de batería existente.
   que la pregunta/confirmación hablada no interfiere con agenda, alarmas,
   volumen ni audio.
 - Mantener Andrómeda, agenda, alarmas, volumen y audio sin cambios no aprobados.
+
+### Fase 6 — horario diario y edición por voz (v25–v40)
+
+- APK v40 (`lights-schedule-voice-v40`, versionCode 71) instalado; backend v3 desplegado con
+  `assistant_tools_model.py` y `light_trial.py` actualizados.
+- Horario real creado: `BOTH`, 17:30 encender, 22:00 apagar, todos los días, activo. La alarma
+  `LIGHT_SCHEDULE` quedó armada para hoy a las 17:30; no se escribió BLE durante la instalación.
+- `LightScheduleStore` usa `SharedPreferences` JSON local. `LightScheduleScheduler` agenda solo el
+  siguiente evento con `AlarmManager.setExactAndAllowWhileIdle`; `LightScheduleReceiver` arranca
+  `LightScheduleService` en primer plano, con wake lock y timeout de 90 s. El siguiente evento se
+  agenda antes de tocar BLE para que un cierre del proceso no borre el horario de mañana.
+- La alarma se acepta hasta 15 min tarde para tolerar Doze; una alarma que ya no coincide con el
+  horario editado se descarta.
+- El horario **no se salta** por el último estado guardado: un interruptor físico o un reinicio puede
+  dejar la lámpara distinta. Repetir on/off es seguro y cada evento se envía una vez. El recibo no
+  afirma confirmación visual.
+- Direcciones BLE locales (`light_addresses_v1`) para Lotus y MR Star: primero se escanea (y se
+  actualizan si aparecen); si el nombre no aparece, el resolver usa la dirección guardada como
+  respaldo antes de tocar BLE. No salen del teléfono ni se registran en logs/recibos.
+- La conexión directa por dirección apagó la Lotus; la MR Star aceptó la escritura cuando estaba
+  encendida y falló al intentar conectarse después de apagada. Si su BLE se alimenta solo con la luz,
+  el horario no podrá encenderla desde apagada; falta confirmarlo físicamente.
+- Prueba programada del apagado a las 14:50 con el horario temporal: el servicio escaneó, usó el
+  respaldo local y recibió `COMPLETE_UNCONFIRMED` con 2 destinos aceptados. Después se restauró
+  17:30/22:00 diario; la alarma quedó armada para hoy 17:30.
+- UI: el botón directo “Horario de luces” (y “Luces → objetivo → Cambiar horario”) permite crear
+  17:30–22:00, cambiar encendido/apagado, elegir todos los días/lunes a viernes/fin de semana,
+  activar/desactivar y borrar. Un fallo de Android hacía que `setMessage` ocultara la lista de
+  acciones; v36 usa un título personalizado y la lista editable sí aparece. Verificado sin BLE ni
+  micrófono: 5 acciones visibles y el selector de hora abre. La ejecución programada no abre
+  micrófono ni pide una confirmación nueva.
+- Voz: no se añadió otra herramienta; el modelo sigue seleccionando `control_lights`. El parser local
+  `LightScheduleVoiceParser` reconoce dos horas, objetivo, días y acciones de activar/desactivar/borrar.
+  Android pide la confirmación hablada existente y guarda el horario; el recibo es `SCHEDULE_SAVED`,
+  que no afirma haber enviado Bluetooth. El backend traduce ese estado a “Horario de luces
+  actualizado. No cambié ninguna luz.”
+- Ejemplos probados en parser puro: “Programa las luces a las 5:30 y a las 10 de la noche” produce
+  17:30/22:00; “Programa las luces de lunes a viernes a las 18:00 y 23:00” produce días de semana;
+  “Desactiva/Borra el horario de la luz mueble” produce la acción y el objetivo correctos.
+- Pendiente: observar la ejecución real de 17:30/22:00 y probar la edición por voz humana. El motor
+  de voz está apagado; el scheduler no lo necesita. Patrones/efectos siguen bloqueados hasta capturar
+  frames reales.
 
 ## Reglas de operación
 

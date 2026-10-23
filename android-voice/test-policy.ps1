@@ -22,6 +22,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Light routing tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Light authorization compilation failed' }
 & java -cp $output local.doja.voice.LightWriteAuthorizationTest
 if ($LASTEXITCODE -ne 0) { throw 'Light authorization tests failed' }
+& javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$PSScriptRoot\tests\LightScheduleTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Light schedule compilation failed' }
+& java -cp $output local.doja.voice.LightScheduleTest
+if ($LASTEXITCODE -ne 0) { throw 'Light schedule arithmetic tests failed' }
+& javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$source\RestModeSchedule.java" "$PSScriptRoot\tests\RestModeScheduleTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Rest mode schedule compilation failed' }
+& java -cp $output local.doja.voice.RestModeScheduleTest
+if ($LASTEXITCODE -ne 0) { throw 'Rest mode schedule tests failed' }
+& javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$source\LightScheduleVoiceCommand.java" "$source\TimerRequestGuard.java" "$source\LightScheduleVoiceParser.java" "$PSScriptRoot\tests\LightScheduleVoiceTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Light schedule voice compilation failed' }
+& java -cp $output local.doja.voice.LightScheduleVoiceTest
+if ($LASTEXITCODE -ne 0) { throw 'Light schedule voice parser tests failed' }
 & javac -encoding UTF-8 -cp $output -d $output "$source\LightBleRetryPolicy.java" "$PSScriptRoot\tests\LightBleRetryPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'BLE retry policy compilation failed' }
 & java -cp $output local.doja.voice.LightBleRetryPolicyTest
@@ -117,6 +129,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Streaming decoder/public PCM privacy tests fai
 if ($LASTEXITCODE -ne 0) { throw 'Speech diagnostic compilation failed' }
 & java -cp $output local.doja.voice.SpeechDiagnosticsTest
 if ($LASTEXITCODE -ne 0) { throw 'Speech completion/timing privacy tests failed' }
+& javac -encoding UTF-8 -d $output "$source\SpeechPlaybackPolicy.java" "$PSScriptRoot\tests\SpeechPlaybackPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Speech playback policy compilation failed' }
+& java -cp $output local.doja.voice.SpeechPlaybackPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Speech playback policy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\WebAnswerPolicy.java" "$PSScriptRoot\tests\WebAnswerPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Web answer contract compilation failed' }
 & java -cp $output local.doja.voice.WebAnswerPolicyTest

@@ -24,6 +24,7 @@ final class LightVoiceChannel {
     private final String session, context;
     private boolean closed, active, armed, confirmationSeen, inFlight;
     private LightCommand command;
+    private LightScheduleVoiceCommand schedule;
     private String rejection = "";
     private String origin = "", question = "", confirmation = "";
     private long originSequence, questionSequence, confirmationSequence, heardAt;
@@ -32,10 +33,11 @@ final class LightVoiceChannel {
 
     static final class Execution {
         final LightCommand command;
+        final LightScheduleVoiceCommand schedule;
         final String rejection;
         final String nonce;
-        Execution(LightCommand command, String rejection, String nonce) {
-            this.command = command; this.rejection = rejection; this.nonce = nonce;
+        Execution(LightCommand command, LightScheduleVoiceCommand schedule, String rejection, String nonce) {
+            this.command = command; this.schedule = schedule; this.rejection = rejection; this.nonce = nonce;
         }
     }
 
@@ -68,9 +70,11 @@ final class LightVoiceChannel {
             LightVoiceHealth.record(app, stage, 0, 0, 0, 0, active, armed, confirmationSeen);
             return;
         }
-        command = null; rejection = ""; confirmationSeen = false; inFlight = false; resultStatus = "";
+        command = null; schedule = null; rejection = ""; confirmationSeen = false; inFlight = false; resultStatus = "";
         origin = turn; originSequence = sequence;
-        try {
+        try { schedule = LightScheduleVoiceParser.parse(text); }
+        catch (IllegalArgumentException ignored) { /* Not necessarily a schedule phrase. */ }
+        if (schedule == null) try {
             LightCommand candidate = LightCommandParser.parse(text, LightPresetStore.list(app));
             String invalid = LightCommandExecutionPolicy.rejection(candidate);
             if (invalid == null) command = candidate; else rejection = invalid;
@@ -78,7 +82,7 @@ final class LightVoiceChannel {
             // This is only a candidate. A model tool selection or a transport
             // event is still required before anything can happen.
         }
-        LightVoiceHealth.record(app, command == null ? 2 : 1, 0, 0, 0, 0,
+        LightVoiceHealth.record(app, command == null && schedule == null ? 2 : 1, 0, 0, 0, 0,
             active, armed, confirmationSeen);
     }
 
@@ -136,7 +140,7 @@ final class LightVoiceChannel {
         if (!nonce.matches("[0-9a-f]{32}") || before < now || before > now + 60000) throw new IOException("Light grant outside deadline");
         if (inFlight) throw new IOException("Light operation already executing");
         confirmationSeen = false; inFlight = true;
-        return new Execution(command, rejection, nonce);
+        return new Execution(command, schedule, rejection, nonce);
     }
 
     synchronized void receipt(JSONObject event) throws Exception {
@@ -148,7 +152,7 @@ final class LightVoiceChannel {
                 || confirmationSequence != AgendaActionChannel.integer(event, "request_sequence"))
             throw new IOException("Unrelated light receipt");
         String status = AgendaActionChannel.text(event, "status");
-        if (!status.matches("COMPLETE_UNCONFIRMED|AUTHORIZATION_REQUIRED|UNSUPPORTED_ORDER|DEVICE_NOT_FOUND|TRANSPORT_ERROR|PARTIAL_OR_UNCERTAIN|BUSY|CLOSED"))
+        if (!status.matches("COMPLETE_UNCONFIRMED|AUTHORIZATION_REQUIRED|UNSUPPORTED_ORDER|DEVICE_NOT_FOUND|TRANSPORT_ERROR|PARTIAL_OR_UNCERTAIN|BUSY|CLOSED|SCHEDULE_SAVED"))
             throw new IOException("Invalid light receipt status");
         resultStatus = status; resultActions = AgendaActionChannel.integer(event, "actions_executed") == 1 ? 1 : 0;
         if (resultActions < 0 || resultActions > 1) throw new IOException("Invalid light receipt count");
@@ -174,7 +178,7 @@ final class LightVoiceChannel {
     synchronized void close() { closed = true; clear(); }
 
     private void clear() {
-        active = armed = confirmationSeen = inFlight = false; command = null; rejection = "";
+        active = armed = confirmationSeen = inFlight = false; command = null; schedule = null; rejection = "";
         origin = question = confirmation = ""; originSequence = questionSequence = confirmationSequence = heardAt = 0;
         resultStatus = ""; resultActions = 0;
     }
@@ -185,6 +189,7 @@ final class LightVoiceChannel {
     }
 
     private static String expectedText(String status) {
+        if ("SCHEDULE_SAVED".equals(status)) return "Horario de luces actualizado. No cambié ninguna luz.";
         if ("COMPLETE_UNCONFIRMED".equals(status)) return "Orden de luces enviada al Bluetooth. No tengo confirmación visual; revisa las luces.";
         if ("PARTIAL_OR_UNCERTAIN".equals(status)) return "La orden de luces quedó parcial o incierta. No la repetiré; revisa las luces antes de pedir otra.";
         if ("TRANSPORT_ERROR".equals(status)) return "No pude conectar con las luces. No se confirmó ningún cambio.";

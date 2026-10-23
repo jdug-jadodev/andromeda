@@ -668,11 +668,20 @@ public class VoiceService extends Service {
         } catch (Exception rejected) {
             channel.recordExecution(false, 0); throw rejected;
         }
-        channel.recordExecution(true, execution.command == null ? 0 : 1);
+        channel.recordExecution(true, execution.command == null && execution.schedule == null ? 0 : 1);
         timerExecutor.execute(() -> {
             if (!running || channel != lightChannel) return;
             if (continuousVoice && audioYielded) {
                 sendLightReceipt(channel, event, execution, "CLOSED", 1, 0, 0, "audio_yield");
+                return;
+            }
+            if (execution.schedule != null) {
+                try {
+                    applyLightSchedule(execution.schedule);
+                    sendLightReceipt(channel, event, execution, "SCHEDULE_SAVED", 1, 1, 0, "schedule_saved");
+                } catch (IllegalArgumentException | IllegalStateException failure) {
+                    sendLightReceipt(channel, event, execution, "UNSUPPORTED_ORDER", 1, 0, 0, "schedule_rejected");
+                }
                 return;
             }
             if (execution.command == null) {
@@ -683,6 +692,42 @@ public class VoiceService extends Service {
                 sendLightReceipt(channel, event, execution, result.status.name(), result.targetCount,
                     result.completedTargetCount, result.acceptedFrameCount, result.detail));
         });
+    }
+
+    private void applyLightSchedule(LightScheduleVoiceCommand request) {
+        LightSchedule existing = LightScheduleStore.forTarget(this, request.target);
+        if (request.action == LightScheduleVoiceCommand.Action.DELETE) {
+            if (existing == null) throw new IllegalArgumentException("No hay horario guardado");
+            LightScheduleScheduler.cancel(this, existing.id);
+            LightScheduleStore.delete(this, existing.id);
+            return;
+        }
+        if (request.action == LightScheduleVoiceCommand.Action.ENABLE
+                || request.action == LightScheduleVoiceCommand.Action.DISABLE) {
+            if (existing == null) throw new IllegalArgumentException("No hay horario guardado");
+            LightSchedule updated = new LightSchedule(existing.id, existing.target, existing.onMinute,
+                existing.offMinute, existing.days, request.action == LightScheduleVoiceCommand.Action.ENABLE);
+            LightScheduleStore.save(this, updated);
+            LightScheduleScheduler.schedule(this);
+            return;
+        }
+        int on, off, days;
+        String id;
+        if (existing == null) {
+            if (request.onMinute < 0 || request.offMinute < 0)
+                throw new IllegalArgumentException("Faltan las dos horas para un horario nuevo");
+            on = request.onMinute; off = request.offMinute;
+            days = request.days < 0 ? LightSchedule.ALL_DAYS : request.days;
+            id = LightSchedule.defaultFor(request.target).id;
+        } else {
+            on = request.onMinute >= 0 ? request.onMinute : existing.onMinute;
+            off = request.offMinute >= 0 ? request.offMinute : existing.offMinute;
+            days = request.days >= 0 ? request.days : existing.days;
+            id = existing.id;
+        }
+        LightSchedule updated = new LightSchedule(id, request.target, on, off, days, true);
+        LightScheduleStore.save(this, updated);
+        LightScheduleScheduler.schedule(this);
     }
     void sendLightReceipt(LightVoiceChannel channel, JSONObject event, LightVoiceChannel.Execution execution,
             String status, int targetCount, int completed, int accepted, String detail) {
@@ -701,7 +746,7 @@ public class VoiceService extends Service {
                     .put("request_sequence", event.optLong("request_sequence"))
                     .put("status", status).put("target_count", targetCount == 0 ? 1 : targetCount)
                     .put("completed_target_count", completed).put("accepted_frame_count", accepted)
-                    .put("actions_executed", "COMPLETE_UNCONFIRMED".equals(status) ? 1 : 0)
+                    .put("actions_executed", "COMPLETE_UNCONFIRMED".equals(status) || "SCHEDULE_SAVED".equals(status) ? 1 : 0)
                     .put("detail", detail == null ? "" : detail);
                 channel.receipt(result);
                 byte[] data = result.toString().getBytes(StandardCharsets.UTF_8); frame(3, data, data.length);
@@ -983,7 +1028,7 @@ public class VoiceService extends Service {
                     "service_excerpt".equals(event.getJSONObject("web_answer").optString("mode")) ? "evidence" : "answer_es");
                 boolean listing="reminder_list".equals(event.optString("timer_control")) || "reminder_delete_question".equals(event.optString("timer_control"));
                 if(listing && (message.isEmpty() || message.length()>ReminderListPolicy.MAX_SPOKEN+40)) throw new IOException("Reminder speech outside limit");
-                activePlaybackMs = workerRead || listing ? 60000 : 20000;
+                activePlaybackMs = SpeechPlaybackPolicy.windowMs(assistantTools, workerRead, listing, message.length());
                 activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
             } else switch (event.optString("type")) {
                 case "timer":

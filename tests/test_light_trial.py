@@ -35,6 +35,22 @@ class LightTrialTests(unittest.TestCase):
         self.assertIsNone(self.trial.human(dict(id='e' * 32, seq=3, speech_end=101900, text='otra cosa'),
             'c' * 32, 'd' * 32, 200000))
 
+    def test_schedule_receipt_is_local_and_does_not_claim_ble(self):
+        self.trial.begin(dict(self.origin, text='programa las luces a las 5:30 y 10 de la noche'))
+        self.trial.spoken(self.origin['id'], True)
+        grant = self.trial.human(self.confirm, 'c' * 32, 'd' * 32, 200000)
+        receipt = self.trial.result({
+            'session_id': 'c' * 32, 'context_id': 'd' * 32,
+            'nonce': grant['event']['nonce'], 'origin_turn_id': self.origin['id'],
+            'origin_sequence': 1, 'request_turn_id': self.confirm['id'],
+            'request_sequence': 2, 'status': 'SCHEDULE_SAVED',
+            'target_count': 1, 'completed_target_count': 1,
+            'accepted_frame_count': 0, 'detail': 'schedule_saved',
+        }, 'c' * 32, 'd' * 32)
+        self.assertEqual(receipt['actions_executed'], 1)
+        self.assertEqual(receipt['text'], 'Horario de luces actualizado. No cambié ninguna luz.')
+        self.assertFalse(self.trial.active)
+
     def test_no_cancels_without_execution(self):
         self.trial.begin(self.origin); self.trial.spoken(self.origin['id'], True)
         result = self.trial.human(dict(self.confirm, text='no'), 'c' * 32, 'd' * 32, 200000)
