@@ -2,7 +2,7 @@
 
 Última actualización: **2026-10-23**
 
-Base instalada: **APK v40** (`lights-schedule-voice-v40`, versionCode 71) + backend de voz v3
+Base instalada: **APK v42** (`rest-mode-v42`, versionCode 73) + backend de voz v3
 (`assistant_tools_model.py`, `light_trial.py` actualizados) + modelo local sin cambios.
 Andrómeda es el launcher; Play Services, Chrome y varios servicios están deshabilitados; modo avión con
 Wi-Fi/Bluetooth activos. La voz y las luces por voz están confirmadas. El horario 17:30/22:00 está
@@ -30,13 +30,13 @@ Leyenda:
 
 | Área | Estado | Nota |
 |---|---|---|
-| Luces por voz (color, guardados, on/off, brillo) | ✅ | Confirmado en v22; MR Star y Lotus |
+| Luces por voz (color, guardados, on/off, brillo) | 🟡 | v22 confirmado; v42 añade reintento pre-escritura para `WRITE_REJECTED`. Falta reintentar “isa” por voz y aclarar el color que devolvió “no validada” |
 | TTS largo (errores/instrucciones) | 🟡 | v23 instalado; falta confirmar el texto largo completo |
 | Andrómeda como launcher | ✅ | Home/Back se quedan en la app; Motorola launcher deshabilitado |
 | Memoria | 🟡 | GMS/Chrome/etc. deshabilitados; ~1.44 GB libres con motor; vigilar mínimo 1.2 GB |
 | Luces programadas 17:30–22:00 | ✅ | v40: UI editable, voz, escaneo con respaldo de dirección BLE local; ciclo temporal encender/apagar aceptado para 2 destinos. Horario 17:30/22:00 restaurado. Salvedad: MR Star si su BLE se apaga con la luz |
 | Patrones/efectos de luces | ⬜ | Protocolo no capturado; no implementar a ciegas |
-| Modo descanso 23:00/06:00 | ⬜ | Diseño en este documento |
+| Modo descanso 23:00/06:00 | 🟡 | v41b: UI, brillo/volumen y alarma verificados; horario diario armado; falta la ejecución real y la edición por voz |
 | Seguro de batería 24/7 | ⬜ | Auditoría de carga pendiente; no escribir nodos sin validar |
 | Chistes/adivinanzas | ⬜ | Esperando JSON; propuesta: SQLite local |
 | Saludos/reacciones cálidas | ⬜ | Política local; sin cambiar modelo |
@@ -51,7 +51,7 @@ Leyenda:
 | Prioridad | Bloque | Por qué |
 |---|---|---|
 | **P0** | Seguro de batería 24/7 | Seguridad física; el teléfono estará siempre conectado |
-| **P1** | Modo descanso 23:00/06:00 | Rutina diaria sencilla y local |
+| **P1** | Modo descanso 23:00/06:00 | Implementado en v41b; falta voz y verificar 23:00/06:00 |
 | **P1** | Luces programadas 17:30–22:00 | Cerrado en v40; ciclo programado probado y horario restaurado |
 | **P2** | Saludos, reacciones y chistes/adivinanzas | Mejora percibida inmediata, sin nube |
 | **P3** | Cuentos con sonidos | TTS/modelo local; SFX locales |
@@ -90,7 +90,7 @@ tener una forma reversible y medida.**
 
 ## P1 — Modo descanso 23:00 / 06:00
 
-**Estado:** ⬜ pendiente.
+**Estado:** 🟡 **implementado e instalado en v41b**; horario 23:00/06:00 armado para hoy 23:00. UI, brillo y volumen verificados; falta la edición por voz y observar la ejecución real.
 
 Objetivo:
 
@@ -113,11 +113,13 @@ Notas técnicas:
 
 Tareas:
 
-- [ ] Permiso de brillo y prueba de cambio de brillo real.
-- [ ] Cambio de volumen multimedia y restauración.
-- [ ] Scheduler 23:00/06:00 + boot + UI/voz.
+- [x] Permiso de brillo y prueba de cambio de brillo real (`WRITE_SETTINGS` concedido y verificado).
+- [x] Cambio de volumen multimedia y restauración (50% solicitado; el paso más cercano fue 53%; 100% exacto).
+- [x] Scheduler 23:00/06:00 + boot + UI; falta voz.
 - [x] Decidir la voz de Andrómeda de noche: se acepta 50%.
-- [ ] Verificar que no afecta alarma, timers, TTS ni Bluetooth.
+- [x] Verificar que no afecta alarma, timers, TTS ni Bluetooth (prueba de aplicación sin audio/micrófono/BLE).
+- [ ] Añadir edición por voz del modo descanso (nueva capacidad o ruta local).
+- [ ] Observar la ejecución real de las 23:00 y 06:00.
 
 ---
 
@@ -149,7 +151,7 @@ Diseño implementado:
   horas, “encender/apagar”, objetivo y días, pide la confirmación existente y guarda el horario.
   Nuevo estado de recibo `SCHEDULE_SAVED`, sin afirmar que se envió Bluetooth.
 - Reinicio/actualización: `BootReceiver` reprograma (`BOOT_COMPLETED` y `MY_PACKAGE_REPLACED`).
-  El APK v40 y el backend v3 están desplegados; el motor de voz quedó apagado, como antes.
+  El APK v42 y el backend v3 están desplegados; el motor de voz quedó apagado, como antes.
 
 Tareas:
 
@@ -161,7 +163,7 @@ Tareas:
 - [x] Direcciones BLE locales en caché; el horario no depende del escaneo y no se salta por estado guardado.
 - [x] Recibo de ejecución programada; sin reintento tras write.
 - [x] Ciclo programado probado con horario temporal: encendido 14:35 y apagado 14:50 aceptados para
-      ambos destinos; horario 17:30/22:00 restaurado.
+      ambos destinos. Después el usuario ajustó el horario por UI a **18:00/22:30**; se dejó intacto.
 - [ ] Confirmar si la MR Star conserva BLE con la luz apagada; si no, el horario solo podrá apagarla,
       no encenderla desde ese estado.
 - [ ] Probar por voz: “programa las luces a las 5:30 y a las 10 de la noche”, “desactiva el horario…”,
@@ -305,8 +307,8 @@ Tareas:
 
 ## Próximo paso recomendado
 
-1. **Modo descanso 23:00/06:00**: brillo mínimo y volumen 50% por la noche; 70% y 100% a las 06:00.
-   Reutiliza el patrón del scheduler y la decisión ya tomada de aceptar la voz al 50% de noche.
+1. **Completar modo descanso por voz** y observar 23:00/06:00; el resto (UI, brillo, volumen y alarma)
+   ya está verificado.
 2. **Batería**: definir primero el enfoque (auditoría solo lectura, smart plug o límite reversible).
 3. **Chistes/adivinanzas + saludos** cuando llegue el JSON.
 4. **Cuentos/reacciones**.
@@ -322,9 +324,11 @@ Tareas:
 - `artifacts/android-voice/lights-cancel-tolerance-v22/receipt.json` — cierre de luces.
 - `artifacts/android-voice/lights-long-speech-v23/receipt.json` — ventana de TTS largo.
 - `artifacts/android-voice/launcher-home-v24/receipt.json` — Andrómeda launcher.
-- `artifacts/android-voice/lights-schedule-voice-v40/lights-schedule-voice-v40.apk` — APK instalado
-  con scheduler/UI editable verificada/voz/recibo numérico, acceso directo “Horario de luces” y
-  direcciones BLE locales como respaldo (versionCode 71).
+- `artifacts/android-voice/rest-mode-v42/rest-mode-v42.apk` — APK instalado con modo descanso,
+  scheduler, UI, pruebas de brillo/volumen y reintento pre-escritura de luces (versionCode 73).
+- `artifacts/android-voice/lights-voice-retry-v42/receipt.json` — diagnóstico del color “isa” y
+  reintento `WRITE_REJECTED`; no se escribió BLE en la prueba.
+- `artifacts/android-voice/rest-mode-v41b/receipt.json` — verificación de 23:00/06:00 y valores reales.
 - `artifacts/android-voice/lights-schedule-voice-backend-v3/` — respaldo y hashes del backend previo;
   módulos desplegados `assistant_tools_model.py` y `light_trial.py`.
 - `artifacts/android-voice/memory-cleanup-safe-v1/` — limpieza de RAM.

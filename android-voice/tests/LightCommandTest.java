@@ -35,6 +35,10 @@ public final class LightCommandTest {
         LightCommand saved=LightCommandParser.parse("Pon las luces de color isa",
             java.util.Collections.singletonMap("isa",LightColor.parseHex("#123456")));
         check(saved.target==LightTarget.BOTH&&saved.color.equals(LightColor.parseHex("#123456")));
+        LightCommand savedStoredKey=LightCommandParser.parse("Pon el color isa",
+            java.util.Collections.singletonMap("color_de_isa",LightColor.parseHex("#FF00E6")));
+        check(savedStoredKey.target==LightTarget.BOTH&&savedStoredKey.color.equals(LightColor.parseHex("#FF00E6")));
+        check(LightCommandExecutionPolicy.rejection(savedStoredKey)==null);
         LightCommand savedMulti=LightCommandParser.parse("Pon las dos luces de color azul marino",
             java.util.Collections.singletonMap("azul_marino",LightColor.parseHex("#001122")));
         check(savedMulti.target==LightTarget.BOTH&&savedMulti.color.equals(LightColor.parseHex("#001122")));

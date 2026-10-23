@@ -13,6 +13,7 @@ public final class LightBleRetryPolicy {
         return "CONNECTION_FAILED".equals(status)
             || "SERVICE_DISCOVERY_FAILED".equals(status)
             || "CHARACTERISTIC_UNAVAILABLE".equals(status)
+            || "WRITE_REJECTED".equals(status)
             || "TIMEOUT".equals(status);
     }
 
