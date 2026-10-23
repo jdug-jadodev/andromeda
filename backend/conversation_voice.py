@@ -803,7 +803,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if action == 'pause': return 'voice_suspended'
                             if action == 'audio_yield': audio_yielded = True; checkpoint_followup = False; continue
                             if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
-                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate'}:
+                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate'}:
                                 raise ValueError('Control during context handoff')
                         elif kind != 4: raise ValueError('Invalid continuous context frame')
                         continue  # Discard queued microphone/TTS tail, never transcribe during handoff.
@@ -825,11 +825,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = False
                         request_context('audio_resume'); continue
                     if action == 'activate' and state == 'wake': activate('button')
-                    if action in {'timer_result', 'agenda_result', 'volume_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
+                    if action in {'timer_result', 'agenda_result', 'volume_result', 'light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
                         if action in {'reminder_delete_selection','reminder_delete_result'} and not reminder_deletion: raise ValueError('Reminder deletion not negotiated')
                         if action=='reminder_read_result' and not reminder_read: raise ValueError('Reminder reading not negotiated')
                         if action in {'alarm_selection','alarm_delete_result'} and not alarm_lifecycle: raise ValueError('Alarm policy not negotiated')
-                        if action in {'agenda_result', 'volume_result'} and not assistant_tools: raise ValueError('Tools not enabled')
+                        if action in {'agenda_result', 'volume_result', 'light_result'} and not assistant_tools: raise ValueError('Tools not enabled')
                         if state == 'executing':
                             response = timers.result(control, session_id, context_id)
                             if response is not None:

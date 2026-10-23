@@ -1,3 +1,4 @@
+import pathlib
 import unittest
 
 from assistant_tools_model import AssistantToolsModel
@@ -30,6 +31,9 @@ class LightTrialTests(unittest.TestCase):
         }, 'c' * 32, 'd' * 32)
         self.assertEqual(receipt['actions_executed'], 1)
         self.assertIn('No tengo confirmación visual', receipt['text'])
+        self.assertFalse(self.trial.active)
+        self.assertIsNone(self.trial.human(dict(id='e' * 32, seq=3, speech_end=101900, text='otra cosa'),
+            'c' * 32, 'd' * 32, 200000))
 
     def test_no_cancels_without_execution(self):
         self.trial.begin(self.origin); self.trial.spoken(self.origin['id'], True)
@@ -37,6 +41,11 @@ class LightTrialTests(unittest.TestCase):
         self.assertFalse(result.get('executing', False))
         self.assertEqual(result['timer_control'], 'light_cancelled')
         self.assertIsNone(self.trial.human(self.confirm, 'c' * 32, 'd' * 32, 200000))
+
+    def test_conversation_voice_routes_light_result(self):
+        source = (pathlib.Path(__file__).resolve().parents[1] / 'backend' / 'conversation_voice.py').read_text(encoding='utf-8')
+        self.assertRegex(source, r"action in \{[^}]*'light_result'[^}]*\} and timers is not None")
+        self.assertIn("'light_result'", source)
 
     def test_model_only_selects_zero_argument_capability(self):
         model = AssistantToolsModel.__new__(AssistantToolsModel)

@@ -324,8 +324,89 @@ armaba la confirmación; Android la borraba, y al llegar `light_execute` el
 permiso se rechazaba y se detenía todo el servicio. v15 añade esa llamada.
 También se cambió el diálogo de brillo de MR Star/`BOTH` para mostrar
 directamente 25/50/75/100, sin el texto que parecía un error. Recibo:
-`artifacts/android-voice/lights-voice-fix-v15/receipt.json`. Falta repetir la
-prueba humana de color y brillo por voz.
+`artifacts/android-voice/lights-voice-fix-v15/receipt.json`.
+
+La segunda prueba mostró otro cableado faltante: Android aceptaba resultados
+de timer, agenda y volumen, pero no `light_result`. El backend sí seleccionó
+`control_lights` y devolvió `light_proposal` con validación `accepted`; al
+llegar el resultado de luces con `action_result`, Android descartaba el `say`,
+dejaba el turno abierto y a los 60 s detenía el servicio (recibo limpio
+`phase=STOP`, `error=NONE`, no una excepción). v16 añade `light_result` a la
+puerta de finalización de acciones. La suite incluye ahora una comprobación de
+que existen los avisos `spoken` de agenda/volumen/luces y la aceptación de
+`light_result`. Recibo:
+`artifacts/android-voice/lights-voice-result-v16/receipt.json`.
+
+La tercera prueba confirmó que el color sí se escribía, pero el backend
+ignoraba el paquete `light_result`: `conversation_voice.py` no lo tenía en la
+lista de acciones que procesa. La app quedaba “pensando” y a los 60 s se
+detenía. Se añadió `light_result` a las acciones normales y al relevo de
+contexto, se desplegó `conversation_voice.py` con hash
+`8aaa062c…`, y se añadió una prueba que exige esa ruta. Recibo:
+`artifacts/android-voice/lights-voice-backend-v2/receipt.json`. Falta repetir
+la prueba humana de color y brillo por voz.
+
+v17 añade los nombres de color guardados al parser de voz. “Las luces”, “las
+dos” o “ambas” producen `BOTH`; se aceptan colores fijos, hexadecimal y nombres
+locales de `LightPresetStore`, recargados en cada turno humano. Los nombres
+comunes de acción/objetivo se filtran para no confundir “luz” o “televisor” con
+un color. Negro/grises siguen rechazados en MR Star. Recibo:
+`artifacts/android-voice/lights-saved-colors-v17/receipt.json`.
+
+v18 añade energía por voz para ambos o para una luz nombrada. “Apaga las dos
+luces”, “enciende las luces” y “apaga ambas” producen `BOTH`; “la del mueble”
+produce Lotus y “la del televisor”, “la del tv” o “la tele” producen MR Star.
+Sigue siendo una orden por turno: no se deben mezclar dos acciones distintas en
+una sola frase. Recibo:
+`artifacts/android-voice/lights-power-aliases-v18/receipt.json`.
+
+La prueba con el color guardado mostró que se había guardado como “color de
+isa” (`color_color_de_isa`, `#FF00E6`), no como “isa”. v19 acepta tanto el
+nombre completo como alias sin prefijos (“color de ”, “color ”, “de …”), así
+que “pon las luces de color isa” y “pon las luces de color de isa” ejecutan el
+mismo color guardado. Recibo:
+`artifacts/android-voice/lights-saved-alias-v19/receipt.json`.
+
+La siguiente prueba volvió a detenerse sin conexión BLE y sin error de
+protocolo. Para no seguir adivinando, v20 añade un recibo numérico
+`voice_light_health` que guarda solo la secuencia de etapas (orden
+interpretada, pregunta hablada, “sí” capturado, permiso, envío, resultado y
+cierre), estado y contadores; nunca palabras, colores ni direcciones. También
+muestra “Di sí para confirmar la orden de luces” mientras espera. Recibo:
+`artifacts/android-voice/lights-confirm-diag-v20/receipt.json`.
+
+La prueba con v20 cambió el color y registró `1,6,13,3,10,12,8`: orden
+interpretada, pregunta hablada, “sí” capturado, permiso concedido, recibo
+enviado y resultado aceptado. El servicio se detuvo justo después porque el
+backend en modo guiado añade “¿Necesitas algo más?” al texto del recibo y
+Android comparaba solo el texto crudo. v21 acepta el texto con o sin esa
+coletilla. Recibo:
+`artifacts/android-voice/lights-result-offer-v21/receipt.json`.
+
+La siguiente prueba confirmó el flujo completo dos veces, pero al pedir “algo
+más” se detuvo: `...8,13,2,7`. El backend dejaba activa la confirmación de
+luces después de un resultado correcto; el siguiente turno no relacionado se
+trataba como cancelación de luces. Android ya había cerrado su canal local y
+rechazaba la cancelación, deteniendo el servicio. v22 hace que `LightTrial` se
+limpie después del resultado y del timeout, y que Android acepte una
+cancelación válida aunque su formulario local ya esté cerrado, sin escribir
+nada. Recibo:
+`artifacts/android-voice/lights-cancel-tolerance-v22/receipt.json`.
+
+El usuario confirmó finalmente el flujo completo por voz: color guardado,
+confirmación hablada, ejecución BLE, lectura del resultado y continuación de la
+escucha. Recibo:
+`artifacts/android-voice/lights-voice-confirmed-v22/receipt.json`. Quedan
+pendientes patrones/efectos, TV LG y habilitar más niveles de brillo en MR Star
+solo con capturas validadas.
+
+### Observación de RAM y temperatura
+
+La ventana de muestreo recogió 13 muestras durante 84 s: RAM disponible entre
+1.203 y 1.462 GB, app 173–232 MB, modelo hasta 737 MB, backend hasta 155 MB,
+batería 25.4–25.5 °C y zona térmica máxima estable en 75 °C. El mínimo de RAM
+quedó apenas por encima del guardia de arranque de 1.2 GB. El monitor temporal
+terminó antes de los 15 min; no se modificó el monitor de batería existente.
 
 ### Fase 5 — voz y ambas luces
 

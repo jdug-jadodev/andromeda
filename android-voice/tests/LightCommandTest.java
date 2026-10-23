@@ -20,6 +20,10 @@ public final class LightCommandTest {
         check(LightCommandParser.parse("Enciende la luz mueble").target==LightTarget.LOTUS);
         check(LightCommandParser.parse("Pon azul en la luz del televisor").target==LightTarget.MR_STAR);
         check(LightCommandParser.parse("Apaga las dos luces").target==LightTarget.BOTH);
+        check(!LightCommandParser.parse("Apaga la del televisor").powerOn&&LightCommandParser.parse("Apaga la del televisor").target==LightTarget.MR_STAR);
+        check(LightCommandParser.parse("Enciende la del mueble").powerOn&&LightCommandParser.parse("Enciende la del mueble").target==LightTarget.LOTUS);
+        check(!LightCommandParser.parse("Apaga la tele").powerOn&&LightCommandParser.parse("Apaga la tele").target==LightTarget.MR_STAR);
+        check(LightCommandParser.parse("Enciende las dos luces").target==LightTarget.BOTH);
         LightCommand brightness=LightCommandParser.parse("Sube el brillo de la luz del televisor al 25 por ciento");
         check(brightness.kind==LightCommand.Kind.BRIGHTNESS&&brightness.target==LightTarget.MR_STAR&&brightness.brightnessPercent==25);
         LightCommand colorBrightness=LightCommandParser.parse("Pon azul en la luz mueble con brillo 50%");
@@ -28,6 +32,18 @@ public final class LightCommandTest {
         check(LightCommandParser.parse("Sube el brillo de la luz del televisor al cincuenta por ciento").brightnessPercent==50);
         check(LightCommandParser.parse("Pon el brillo de la luz del televisor al setenta y cinco por ciento").brightnessPercent==75);
         check(LightCommandParser.parse("Pon el brillo de la luz mueble al cien por ciento").brightnessPercent==100);
+        LightCommand saved=LightCommandParser.parse("Pon las luces de color isa",
+            java.util.Collections.singletonMap("isa",LightColor.parseHex("#123456")));
+        check(saved.target==LightTarget.BOTH&&saved.color.equals(LightColor.parseHex("#123456")));
+        LightCommand savedMulti=LightCommandParser.parse("Pon las dos luces de color azul marino",
+            java.util.Collections.singletonMap("azul_marino",LightColor.parseHex("#001122")));
+        check(savedMulti.target==LightTarget.BOTH&&savedMulti.color.equals(LightColor.parseHex("#001122")));
+        LightCommand savedShort=LightCommandParser.parse("Pon las luces de color isa",
+            java.util.Collections.singletonMap("color_de_isa",LightColor.parseHex("#FF00E6")));
+        check(savedShort.target==LightTarget.BOTH&&savedShort.color.equals(LightColor.parseHex("#FF00E6")));
+        LightCommand savedFull=LightCommandParser.parse("Pon las luces de color de isa",
+            java.util.Collections.singletonMap("color_de_isa",LightColor.parseHex("#FF00E6")));
+        check(savedFull.target==LightTarget.BOTH&&savedFull.color.equals(LightColor.parseHex("#FF00E6")));
         invalid("F2A3F6"); invalid("Pon luces en #FFF"); invalid("Dime qué color es F2A3F6"); invalid("Pon luces en chartreuse");
         System.out.println("Light commands: "+checks+" assertions passed (parser-only, no radio or mutation).");
     }

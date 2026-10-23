@@ -272,7 +272,7 @@ public class VoiceService extends Service {
         if (assistantTools) agendaChannel = new AgendaActionChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice,continuousVoice && AssistantConfig.ALARM_LIFECYCLE,AssistantConfig.GUIDED_AGENDA);
         if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) alarmChannel=new AlarmActionChannel(contextChannel.sessionId,contextChannel.contextId);
         if (assistantTools) volumeChannel = new PhoneVolumeChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,AssistantConfig.GUIDED_AGENDA,continuousVoice);
-        if (assistantTools) lightChannel = new LightVoiceChannel(contextChannel.sessionId,contextChannel.contextId);
+        if (assistantTools) lightChannel = new LightVoiceChannel(this, contextChannel.sessionId,contextChannel.contextId);
         if(assistantTools && AssistantConfig.GUIDED_AGENDA) reminderReadChannel=new ReminderReadChannel(contextChannel.sessionId,contextChannel.contextId,expiresAt,continuousVoice);
         if(continuousVoice && AssistantConfig.ALARM_LIFECYCLE) reminderDeleteChannel=new ReminderDeleteChannel(contextChannel.sessionId,contextChannel.contextId);
         if (oldTimer != null) oldTimer.close();
@@ -662,7 +662,13 @@ public class VoiceService extends Service {
             throw new IOException("Lights not enabled");
         agendaChannel.lightExecution();
         LightVoiceChannel channel = lightChannel;
-        LightVoiceChannel.Execution execution = channel.execution(event, SystemClock.elapsedRealtime());
+        LightVoiceChannel.Execution execution;
+        try {
+            execution = channel.execution(event, SystemClock.elapsedRealtime());
+        } catch (Exception rejected) {
+            channel.recordExecution(false, 0); throw rejected;
+        }
+        channel.recordExecution(true, execution.command == null ? 0 : 1);
         timerExecutor.execute(() -> {
             if (!running || channel != lightChannel) return;
             if (continuousVoice && audioYielded) {
@@ -681,6 +687,10 @@ public class VoiceService extends Service {
     void sendLightReceipt(LightVoiceChannel channel, JSONObject event, LightVoiceChannel.Execution execution,
             String status, int targetCount, int completed, int accepted, String detail) {
         if (!running || controls.isShutdown() || channel != lightChannel) return;
+        int statusCode = 0;
+        try { statusCode = LightCommandDispatcher.Status.valueOf(status).ordinal() + 1; }
+        catch (IllegalArgumentException ignored) {}
+        channel.recordReceipt(statusCode, targetCount, completed, accepted);
         controls.execute(() -> {
             try {
                 JSONObject result = new JSONObject().put("action", "light_result")
@@ -954,7 +964,7 @@ public class VoiceService extends Service {
                 if (!"say".equals(event.optString("type")) || event.has("tool_call_id") || !(timerTrial || assistantTools) && event.optInt("actions_executed", -1) != 0
                         || !conversationTurn.acceptReply(event.optString("turn_id"), event.optLong("turn_seq"),
                             event.optLong("speech_end_ms"), event.optLong("deadline_ms"), SystemClock.elapsedRealtime(),
-                             event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && ("agenda_result".equals(event.optString("timer_control")) || "volume_result".equals(event.optString("timer_control")))))) return;
+                             event.optString("close_reason"), (timerTrial || assistantTools) && ("result".equals(event.optString("timer_control")) || assistantTools && ("agenda_result".equals(event.optString("timer_control")) || "volume_result".equals(event.optString("timer_control")) || "light_result".equals(event.optString("timer_control")))))) return;
                 message = event.getString("text");
                 boolean workerRead = assistantTools && "web".equals(event.optString("timer_control"))
                     && event.optJSONObject("web_answer") != null && ("service_answer".equals(event.getJSONObject("web_answer").optString("mode"))
@@ -1071,12 +1081,16 @@ public class VoiceService extends Service {
             }
             if (assistantTools && agendaChannel != null) agendaChannel.spoken(activeSpeechId, completed);
             if (assistantTools && volumeChannel != null) volumeChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
-            if (assistantTools && lightChannel != null) lightChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
+            if (assistantTools && lightChannel != null) {
+                lightChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
+                lightChannel.recordFinish(completed, activeTimerControl);
+            }
             if(reminderReadChannel!=null) reminderReadChannel.spoken(activeSpeechId);
             if(alarmChannel!=null) alarmChannel.spoken(activeSpeechId,completed);
             if(reminderDeleteChannel!=null) reminderDeleteChannel.spoken(activeSpeechId,completed,SystemClock.elapsedRealtime());
             controlTurn(speechInterrupted ? "tts_interrupted" : completed ? "tts_done" : "tts_failed", activeSpeechId, SystemClock.elapsedRealtime());
         }
+        boolean lightQuestion = "light_question".equals(activeTimerControl);
         boolean closing = conversationOnly && conversationTurn.awaitingClose();
         if (closing) {
             activeSpeechId = ""; speaking = true; // Keep capture stopped until authenticated close.
@@ -1089,7 +1103,7 @@ public class VoiceService extends Service {
         resumeAfter = SystemClock.elapsedRealtime() + 600; speaking = false; activeSpeechId = activeSpeechText = ""; activeTimerControl = ""; activeWebAnswer = "";
         if (running) {
             if (!conversationOnly) control("tts_done");
-            if (uiState != FaceState.ERROR) state(conversationOnly ? "Reanudando micrófono · continúa sin repetir Andrómeda" : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
+            if (uiState != FaceState.ERROR) state(conversationOnly ? (lightQuestion ? "Di sí para confirmar la orden de luces" : "Reanudando micrófono · continúa sin repetir Andrómeda") : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
         }
     }
     void state(String text, FaceState presentation, String words) {

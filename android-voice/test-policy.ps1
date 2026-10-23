@@ -30,7 +30,8 @@ $voiceSource = Get-Content "$source\VoiceService.java" -Raw
 foreach ($channel in @('agendaChannel','volumeChannel','lightChannel')) {
     if ($voiceSource -notmatch [regex]::Escape("$channel.spoken(")) { throw "Missing $channel.spoken wiring" }
 }
-Write-Output 'Voice channel wiring: agenda, volume and light confirmation callbacks present.'
+if ($voiceSource -notmatch [regex]::Escape('"light_result".equals(')) { throw 'Missing light_result action completion wiring' }
+Write-Output 'Voice channel wiring: agenda, volume and light confirmation/result callbacks present.'
 & javac -encoding UTF-8 -d $output "$source\VoiceLifecyclePolicy.java" "$PSScriptRoot\tests\VoiceLifecyclePolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Voice lifecycle policy compilation failed' }
 & java -cp $output local.doja.voice.VoiceLifecyclePolicyTest

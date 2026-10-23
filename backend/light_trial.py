@@ -129,13 +129,14 @@ class LightTrial:
         else:
             text = 'No pude confirmar el resultado de las luces. Revísalas antes de pedir otra orden.'
             actions = 0
+        self.clear()
         return {'text': text, 'timer_control': 'light_result', 'actions_executed': actions,
                 'close_reason': 'action_result', 'offered_more': False}
 
     def timed_out(self):
         if self.inflight is None or self.clock() < self.inflight['execute_before_ms'] + 500:
             return None
-        self.inflight = None
+        self.clear()
         return {'text': 'No llegó la confirmación de las luces. El resultado es incierto; revísalas antes de pedir otra.',
                 'timer_control': 'light_result', 'actions_executed': 0,
                 'close_reason': 'action_result', 'offered_more': False}
