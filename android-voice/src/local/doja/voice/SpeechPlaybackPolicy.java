@@ -3,7 +3,7 @@ package local.doja.voice;
 /** Bounded TTS window: long tool explanations must not be cut mid-sentence. */
 final class SpeechPlaybackPolicy {
     static final int MIN_MS = 20000;
-    static final int MAX_MS = 45000;
+    static final int MAX_MS = 90000;
     static final int LISTING_MS = 60000;
     private SpeechPlaybackPolicy() {}
 

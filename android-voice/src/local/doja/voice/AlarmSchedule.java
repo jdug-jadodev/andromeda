@@ -12,6 +12,21 @@ final class AlarmSchedule {
     static final String DAY_PATTERN = "lunes|martes|miercoles|jueves|viernes|sabados?|domingos?";
     static AgendaRequestGuard.Value parse(AgendaEntry.Kind kind, String when, String text, long anchor) {
         String plain=TimerRequestGuard.normalize(AgendaRequestGuard.clean(when));
+        Matcher daily = Pattern.compile("(?:todos los dias|cada dia) a (?:las? )?(.+)").matcher(plain);
+        if (daily.matches()) {
+            String clock = daily.group(1);
+            Matcher period=Pattern.compile("\\s*(a\\.?\\s*m\\.?|p\\.?\\s*m\\.?|a eme|pe eme)$").matcher(clock);
+            if (period.find()) {
+                boolean morning=period.group(1).startsWith("a"); clock=clock.substring(0,period.start()).trim();
+                if (morning && clock.matches("(?:12|doce)(?::[0-9]{2})?")) clock=clock.contains(":") ? "00"+clock.substring(clock.indexOf(':')) : "00:00";
+                else clock+=morning ? " de la manana" : " de la tarde";
+            }
+            LocalDate today=Instant.ofEpochMilli(anchor).atZone(ZoneId.of(AgendaEntry.ZONE)).toLocalDate();
+            long parsed=AgendaRequestGuard.due(today.plusDays(1)+" a las "+clock,anchor)[0];
+            LocalTime time=Instant.ofEpochMilli(parsed).atZone(ZoneId.of(AgendaEntry.ZONE)).toLocalTime();
+            int minute=time.getHour()*60+time.getMinute();
+            return new AgendaRequestGuard.Value(kind,text,next(0,minute,anchor),0,0,minute);
+        }
         Matcher match = Pattern.compile("(?:el |los |cada |todos los )?("+DAY_PATTERN+") a (?:las? )?(.+)").matcher(plain);
         String dayText=null,clock=null;
         if(match.matches()) { dayText=match.group(1); clock=match.group(2); }
@@ -39,15 +54,22 @@ final class AlarmSchedule {
     static long next(int weekday, int minute, long now) {
         validate(weekday,minute);
         ZonedDateTime local=Instant.ofEpochMilli(now).atZone(ZoneId.of(AgendaEntry.ZONE));
+        if (weekday == 0) {
+            LocalDate day=local.toLocalDate();
+            long due=day.atTime(minute/60,minute%60).atZone(local.getZone()).toInstant().toEpochMilli();
+            return due>now ? due : day.plusDays(1).atTime(minute/60,minute%60).atZone(local.getZone()).toInstant().toEpochMilli();
+        }
         LocalDate day=local.toLocalDate().plusDays((weekday-local.getDayOfWeek().getValue()+7)%7);
         long due=day.atTime(minute/60,minute%60).atZone(local.getZone()).toInstant().toEpochMilli();
         return due>now ? due : day.plusDays(7).atTime(minute/60,minute%60).atZone(local.getZone()).toInstant().toEpochMilli();
     }
     static void validate(int weekday,int minute) {
-        if(weekday<1 || weekday>7 || minute<0 || minute>=1440) throw new IllegalArgumentException("Invalid weekly schedule");
+        if(weekday<0 || weekday>7 || minute<0 || minute>=1440) throw new IllegalArgumentException("Invalid schedule");
     }
     static String label(int weekday,int minute) {
-        validate(weekday,minute); return String.format(Locale.ROOT,"cada %s a las %02d:%02d, hora de Bogotá",DAYS[weekday-1],minute/60,minute%60);
+        validate(weekday,minute);
+        if(weekday==0) return String.format(Locale.ROOT,"cada día a las %02d:%02d, hora de Bogotá",minute/60,minute%60);
+        return String.format(Locale.ROOT,"cada %s a las %02d:%02d, hora de Bogotá",DAYS[weekday-1],minute/60,minute%60);
     }
     static int[] deletionTarget(String human) {
         Matcher match=Pattern.compile("(?:elimina|borra|cancela) la alarma (?:del |de los |de cada |de todos los |el |los |cada )?(.+)")

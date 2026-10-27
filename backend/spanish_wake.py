@@ -15,7 +15,7 @@ def words(text):
 
 
 class WakeStability:
-    def __init__(self, target, stable_seconds=0.16, minimum_confidence=0.85):
+    def __init__(self, target, stable_seconds=0.16, minimum_confidence=0.5):
         tokens = words(target)
         if len(tokens) != 1:
             raise ValueError("Expected one wake word")

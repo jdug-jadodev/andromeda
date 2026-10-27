@@ -283,7 +283,12 @@ class ContinuousResidentRuntime(ResidentRuntime):
     def _purge(self,model):
         from continuous_voice import ContinuousVoiceFault
         try:
-            if not self.alive() or model.thread is not None and model.thread.is_alive(): raise ValueError('Engine still processing')
+            # A context reset can overlap a lingering warm_public_prefix/generation
+            # thread; cancel it and wait instead of failing immediately, so the
+            # cache erase never races a busy engine slot.
+            if model.thread is not None and model.thread.is_alive() and not model.cancel_generation():
+                raise ValueError('Engine generation did not stop before cache retirement')
+            if not self.alive(): raise ValueError('Engine owner unavailable')
             count=self.cache_purger(model)
             if type(count) is not int or not 0<=count<=2048: raise ValueError('Unconfirmed engine cache retirement')
         except Exception:

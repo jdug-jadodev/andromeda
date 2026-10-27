@@ -208,7 +208,7 @@ class AssistantToolsTests(unittest.TestCase):
     def test_tool_diagnostics_distinguish_rejection_layers_without_text_or_network(self):
         model = self.model(); human = 'busca en Internet nebulosas'
         cases = [(native('search_web', query='otra consulta'), 'tool_calls', human, 'unvalidated', 'invalid_native_call'),
-                 (native('search_web'), 'tool_calls', 'qué es una nebulosa', 'search_web', 'web_explicit_request_required'),
+                 (native('search_web'), 'tool_calls', 'no busques en Internet nebulosas', 'search_web', 'web_explicit_request_required'),
                  (native('create_alarm'), 'tool_calls', human, 'create_alarm', 'agenda_request_rejected'),
                  (native('create_timer', duration_text='dos minutos'), 'tool_calls', human, 'create_timer', 'timer_request_rejected'),
                  (native('search_web', query='nebulosas', extra='no exportar'), 'tool_calls', human, 'unvalidated', 'invalid_native_call'),
@@ -291,11 +291,20 @@ class AssistantToolsTests(unittest.TestCase):
         model = self.model()
         for human in ['no busques en Internet nebulosas', 'ayer dije busca en Internet nebulosas',
                       'busca en Internet «nebulosas»', 'busca en Internet nebulosas y crea una alarma',
-                      'busca en Internet', 'qué es una nebulosa', 'hazlo', 'sí', 'busca en Internet ' + 'a' * 161]:
+                      'busca en Internet', 'hazlo', 'sí', 'busca en Internet ' + 'a' * 161]:
             with self.subTest(human=human), patch('assistant_tools_model.buscar_en_internet') as search:
                 self.assertEqual(model.interpret_result(native('search_web'), 'tool_calls', human), {'kind': 'tools_rejected'})
                 search.assert_not_called()
         self.assertEqual(current_query('busca en Internet qué es una nebulosa'), 'qué es una nebulosa')
+
+    def test_nonexplicit_factual_question_is_searchable_with_whole_query(self):
+        model = self.model()
+        for human, expected in [('qué es una nebulosa', 'qué es una nebulosa'),
+                                ('hace cuánto existieron los dinosaurios', 'hace cuánto existieron los dinosaurios')]:
+            with self.subTest(human=human), patch('assistant_tools_model.buscar_en_internet', return_value=service([])) as search:
+                result = model.interpret_result(native('search_web'), 'tool_calls', human)
+                self.assertEqual(result['kind'], 'web_result')
+                self.assertEqual(search.call_args.args[0], expected)
 
     def test_search_parses_public_links_snippets_without_fetching_pages(self):
         parser = SearchResults(); parser.feed('<a class="result__a" href="https://example.org/page">Título <b>público</b></a>'

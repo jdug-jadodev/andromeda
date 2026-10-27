@@ -246,11 +246,16 @@ class AudioFreshness:
     def expired(self, now):
         return self.gap_since is not None and now-self.gap_since >= 5000
 
+    def clear_gap(self):
+        # Mic turns off (thinking/speaking): any transient gap is no longer a
+        # "persistent clock failure", so drop it before the next listening window.
+        self.gap_since = None
+
     def accept(self, stamp, now):
         self.changed = False
         if self.expired(now): return False
         lag, future, backward = max(0,now-stamp), max(0,stamp-now), max(0,self.last-stamp)
-        reason = 2 if future>100 else 1 if lag>1000 else 3 if backward else 0
+        reason = 2 if future>100 else 1 if lag>3000 else 3 if backward else 0
         if reason:
             self.rejected = min(10**12,self.rejected+1)
             self.max_lag=max(self.max_lag,min(10**12,lag)); self.max_future=max(self.max_future,min(10**12,future))
@@ -639,6 +644,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
 
     def say(answer, close_reason='', offered_more=None):
         nonlocal state
+        if audio_freshness is not None: audio_freshness.clear_gap()
         turn['answer'], turn['close_reason'] = answer, close_reason
         state = 'speech'
         turn['offered_more'] = not bool(close_reason) if offered_more is None else offered_more
@@ -717,7 +723,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation resource/server guard')
                 if continuous_voice and entry is not None: entry.prune()
             if continuous_voice:
-                if audio_freshness.expired(current):
+                # Only judge the audio clock while frames are actually expected.
+                # During thinking/speech the mic is legitimately off, so a stale gap
+                # from a briefly-blocked loop (e.g. the weather fetch) must not be
+                # read as a persistent clock failure.
+                if state in ('wake','listen') and audio_freshness.expired(current):
                     observe_audio_technical(model,audio_freshness,current)
                     raise ValueError('Persistent invalid audio clock')
                 if current-last_input >= (STREAM_IDLE_MS if stream_started else STREAM_START_MS): raise ContinuousVoiceFault('voice_stream_lost')
@@ -889,6 +899,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 stamp = struct.unpack('!Q', data[:8])[0]; pcm = data[8:]
                 current = now_ms()
                 if audio_freshness is not None:
+                    # The mic is off (or the turn is already captured) outside
+                    # wake/listen. Discard that tail here, before judging the clock,
+                    # so a briefly-blocked loop (e.g. the weather fetch) can never
+                    # leave a stale gap that later trips "invalid audio clock".
+                    if state not in ('wake','listen'): continue
                     if not audio_freshness.accept(stamp,current):
                         if audio_freshness.changed:
                             observe_audio_technical(model,audio_freshness,current)

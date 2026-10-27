@@ -12,7 +12,9 @@ from continuous_voice import ContinuousVoiceFault
 
 def purge_engine_cache(key, clock, owner_alive):
     if not isinstance(key,str) or len(key)<32: raise ContinuousVoiceFault('voice_cache_clear_failed')
-    deadline=clock()+3000
+    # Longer window so the public-prompt /completion can wait for a slot that is
+    # still freeing after a cancelled generation; still fails closed on timeout.
+    deadline=clock()+15000
     def post(path,body):
         if not owner_alive() or clock()>=deadline: raise ValueError('Engine cache owner unavailable')
         connection=http.client.HTTPConnection('127.0.0.1',11435,timeout=max(.001,(deadline-clock())/1000))

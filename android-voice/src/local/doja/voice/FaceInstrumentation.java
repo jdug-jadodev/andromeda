@@ -88,11 +88,15 @@ public final class FaceInstrumentation extends Instrumentation {
                 // Exercise the presentation event handler, without starting a service.
                 activity.receiver.onReceive(context, new Intent(VoiceService.STATE));
                 check(!activity.isPreviewing(), "Service update did not supersede preview");
-                check(activity.face.getState() == VoiceService.uiState, "Service snapshot was not restored");
+                check(activity.face.getState() == UiPolicy.serviceState(VoiceService.active,
+                        RingService.ringing || SilenceListener.recording(), VoiceService.uiState),
+                        "Service snapshot was not restored");
                 check(activity.state.getText().toString().equals(VoiceService.lastStatus), "Status was not restored");
                 activity.togglePreview();
                 activity.present(FaceState.THINKING, "Vista previa · pensando (simulado)");
                 check(activity.border.isProcessing() && activity.faceLayer.getVisibility() == View.VISIBLE, "Thinking must retain the face and show the border");
+                check(activity.face.isAnimating(), "Visible face must schedule animation frames");
+                check(activity.border.isAnimating(), "Processing border must animate the perimeter sweep");
                 int oldColor = activity.border.getColor();
                 activity.border.setColor(UiPolicy.parseColor("#12AB34"));
                 check(activity.border.getColor() == 0xff12ab34, "Loader color was ignored");

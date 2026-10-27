@@ -60,8 +60,25 @@ def standalone_query(query):
 
 
 def current_query(human):
-    """Only AFTER exact native search_web(): no model fields to repair or invent."""
-    return standalone_query(explicit_query(human))
+    """Only AFTER exact native search_web(): no model fields to repair or invent.
+
+    An explicit «busca en internet X» strips that prefix. Otherwise the whole
+    current human question is the query (the model decided it did not know it),
+    but negations, past references and short confirmations stay rejected.
+    """
+    try: raw = clean(human)
+    except AgendaValidationError: raise WebQueryValidationError('invalid_request') from None
+    if re.match(r'^(?:busca|investiga|consulta)\b', raw, re.I):
+        # Explicit search intent still requires the complete «en internet X» form.
+        match = re.fullmatch(r'(?:busca|investiga|consulta) (?:en (?:internet|la web)|por internet) (.+)', raw, re.I)
+        if not match: raise WebQueryValidationError('explicit_request_required')
+        query = match[1]
+    else:
+        if len(raw) < 6 or raw.startswith('no ') or re.search(r'\b(?:ayer|dije|dijiste|antes)\b', normalized(raw)):
+            raise WebQueryValidationError('explicit_request_required')
+        query = raw
+    if not 0 < len(query) <= 160: raise WebQueryValidationError('invalid_query')
+    return standalone_query(query)
 
 
 def authorized_query(human, proposed):

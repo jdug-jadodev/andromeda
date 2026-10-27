@@ -15,6 +15,13 @@ public final class SilenceLifecycleTest {
         return SilenceRecognition.confidence(text,words,scores,starts,ends,alarm);
     }
     public static void main(String[] args) {
+        check(SilenceWindowPolicy.isSilence("silencio") && SilenceWindowPolicy.isSilence("Andrómeda, silencio"));
+        check(SilenceWindowPolicy.isCancel("cancélalo") && SilenceWindowPolicy.isCancel("cancela eso")
+            && SilenceWindowPolicy.isCancel("olvídalo") && SilenceWindowPolicy.isCancel("cancela lo")
+            && SilenceWindowPolicy.isCancel("Andrómeda, cancélalo"));
+        check(SilenceWindowPolicy.isWakeOnly("Andrómeda") && !SilenceWindowPolicy.isWakeOnly("Andrómeda, cancélalo"));
+        check(SilenceWindowPolicy.isCommand("cancélalo") && SilenceWindowPolicy.isCommand("Andrómeda"));
+        check(!SilenceWindowPolicy.isCommand("cancela todo") && !SilenceWindowPolicy.isCancel("cancela todo"));
         SilenceWindowPolicy policy=new SilenceWindowPolicy();
         SilenceWindowPolicy.Ticket old=arm(policy,"first",100000);
         check(!policy.accept(old,true,1,100010)); // Never authorize a command before output starts.
@@ -62,7 +69,10 @@ public final class SilenceLifecycleTest {
         reject(() -> new InterruptionAudioClock(100000).observe(640,true,320,100500,100020));
         InterruptionAudioClock noTimestamp=new InterruptionAudioClock(100000);
         check(noTimestamp.observe(640,false,0,0,100020)==-1);
-        reject(() -> noTimestamp.observe(640,false,0,0,100750));
+        check(noTimestamp.observe(640,false,0,0,102999)==-1);
+        reject(() -> noTimestamp.observe(640,false,0,0,103000));
+        InterruptionAudioClock noFrame=new InterruptionAudioClock(100000);
+        check(noFrame.alive(100750)); check(noFrame.alive(102999)); check(!noFrame.alive(103000));
         String[] bare={"silencio"}; double[] score={.95},start={0},end={.8};
         check(recognition("silencio",bare,score,start,end,false)==.95);
         check(recognition("no silencio",bare,score,start,end,false)<0);

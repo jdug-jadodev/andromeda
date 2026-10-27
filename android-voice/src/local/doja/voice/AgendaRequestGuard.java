@@ -25,6 +25,7 @@ final class AgendaRequestGuard {
         Value(AgendaEntry.Kind kind, String text, long due, long delay) { this(kind,text,due,delay,0,-1); }
         Value(AgendaEntry.Kind kind, String text, long due, long delay,int weekday,int minute) {
             if(weekday!=0) { AlarmSchedule.validate(weekday,minute); if(kind!=AgendaEntry.Kind.ALARM || delay!=0) throw new IllegalArgumentException("Invalid recurrence"); }
+            else if(minute>=0) AlarmSchedule.validate(0,minute); // Daily recurrence, both kinds.
             else if(minute!=-1) throw new IllegalArgumentException("Invalid one-shot clock");
             this.kind = kind; this.text = text; this.due = due; this.delay = delay; this.weekday=weekday; this.minute=minute;
         }
@@ -141,7 +142,7 @@ final class AgendaRequestGuard {
                 String tail = prefix.group(1);
                 Matcher front = Pattern.compile("(.+?) (?:que|para) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
                 if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^para ", ""), front.group(2)});
-                Matcher positions = Pattern.compile(" (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
+                Matcher positions = Pattern.compile(" (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |todos los d[ií]as |cada d[ií]a |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
                 while (positions.find()) {
                     String body = tail.substring(0, positions.start());
                     if (!Pattern.compile("(?iu)\\bpara$").matcher(body).find())

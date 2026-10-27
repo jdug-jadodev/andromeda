@@ -52,6 +52,7 @@ final class AgendaDialogue {
     private final boolean lifecycle;
     private final boolean reminderClarification;
     private boolean needsIntent;
+    private boolean daily;
     private long heardAt,questionSpeechEnd;
     private int answers;
     AgendaDialogue() { this(24); }
@@ -68,7 +69,7 @@ final class AgendaDialogue {
         this.reminderClarification=reminderClarification;
     }
     boolean active() { return kind != null; }
-    void clear() { kind = null; body = origin = questionTurn = ""; created = lastSequence = 0; answers = 0; armed = false; prepared = null; day=null; needsIntent=false; heardAt=questionSpeechEnd=0; }
+    void clear() { kind = null; body = origin = questionTurn = ""; created = lastSequence = 0; answers = 0; armed = false; prepared = null; day=null; needsIntent=false; daily=false; heardAt=questionSpeechEnd=0; }
     static String subject(String text) {
         String value = AgendaRequestGuard.clean(text), plain = TimerRequestGuard.normalize(value);
         if (value.isEmpty() || value.length() > 160 || Pattern.compile("[;.!?]|\\b(?:no|hoy|manana|pasado manana)\\b|\\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\\b").matcher(plain).find()
@@ -168,9 +169,17 @@ final class AgendaDialogue {
             try { body = subject(human.text); } catch (IllegalArgumentException error) { return question(human, SUBJECT); }
             return question(human, null);
         }
+        if (plain.matches("todos los dias|cada dia|diario|diariamente")) {
+            daily = true;
+            return question(human, "¿A qué hora quieres que te lo recuerde cada día?");
+        }
         AgendaRequestGuard.Value value;
         try {
-            if(lifecycle) value=AlarmSchedule.parse(kind,raw,body,human.wall);
+            if(lifecycle) {
+                String when = raw;
+                if (daily) when = "todos los dias a las " + raw.replaceFirst("(?iu)^(?:a las|a la)\\s*", "");
+                value = AlarmSchedule.parse(kind, when, body, human.wall);
+            }
             else { long[] due=AgendaRequestGuard.due(raw,human.wall); value=new AgendaRequestGuard.Value(kind,body,due[0],due[1]); }
         }
         catch (RuntimeException error) {

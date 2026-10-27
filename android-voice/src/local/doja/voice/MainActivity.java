@@ -53,11 +53,35 @@ public class MainActivity extends Activity {
         FaceState.SPEAKING, FaceState.READY};
 
     final BroadcastReceiver receiver = new BroadcastReceiver() {
-        public void onReceive(Context c, Intent intent) { stopPreview(); refreshServiceState(); }
+        public void onReceive(Context c, Intent intent) {
+            stopPreview();
+            String words = intent == null ? null : intent.getStringExtra("transcript");
+            if (words != null && !words.isEmpty() && weatherData != null
+                    && weatherData.isFresh(System.currentTimeMillis())) {
+                FaceReaction weatherReaction = FaceReactionPolicy.forWeather(words, weatherData);
+                if (weatherReaction != FaceReaction.NONE) showReaction(weatherReaction);
+            }
+            refreshServiceState();
+        }
     };
     final Runnable tick = new Runnable() {
         public void run() {
             Date now = new Date(); clock.setText(clockFormat.format(now)); date.setText(dateFormat.format(now));
+            long voiceAt = VoiceService.brightnessActivityAt;
+            long elapsed = SystemClock.elapsedRealtime();
+            if (voiceAt > lastVoiceBrightnessAt && elapsed - voiceAt < 5000L) {
+                lastVoiceBrightnessAt = voiceAt;
+                noteVoiceInteraction();
+            }
+            if (VoiceService.active && (VoiceService.uiState == FaceState.SPEAKING
+                    || VoiceService.uiState == FaceState.THINKING))
+                noteVoiceInteraction();
+            long faceAt = VoiceService.faceReactionAt;
+            if (faceAt > lastFaceReactionAt) {
+                lastFaceReactionAt = faceAt;
+                if (face != null && VoiceService.faceReaction != FaceReaction.NONE)
+                    face.setReaction(VoiceService.faceReaction, 5000);
+            }
             if (CaptureProbeService.active) {
                 refreshServiceState();
                 wakeHint.setText(CaptureProbeService.status + " · quedan "
@@ -77,6 +101,16 @@ public class MainActivity extends Activity {
         }
     };
     final Runnable optionsExpiry = () -> expireOptionsAt(SystemClock.uptimeMillis());
+    final Runnable screenIdle = new Runnable() {
+        public void run() {
+            if (!resumed) return;
+            applyScreenBrightness(true);
+            handler.postDelayed(this, screenIdleDelay);
+        }
+    };
+    private long lastScreenInteraction, lastVoiceBrightnessAt;
+    private long lastFaceReactionAt;
+    private long screenIdleDelay = ScreenBrightnessPolicy.IDLE_MS;
     final Runnable weatherRefresh = new Runnable() {
         public void run() {
             if (!resumed || getIntent().getBooleanExtra("offline_preview", false)) return;
@@ -197,6 +231,7 @@ public class MainActivity extends Activity {
         optionsLayer.setVisibility(View.GONE); root.addView(optionsLayer, new FrameLayout.LayoutParams(-1, -1));
     }
     public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        if (event.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) noteScreenInteraction();
         if (!policy.optionsVisible() && assistantStart != null && assistantStart.isShown()) {
             int[] location = new int[2]; assistantStart.getLocationOnScreen(location);
             if (event.getRawX() >= location[0] && event.getRawX() <= location[0] + assistantStart.getWidth()
@@ -667,7 +702,7 @@ public class MainActivity extends Activity {
             .setMessage(entry.title() + "\n\n" + entry.when() + "\n" + entry.status(System.currentTimeMillis()) + "\nID: " + entry.id)
             .setNegativeButton("Volver", (dialog, which) -> agendaOptions(entry.kind))
             .setPositiveButton("Eliminar…", (dialog, which) -> showDialog(new AlertDialog.Builder(this).setTitle("Eliminar solo " + name)
-                .setMessage((entry.weekday==0 ? "" : "Se eliminará TODA esta serie semanal, no solo la ocurrencia de hoy. No es silenciar ni posponer.\n\n")
+                .setMessage((!entry.recurs() ? "" : "Se eliminará TODA esta serie de repetición, no solo la ocurrencia de hoy. No es silenciar ni posponer.\n\n")
                     + "Se bloqueará su entrega y se borrará su contenido. Se retirará su programación y se intentará detener solo su aviso, si está activo. No toca otros eventos ni temporizadores.")
                 .setNegativeButton("Volver", (confirmation, button) -> agendaItem(entry))
                 .setPositiveButton("Eliminar", (confirmation, button) -> removeAgendaItem(entry)).create())).create());
@@ -686,7 +721,7 @@ public class MainActivity extends Activity {
                 if (!resumed || isFinishing() || optionsDialog != loading) return;
                 String message;
                 switch (result) {
-                    case REMOVED: message = (entry.weekday==0 ? "" : "Serie semanal completa eliminada. ")+"Evento eliminado del registro; programación retirada y sin aviso propio activo registrado."; break;
+                    case REMOVED: message = (!entry.recurs() ? "" : "Serie de repetición completa eliminada. ")+"Evento eliminado del registro; programación retirada y sin aviso propio activo registrado."; break;
                     case NOT_FOUND: message = "Ese evento ya no está en el registro. No se ha tocado ningún otro."; break;
                     case STALE: message = "El evento cambió mientras lo revisabas. Abre la lista y selecciónalo de nuevo; no se ha eliminado."; break;
                     case CLEANUP_PENDING: message = "Contenido borrado y entrega bloqueada, pero no se pudo confirmar toda la limpieza. Revisa el evento marcado como eliminación pendiente."; break;
@@ -898,6 +933,11 @@ public class MainActivity extends Activity {
         }
         border.setProcessing(value == FaceState.THINKING);
     }
+    void showReaction(FaceReaction reaction) {
+        if (face == null || reaction == null || reaction == FaceReaction.NONE) return;
+        lastFaceReactionAt = VoiceService.faceReactionAt;
+        face.setReaction(reaction, 5000);
+    }
     void refreshServiceState() {
         if (AgendaDeliveryService.active) {
             present(SilenceListener.recording() ? FaceState.LISTENING : FaceState.SPEAKING,
@@ -1069,14 +1109,44 @@ public class MainActivity extends Activity {
         if (keyCode == android.view.KeyEvent.KEYCODE_MENU) { showOptions(); return true; }
         return super.onKeyUp(keyCode, event);
     }
+    private void noteScreenInteraction() {
+        long now = SystemClock.uptimeMillis();
+        screenIdleDelay = ScreenBrightnessPolicy.IDLE_MS;
+        handler.removeCallbacks(screenIdle);
+        if (now - lastScreenInteraction > 1000L) applyScreenBrightness(false);
+        lastScreenInteraction = now;
+        handler.postDelayed(screenIdle, screenIdleDelay);
+    }
+    private void noteVoiceInteraction() {
+        screenIdleDelay = ScreenBrightnessPolicy.VOICE_IDLE_MS;
+        handler.removeCallbacks(screenIdle);
+        applyScreenBrightness(false);
+        handler.postDelayed(screenIdle, screenIdleDelay);
+    }
+    private void applyScreenBrightness(boolean idle) {
+        if (!Settings.System.canWrite(this)) return;
+        RestModeSchedule rest = RestModeStore.load(this);
+        int level = ScreenBrightnessPolicy.desired(rest, System.currentTimeMillis(), idle);
+        try {
+            Settings.System.putInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE,
+                Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL);
+            int current = Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, -1);
+            if (current != level) Settings.System.putInt(getContentResolver(),
+                Settings.System.SCREEN_BRIGHTNESS, level);
+        } catch (RuntimeException ignored) { /* The rest-mode UI exposes the permission. */ }
+    }
     public void onResume() {
         super.onResume(); resumed = visibleToUser = true;
         IntentFilter filter = new IntentFilter(VoiceService.STATE);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(receiver, filter);
         refreshServiceState(); face.setForeground(true); border.setForeground(true); handler.post(tick); handler.post(weatherRefresh);
+        screenIdleDelay = ScreenBrightnessPolicy.IDLE_MS;
+        handler.removeCallbacks(screenIdle);
+        handler.postDelayed(screenIdle, screenIdleDelay);
     }
     public void onPause() {
         resumed = visibleToUser = false; weatherGeneration++;
+        handler.removeCallbacks(screenIdle);
         // One bounded in-flight public request may finish; its generation is now
         // invalid. Do not block the UI thread on HttpURLConnection.disconnect().
         closeOptions(); stopPreview(); refreshServiceState(); face.setForeground(false); border.setForeground(false);

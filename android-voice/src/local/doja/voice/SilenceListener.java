@@ -40,14 +40,15 @@ final class SilenceListener implements AutoCloseable {
         final SilenceDiagnostics.Window diagnostic;
         final BooleanSupplier wanted;
         final Consumer<Handle> ready;
-        final Runnable unavailable, command;
+        final Runnable unavailable;
+        final Consumer<String> commandText;
         final Consumer<String> alarmCommand;
         final AtomicBoolean stopRequested=new AtomicBoolean();
         volatile AudioRecord recorder;
         Handle(SilenceWindowPolicy.Ticket ticket, SilenceDiagnostics.Window diagnostic, BooleanSupplier wanted,
-                Consumer<Handle> ready,Runnable unavailable,Runnable command,Consumer<String> alarmCommand) {
+                Consumer<Handle> ready,Runnable unavailable,Consumer<String> commandText,Consumer<String> alarmCommand) {
             this.ticket=ticket; this.diagnostic=diagnostic; this.wanted=wanted; this.ready=ready; this.unavailable=unavailable;
-            this.command=command; this.alarmCommand=alarmCommand;
+            this.commandText=commandText; this.alarmCommand=alarmCommand;
         }
     }
     SilenceListener(Context context, Runnable changed) { this(context, changed, SilenceDiagnostics.Owner.SYNTHETIC); }
@@ -80,7 +81,8 @@ final class SilenceListener implements AutoCloseable {
             try {
                 if (!safe(lease==null?1200000:500000,lease==null?380:400)) throw new IllegalStateException("Guardia de recursos/permisos");
                 if(lease==null) lease = SilenceModels.acquire(context);
-                decoder=new Recognizer(lease.value,16000); decoder.setWords(true);
+                decoder=new Recognizer(lease.value,16000, SilenceWindowPolicy.COMMAND_GRAMMAR);
+                decoder.setWords(true);
                 DecoderWarmup.Result result=warmDecoder(decoder,() -> !closed);
                 VoiceHealthStore.decoderWarmup(context,result);
                 synchronized(SilenceListener.this) {
@@ -106,22 +108,31 @@ final class SilenceListener implements AutoCloseable {
         return ready();
     }
     Handle arm(String id,long deadline,long startBefore,BooleanSupplier wanted,Runnable ready,Runnable unavailable,Runnable command) {
-        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,command,null);
+        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,text -> command.run(),null,SilenceWindowPolicy.ARM_MS);
+    }
+    Handle armText(String id,long deadline,long startBefore,BooleanSupplier wanted,Runnable ready,Runnable unavailable,Consumer<String> command) {
+        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,command,null,SilenceWindowPolicy.ARM_MS);
+    }
+    Handle armTextLong(String id,long deadline,long startBefore,BooleanSupplier wanted,Runnable ready,Runnable unavailable,Consumer<String> command) {
+        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,command,null,5000L);
     }
     Handle armAlarm(String id,long deadline,long startBefore,BooleanSupplier wanted,Runnable ready,Runnable unavailable,Consumer<String> command) {
-        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,() -> {},command);
+        return arm(id,deadline,startBefore,wanted,ignored -> ready.run(),unavailable,text -> {},command,SilenceWindowPolicy.ARM_MS);
     }
-    private synchronized Handle arm(String id,long deadline,long startBefore,BooleanSupplier wanted,Consumer<Handle> ready,Runnable unavailable,Runnable command,Consumer<String> alarmCommand) {
+    private synchronized Handle arm(String id,long deadline,long startBefore,BooleanSupplier wanted,Consumer<Handle> ready,Runnable unavailable,Consumer<String> commandText,Consumer<String> alarmCommand,long readyMs) {
         if(closed || jobs.get()>=2) return null;
         long now=SystemClock.elapsedRealtime();
-        SilenceWindowPolicy.Ticket ticket=policy.arm(id,deadline,startBefore,now,owner==SilenceDiagnostics.Owner.SPEECH ? 60000 : 30000);
+        SilenceWindowPolicy.Ticket ticket=policy.arm(id,deadline,startBefore,now,owner==SilenceDiagnostics.Owner.SPEECH ? 60000 : 30000,readyMs);
         if(ticket==null) return null;
-        Handle handle=new Handle(ticket,SilenceDiagnostics.begin(owner,now),wanted,ready,unavailable,command,alarmCommand);
+        Handle handle=new Handle(ticket,SilenceDiagnostics.begin(owner,now),wanted,ready,unavailable,commandText,alarmCommand);
         stopCaptureAsync(activeHandle); activeHandle=handle;
         prepare(); jobs.incrementAndGet();
         try { worker.execute(() -> listen(handle)); }
         catch(RejectedExecutionException stopping) { jobs.decrementAndGet(); policy.end(ticket); handle.diagnostic.finish(SilenceDiagnostics.End.CLOSED,now); return null; }
         return handle;
+    }
+    boolean started(Handle handle) {
+        return handle != null && policy.playing(handle.ticket, SystemClock.elapsedRealtime());
     }
     boolean outputStarted(Handle handle) {
         if(handle==null || !handle.wanted.getAsBoolean() || !policy.start(handle.ticket,SystemClock.elapsedRealtime())) return false;
@@ -166,7 +177,10 @@ final class SilenceListener implements AutoCloseable {
         byte[] pcm=new byte[640]; boolean announced=false;
         Recognizer claimed=null;
         try {
-            if (!ready()) { reason = SilenceDiagnostics.End.NOT_READY; return; }
+            while (!closed && !ready() && policy.preparing(ticket, SystemClock.elapsedRealtime())
+                    && handle.wanted.getAsBoolean()) SystemClock.sleep(10);
+            if (!ready() || !policy.preparing(ticket, SystemClock.elapsedRealtime())
+                    || !handle.wanted.getAsBoolean()) { reason = SilenceDiagnostics.End.NOT_READY; return; }
             if (!safe(500000, 400)) { reason = SilenceDiagnostics.End.GUARD; return; }
             synchronized(this) { claimed=preparedDecoder; preparedDecoder=null; ready=false; }
             if(claimed==null) { reason=SilenceDiagnostics.End.NOT_READY; return; }
@@ -201,7 +215,7 @@ final class SilenceListener implements AutoCloseable {
                 InterruptionAudioClock clock=new InterruptionAudioClock(SystemClock.elapsedRealtime()); AudioTimestamp timestamp=new AudioTimestamp();
                 while (!closed && policy.current(ticket,SystemClock.elapsedRealtime()) && handle.wanted.getAsBoolean()) {
                     long now = SystemClock.elapsedRealtime();
-                    if(!clock.alive(now)) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
+                    if(!clock.alive(now)) { diagnostic.stale(InterruptionAudioClock.IDLE, -1, -1, clock.framesSeen(), now, -1, now - clock.lastFrameAtMs()); reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
                     if(!announced && now>=ticket.readyBefore) { reason=SilenceDiagnostics.End.ARM_TIMEOUT; break; }
                     if (now - checked >= 500) {
                         checked = now;
@@ -221,7 +235,11 @@ final class SilenceListener implements AutoCloseable {
                     try {
                         boolean stamped=recorder.getTimestamp(timestamp,AudioTimestamp.TIMEBASE_BOOTTIME)==AudioRecord.SUCCESS;
                         end=clock.observe(count,stamped,timestamp.framePosition,timestamp.nanoTime/1000000L,SystemClock.elapsedRealtime());
-                    } catch(IllegalArgumentException stale) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
+                    } catch(IllegalArgumentException stale) {
+                        diagnostic.stale(clock.staleKind(), clock.lastStampMs(), clock.lastFramePosition(),
+                            clock.framesSeen(), SystemClock.elapsedRealtime(), clock.lastObserveEndMs(), -1);
+                        reason=SilenceDiagnostics.End.STALE_AUDIO; break;
+                    }
                     if(end<0) continue;
                     diagnostic.lag(Math.max(0,SystemClock.elapsedRealtime()-end));
                     if(!announced) {
@@ -233,16 +251,25 @@ final class SilenceListener implements AutoCloseable {
                     long decode=SystemClock.elapsedRealtime(); boolean endpoint=recognizer.acceptWaveForm(pcm, count);
                     diagnostic.decoded(SystemClock.elapsedRealtime()-decode);
                     diagnostic.processed(Math.max(0,SystemClock.elapsedRealtime()-end));
-                    if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
+                    if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) {
+                        diagnostic.stale(InterruptionAudioClock.LAG_AFTER_DECODE, -1, -1, clock.framesSeen(), SystemClock.elapsedRealtime(), end, -1);
+                        reason=SilenceDiagnostics.End.STALE_AUDIO; break;
+                    }
                     if (endpoint) {
                         String result = recognizer.getResult();
                         double confidence = commandConfidence(result,handle.alarmCommand!=null);
                         JSONObject parsed = new JSONObject(result);
                         String text=parsed.optString("text");
+                        diagnostic.confidence(confidence);
                         boolean explicit=handle.alarmCommand==null ? SilenceWindowPolicy.isCommand(text) : AlarmOccurrencePolicy.command(text)!=null;
                         diagnostic.processed(Math.max(0,SystemClock.elapsedRealtime()-end));
-                        if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) { reason=SilenceDiagnostics.End.STALE_AUDIO; break; }
-                        boolean accepted = policy.accept(ticket,explicit,confidence,SystemClock.elapsedRealtime());
+                        if(SystemClock.elapsedRealtime()-end>InterruptionAudioClock.MAX_LAG_MS) {
+                            diagnostic.stale(InterruptionAudioClock.LAG_AFTER_DECODE, -1, -1, clock.framesSeen(), SystemClock.elapsedRealtime(), end, -1);
+                            reason=SilenceDiagnostics.End.STALE_AUDIO; break;
+                        }
+                        boolean accepted = handle.alarmCommand==null
+                            ? policy.accept(ticket,text,explicit,confidence,SystemClock.elapsedRealtime())
+                            : policy.accept(ticket,explicit,confidence,SystemClock.elapsedRealtime());
                         diagnostic.endpoint(parsed.optJSONArray("result") == null ? 0 : parsed.getJSONArray("result").length(), accepted);
                         if (accepted) {
                             reason = SilenceDiagnostics.End.DETECTED;
@@ -250,7 +277,7 @@ final class SilenceListener implements AutoCloseable {
                             diagnostic.finish(reason,SystemClock.elapsedRealtime());
                             main.post(() -> {
                                 if (!closed && handle.wanted.getAsBoolean() && policy.claimCallback(ticket,SystemClock.elapsedRealtime())) {
-                                    diagnostic.callback(SystemClock.elapsedRealtime()); if(handle.alarmCommand==null) handle.command.run(); else handle.alarmCommand.accept(text);
+                                    diagnostic.callback(SystemClock.elapsedRealtime()); if(handle.alarmCommand==null) handle.commandText.accept(text); else handle.alarmCommand.accept(text);
                                 } else if(!closed && handle.wanted.getAsBoolean()) unavailable(handle);
                             });
                             break;

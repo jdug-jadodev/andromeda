@@ -37,7 +37,7 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
         this.context = context.getApplicationContext();
         if (scheduler != null && !"agenda-isolated-test.db".equals(database)) throw new IllegalArgumentException("Fake scheduler restricted to isolated test database");
         this.scheduler = scheduler;
-        helper = new SQLiteOpenHelper(this.context, database, null, 3) {
+        helper = new SQLiteOpenHelper(this.context, database, null, 4) {
             public void onConfigure(SQLiteDatabase db) {
                 // This PRAGMA returns a row on Android SQLite. execSQL() rejects
                 // row-returning statements even though desktop SQLite accepts it.
@@ -52,7 +52,7 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
                     + "state TEXT NOT NULL CHECK(state IN ('SCHEDULED','PENDING','DELIVERING','FAILED','CANCEL_PENDING')), "
                     + "revision INTEGER NOT NULL CHECK(revision > 0), elapsed_due INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_due>=0), "
                     + "weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 7 AND (kind='ALARM' OR weekday=0)), "
-                    + "minute_of_day INTEGER NOT NULL DEFAULT -1 CHECK((weekday=0 AND minute_of_day=-1) OR (weekday BETWEEN 1 AND 7 AND minute_of_day BETWEEN 0 AND 1439)), CHECK(length(text)<=160), "
+                    + "minute_of_day INTEGER NOT NULL DEFAULT -1 CHECK((weekday=0 AND minute_of_day BETWEEN -1 AND 1439) OR (weekday BETWEEN 1 AND 7 AND minute_of_day BETWEEN 0 AND 1439)), CHECK(length(text)<=160), "
                     + "CHECK(kind!='ALARM' OR text=''), CHECK(state!='CANCEL_PENDING' OR text=''), "
                     + "CHECK(kind!='REMINDER' OR state='CANCEL_PENDING' OR length(trim(text))>0))");
                 db.execSQL("CREATE INDEX agenda_kind_due ON agenda(kind,due_ms,id)");
@@ -63,11 +63,20 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
                 if (oldVersion == 1) {
                     db.execSQL("ALTER TABLE agenda ADD COLUMN elapsed_due INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_due>=0)"); receipts(db);
                 }
-                if (oldVersion >= 1 && oldVersion <= 2 && newVersion == 3) {
+                if (oldVersion <= 2) {
                     db.execSQL("ALTER TABLE agenda ADD COLUMN weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 7 AND (kind='ALARM' OR weekday=0))");
                     db.execSQL("ALTER TABLE agenda ADD COLUMN minute_of_day INTEGER NOT NULL DEFAULT -1 CHECK((weekday=0 AND minute_of_day=-1) OR (weekday BETWEEN 1 AND 7 AND minute_of_day BETWEEN 0 AND 1439))");
                     actionReceipts(db);
-                } else throw new SQLiteException("Agenda migration required"); // Never drop or reinterpret user records.
+                }
+                if (oldVersion <= 3 && newVersion >= 4) {
+                    // Recreate agenda to allow daily recurrence (weekday=0, minute_of_day BETWEEN 0 AND 1439).
+                    db.execSQL("ALTER TABLE agenda RENAME TO agenda_old");
+                    db.execSQL("CREATE TABLE agenda (id TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('ALARM','REMINDER')), text TEXT NOT NULL, due_ms INTEGER NOT NULL CHECK(due_ms > 0), zone TEXT NOT NULL CHECK(zone='America/Bogota'), state TEXT NOT NULL CHECK(state IN ('SCHEDULED','PENDING','DELIVERING','FAILED','CANCEL_PENDING')), revision INTEGER NOT NULL CHECK(revision > 0), elapsed_due INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_due>=0), weekday INTEGER NOT NULL DEFAULT 0 CHECK(weekday BETWEEN 0 AND 7 AND (kind='ALARM' OR weekday=0)), minute_of_day INTEGER NOT NULL DEFAULT -1 CHECK((weekday=0 AND minute_of_day BETWEEN -1 AND 1439) OR (weekday BETWEEN 1 AND 7 AND minute_of_day BETWEEN 0 AND 1439)), CHECK(length(text)<=160), CHECK(kind!='ALARM' OR text=''), CHECK(state!='CANCEL_PENDING' OR text=''), CHECK(kind!='REMINDER' OR state='CANCEL_PENDING' OR length(trim(text))>0))");
+                    db.execSQL("INSERT INTO agenda SELECT id,kind,text,due_ms,zone,state,revision,elapsed_due,weekday,minute_of_day FROM agenda_old");
+                    db.execSQL("DROP TABLE agenda_old");
+                    db.execSQL("CREATE INDEX agenda_kind_due ON agenda(kind,due_ms,id)");
+                }
+                if (newVersion != 4) throw new SQLiteException("Agenda migration required");
             }
             private void receipts(SQLiteDatabase db) { db.execSQL("CREATE TABLE agenda_receipts (id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, expires_ms INTEGER NOT NULL)"); }
             private void actionReceipts(SQLiteDatabase db) { db.execSQL("CREATE TABLE agenda_actions (id TEXT PRIMARY KEY NOT NULL, event_id TEXT NOT NULL, operation TEXT NOT NULL, status TEXT NOT NULL, due_ms INTEGER NOT NULL, expires_ms INTEGER NOT NULL)"); }
@@ -201,7 +210,7 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
             long lateness = entry.elapsedDue == 0 ? System.currentTimeMillis() - entry.due : SystemClock.elapsedRealtime() - entry.elapsedDue;
             if (lateness < 0) { schedule(entry); return null; }
             if (lateness > 300000) {
-                if(entry.weekday!=0) advanceWeekly(entry); else changeState(entry, AgendaEntry.State.PENDING);
+                if(entry.recurs()) advanceWeekly(entry); else changeState(entry, AgendaEntry.State.PENDING);
                 return null;
             }
             return changeState(entry, AgendaEntry.State.DELIVERING) ? find(id) : null;
@@ -222,7 +231,7 @@ final class AgendaStore implements Closeable, AgendaCancellation.Store {
         synchronized (COORDINATOR) {
             AgendaEntry current = find(entry.id);
             if (current == null || current.revision != entry.revision || current.state != AgendaEntry.State.DELIVERING) return false;
-            if(current.weekday!=0) return advanceWeekly(current); // Retire this occurrence, NEVER the series.
+            if(current.recurs()) return advanceWeekly(current); // Retire this occurrence, NEVER the series.
             if (!delivered) return changeState(current, AgendaEntry.State.FAILED);
             SQLiteDatabase db = helper.getWritableDatabase(); db.beginTransaction();
             try {

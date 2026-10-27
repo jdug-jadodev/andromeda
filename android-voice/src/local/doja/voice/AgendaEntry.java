@@ -22,6 +22,7 @@ final class AgendaEntry {
     }
     AgendaEntry(String id, Kind kind, String text, long due, String zone, State state, long revision, long elapsedDue,int weekday,int minute) {
         if(weekday!=0) { AlarmSchedule.validate(weekday,minute); if(kind!=Kind.ALARM) throw new IllegalArgumentException("Only alarms repeat"); }
+        else if(minute>=0) AlarmSchedule.validate(0,minute); // Daily recurrence: alarms and reminders.
         else if(minute!=-1) throw new IllegalArgumentException("Invalid one-shot schedule");
         if (!validId(id) || kind == null || state == null || text == null || due <= 0 || !ZONE.equals(zone)
                 || revision < 1 || revision == Long.MAX_VALUE || elapsedDue < 0 || text.length() > MAX_TEXT || text.indexOf('\u0000') >= 0
@@ -34,10 +35,12 @@ final class AgendaEntry {
     static boolean validId(String id) {
         return id != null && id.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
     }
+    boolean recurs() { return weekday != 0 || minute >= 0; }
     String title() { return kind == Kind.ALARM ? "Alarma" : text.isEmpty() ? "Recordatorio sin contenido · eliminación pendiente" : text; }
     String when() {
         SimpleDateFormat format = new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("es", "CO"));
-        format.setTimeZone(TimeZone.getTimeZone(zone)); return format.format(new Date(due)) + " · Bogotá" + (weekday==0 ? "" : " · "+AlarmSchedule.label(weekday,minute));
+        format.setTimeZone(TimeZone.getTimeZone(zone));
+        return format.format(new Date(due)) + " · Bogotá" + (recurs() ? " · " + AlarmSchedule.label(weekday, minute) : "");
     }
     String status(long now) {
         switch (state) {

@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="73" android:versionName="0.13.45-rest-mode-light-retry">
+    android:versionCode="89" android:versionName="0.13.61-greetings-reactions">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -33,6 +33,7 @@
         <service android:name=".LightScheduleService" android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
         <service android:name=".RestModeService" android:exported="false" />
+        <service android:name=".CancelSpeakerService" android:exported="false" />
         <receiver android:name=".LightScheduleReceiver" android:exported="false" />
         <receiver android:name=".RestModeReceiver" android:exported="false" />
         <receiver android:name=".AgendaReceiver" android:exported="false" />
@@ -98,4 +99,8 @@
         android:label="Aplicar y restaurar brillo/volumen de descanso, sin audio ni BLE" android:functionalTest="true" />
     <instrumentation android:name=".RestModeUiInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Comprobar acciones del modo descanso sin audio ni BLE" android:functionalTest="true" />
+    <instrumentation android:name=".BrightnessVoiceInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Brillo al hablar y atenuación a los 20 s, sin audio ni micrófono" android:functionalTest="true" />
+    <instrumentation android:name=".CancelGrammarInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Cargar la gramática Vosk de cancelación sin micrófono" android:functionalTest="true" />
 </manifest>

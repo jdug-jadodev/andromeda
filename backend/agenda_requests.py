@@ -147,7 +147,7 @@ def parts(kind, raw):
             tail = prefix[1]
             front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
             if front: candidates.append((re.sub(r'^para ', '', front[1], flags=re.I), front[2]))
-            for start in re.finditer(r' (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))', tail, re.I):
+            for start in re.finditer(r' (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |todos los d[ií]as |cada d[ií]a |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))', tail, re.I):
                 body = tail[:start.start()]
                 if not re.search(r'\bpara$', body, re.I):
                     candidates.append((re.sub(r'^para ', '', tail[start.end():], flags=re.I), body))

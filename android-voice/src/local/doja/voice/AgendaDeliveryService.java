@@ -225,8 +225,8 @@ public final class AgendaDeliveryService extends Service {
             try(AgendaStore store=new AgendaStore(this)) { receipt=store.applyOccurrence(permit); }
             catch(Exception failure) { receipt=new AgendaStore.AlarmReceipt(permit.operation,id,"UNKNOWN",0); }
             final String status=receipt.status; final long actualDue=receipt.due;
-            lastControlStatus="SNOOZED".equals(status) ? "Alarma pospuesta cinco minutos"+(entry.weekday==0?" · una sola vez":" · repetición semanal conservada")
-                : "DISMISSED".equals(status) ? (entry.weekday==0?"Alarma de una sola vez descartada":"Ocurrencia descartada · la serie no se ha eliminado")
+            lastControlStatus="SNOOZED".equals(status) ? "Alarma pospuesta cinco minutos"+(!entry.recurs()?" · una sola vez":" · repetición conservada")
+                : "DISMISSED".equals(status) ? (!entry.recurs()?"Alarma de una sola vez descartada":"Ocurrencia descartada · la serie no se ha eliminado")
                 : "Resultado no confirmado · revisa Alarmas antes de repetir";
             main.post(() -> {
                 String details=lastControlStatus;

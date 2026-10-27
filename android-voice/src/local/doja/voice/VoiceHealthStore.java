@@ -45,8 +45,9 @@ final class VoiceHealthStore {
             .putLong("max_pcm_lag_ms",((Number)value.get("max_pcm_lag_ms")).longValue())
             .putLong("max_decode_ms",((Number)value.get("max_decode_ms")).longValue()).apply();
         android.content.SharedPreferences.Editor detail=context.getSharedPreferences("voice_interrupt_detail",Context.MODE_PRIVATE).edit().clear()
-            .putInt("version",1).putInt("end",SilenceDiagnostics.End.valueOf((String)value.get("end")).ordinal());
-        for(String key:new String[]{"began_ms","ended_ms","max_processed_age_ms","endpoints","rejected_segments","callbacks_sent","detection_to_callback_ms","stop_return_accepted","callback_to_stop_ms"})
+            .putInt("version",1).putInt("end",SilenceDiagnostics.End.valueOf((String)value.get("end")).ordinal())
+            .putInt("stale_kind",((Number)value.get("stale_kind")).intValue());
+        for(String key:new String[]{"began_ms","ended_ms","max_processed_age_ms","endpoints","rejected_segments","max_words","max_confidence_permille","callbacks_sent","detection_to_callback_ms","stop_return_accepted","callback_to_stop_ms","stale_stamp_ms","stale_frame_position","stale_frames","stale_now_ms","stale_end_ms","stale_idle_gap_ms"})
             detail.putLong(key,((Number)value.get(key)).longValue());
         detail.apply();
         return capture>=0;
@@ -69,5 +70,16 @@ final class VoiceHealthStore {
         return error instanceof TimeoutException?VoiceHealthPolicy.TIMEOUT:error instanceof IOException?VoiceHealthPolicy.IO:
             error instanceof JSONException?VoiceHealthPolicy.JSON:error instanceof SecurityException?VoiceHealthPolicy.SECURITY:
             error instanceof IllegalStateException?VoiceHealthPolicy.STATE:error instanceof IllegalArgumentException?VoiceHealthPolicy.ARGUMENT:VoiceHealthPolicy.OTHER;
+    }
+    /** Bounded, technical-only stop trace: timestamp, reason, UI state and a short technical reason. Never audio/transcript/content. */
+    static void stopTrace(Context context, String lastError, boolean expired, boolean closed, String uiState) {
+        String reason = expired ? "pilot_expired" : closed ? "conversation_closed"
+            : (lastError == null || lastError.isEmpty()) ? "normal" : "error";
+        String detail = lastError == null ? "" : lastError;
+        if (detail.length() > 160) detail = detail.substring(0, 160);
+        android.content.SharedPreferences prefs = context.getSharedPreferences("voice_stop_trace", Context.MODE_PRIVATE);
+        int index = prefs.getInt("index", 0);
+        prefs.edit().putString("e" + index, SystemClock.elapsedRealtime() + "|" + reason + "|" + uiState + "|" + detail)
+            .putInt("index", (index + 1) % 20).apply();
     }
 }

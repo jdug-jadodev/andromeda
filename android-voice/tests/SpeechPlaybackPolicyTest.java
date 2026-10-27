@@ -9,8 +9,8 @@ public final class SpeechPlaybackPolicyTest {
         check(SpeechPlaybackPolicy.windowMs(false, false, false, 10) == 20000);
         check(SpeechPlaybackPolicy.windowMs(true, false, false, 10) == 20000);
         check(SpeechPlaybackPolicy.windowMs(true, false, false, 300) == 39000);
-        check(SpeechPlaybackPolicy.windowMs(true, false, false, 700) == 45000);
-        check(SpeechPlaybackPolicy.windowMs(true, false, false, 5000) == 45000);
+        check(SpeechPlaybackPolicy.windowMs(true, false, false, 700) == 75000);
+        check(SpeechPlaybackPolicy.windowMs(true, false, false, 5000) == 90000);
         check(SpeechPlaybackPolicy.windowMs(true, true, false, 10) == 60000);
         check(SpeechPlaybackPolicy.windowMs(true, false, true, 10) == 60000);
         System.out.println("Speech playback: " + checks + " assertions passed (bounded, length-aware).");

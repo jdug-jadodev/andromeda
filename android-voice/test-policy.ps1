@@ -26,10 +26,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Light authorization tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Light schedule compilation failed' }
 & java -cp $output local.doja.voice.LightScheduleTest
 if ($LASTEXITCODE -ne 0) { throw 'Light schedule arithmetic tests failed' }
-& javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$source\RestModeSchedule.java" "$PSScriptRoot\tests\RestModeScheduleTest.java"
+& javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$source\RestModeSchedule.java" "$source\ScreenBrightnessPolicy.java" "$PSScriptRoot\tests\RestModeScheduleTest.java" "$PSScriptRoot\tests\ScreenBrightnessPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Rest mode schedule compilation failed' }
 & java -cp $output local.doja.voice.RestModeScheduleTest
 if ($LASTEXITCODE -ne 0) { throw 'Rest mode schedule tests failed' }
+& java -cp $output local.doja.voice.ScreenBrightnessPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Screen brightness policy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\LightTarget.java" "$source\LightSchedule.java" "$source\LightScheduleVoiceCommand.java" "$source\TimerRequestGuard.java" "$source\LightScheduleVoiceParser.java" "$PSScriptRoot\tests\LightScheduleVoiceTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Light schedule voice compilation failed' }
 & java -cp $output local.doja.voice.LightScheduleVoiceTest
@@ -137,3 +139,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Speech playback policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Web answer contract compilation failed' }
 & java -cp $output local.doja.voice.WebAnswerPolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Source-bound web answer contract tests failed' }
+& javac -encoding UTF-8 -d $output "$source\FaceReaction.java" "$source\WeatherData.java" "$source\FaceReactionPolicy.java" "$source\GreetingPolicy.java" "$PSScriptRoot\tests\FaceReactionPolicyTest.java" "$PSScriptRoot\tests\GreetingPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Greeting/reaction policy compilation failed' }
+& java -cp $output local.doja.voice.FaceReactionPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Face reaction policy tests failed' }
+& java -cp $output local.doja.voice.GreetingPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Greeting period tests failed' }

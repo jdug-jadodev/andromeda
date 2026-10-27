@@ -5,9 +5,18 @@ following human turn can supply a field. Never synthesize a complete request.
 """
 from dataclasses import dataclass
 import re
+import time as _time
 
 from agenda_requests import AgendaValidationError, calendar_day, calendar_due, day_due, clean, parts
 from doja_intents import normalized
+
+
+def _debug_dialogue(text, result):
+    try:
+        with open('/tmp/andromeda_debug.log', 'a', encoding='utf-8') as stream:
+            stream.write(f'{_time.monotonic():.0f}|dialogue|{result}|{normalized(text)[:200]}\n')
+    except Exception:
+        pass
 
 SUBJECT = '¿Para qué es el recordatorio?'
 WHEN = '¿Cuándo quieres que te lo recuerde?'
@@ -125,6 +134,7 @@ class AgendaDialogue:
         self.prepared = None
         self.day = None  # Numeric local date only; frozen at the human turn that supplied it.
         self.needs_intent = False; self.heard_at = self.question_speech_end = 0
+        self.daily = False
 
     @property
     def active(self): return bool(self.kind)
@@ -180,13 +190,20 @@ class AgendaDialogue:
             try: self.body = subject(human.text)
             except ValueError: return self.question(human, SUBJECT)
             return self.question(human)
+        if plain in {'todos los dias', 'cada dia', 'diario', 'diariamente'}:
+            self.daily = True
+            return self.question(human, '¿A qué hora quieres que te lo recuerde cada día?')
         try:
             if self.alarm_lifecycle:
                 from alarm_schedule import schedule
-                time = schedule(self.kind, clean(human.text), human.wall)
+                when = clean(human.text)
+                if self.daily:
+                    when = 'todos los dias a las ' + re.sub(r'^(?:a las|a la)\s*', '', when, flags=re.I)
+                time = schedule(self.kind, when, human.wall)
             else:
                 due, delay = calendar_due(clean(human.text), human.wall); time=dict(due_ms=due,delay_ms=delay)
         except (ValueError, OverflowError):
+            _debug_dialogue(human.text, 'time_fail')
             if self.kind != 'REMINDER': return self.question(human, INVALID_TIME)
             try: day = calendar_day(human.text, human.wall)
             except (ValueError, OverflowError): pass
@@ -203,6 +220,7 @@ class AgendaDialogue:
                     return self.question(human)  # Keep only the understood date, not the ambiguous clock.
                 self.day = None
                 return self.question(human, INVALID_TIME)
+        _debug_dialogue(human.text, 'time_ok:' + str(time))
         self.prepared = dict(event_kind=self.kind, text=self.body, when_text=clean(human.text), **time,
             zone='America/Bogota', dialogue_origin_turn_id=self.origin,
             dialogue_final_turn_id=human.id, dialogue_final_sequence=human.seq)

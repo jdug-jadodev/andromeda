@@ -4,9 +4,9 @@ public final class SilencePolicyTest {
     static int assertions;
     static void check(boolean value, String message) { assertions++; if (!value) throw new AssertionError(message); }
     public static void main(String[] args) {
-        for (String text : new String[]{"Andrómeda, silencio", "andromeda silencio", "¡Andrómeda, silencio!", "silencio", "¡Silencio!", "SILENCIO."})
+        for (String text : new String[]{"Andrómeda, silencio", "andromeda silencio", "¡Andrómeda, silencio!", "silencio", "¡Silencio!", "SILENCIO.", "Andrómeda", "cancélalo", "cancela eso", "cancela lo", "Andrómeda, cancélalo"})
             check(SilenceWindowPolicy.isCommand(text), "Command rejected");
-        for (String text : new String[]{"no silencio", "ayer dije silencio", "silencio no", "silencio y cancela el timer", "Andrómeda", "no Andrómeda silencio", "Andrómeda no silencio",
+        for (String text : new String[]{"no silencio", "ayer dije silencio", "silencio no", "silencio y cancela el timer", "no Andrómeda silencio", "Andrómeda no silencio",
                 "ayer dije Andrómeda silencio", "\"Andrómeda silencio\"", "Andrómeda silencio y cancela el timer",
                 "Andrés silencio", "Andrómeda pon un temporizador"}) check(!SilenceWindowPolicy.isCommand(text), "Other/negated/reported text accepted");
         SilenceWindowPolicy policy = new SilenceWindowPolicy();
@@ -49,7 +49,7 @@ public final class SilencePolicyTest {
             check(!window.containsKey("pcm") && !window.containsKey("text") && !window.containsKey("turn_id"), "Diagnostic stored human content/IDs");
             window.clear();
         }
-        check(SilenceDiagnostics.snapshot().get(0).size() == 26, "Caller altered retained diagnostics");
+        check(SilenceDiagnostics.snapshot().get(0).size() == 34, "Caller altered retained diagnostics");
         check(SilenceDiagnostics.snapshot().get(0).get("began_ms").equals(2004L)
             && SilenceDiagnostics.snapshot().get(0).get("ended_ms").equals(3004L), "Final numeric receipt clock missing");
         Object full = new Object(), interrupt = new Object();

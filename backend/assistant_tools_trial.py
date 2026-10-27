@@ -22,6 +22,9 @@ def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False,
         if weekday:
             from alarm_schedule import label
             return f'Alarma semanal guardada: {label(weekday,minute_of_day)}. Próxima: {when}.'
+        if minute_of_day >= 0:
+            from alarm_schedule import label
+            return f'Aviso diario guardado: {label(0, minute_of_day)}. Próxima: {when}.'
         if detailed and kind == 'REMINDER':
             prefix = ''
             if delay_ms:

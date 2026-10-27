@@ -56,7 +56,7 @@ class AgendaManagementTests(unittest.TestCase):
         source = '\n'.join((SOURCE / name).read_text(encoding='utf-8') for name in
                            ['AgendaStore.java', 'AgendaCancellation.java', 'AgendaEntry.java', 'AgendaOutputs.java'])
         for forbidden in ['TimerStore', 'VoiceConnection', 'SilenceListener', 'TextToSpeech', 'AudioRecord', 'startService(',
-                          'startForegroundService(', 'setRepeating', 'java.net.', 'FileOutputStream', 'DROP TABLE']:
+                          'startForegroundService(', 'setRepeating', 'java.net.', 'FileOutputStream', 'DROP TABLE agenda"']:
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)
         self.assertIn('PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE', source)

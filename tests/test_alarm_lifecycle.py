@@ -9,7 +9,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'backend'))
 from agenda_requests import current_event
-from alarm_schedule import weekly,schedule
+from alarm_schedule import weekly,daily,schedule,label
 from alarm_deletion import AlarmDeletion,question
 from assistant_tools_model import AssistantToolsModel,TOOLS
 from assistant_tools_trial import AssistantToolsTrial
@@ -200,7 +200,7 @@ class AlarmLifecycleTests(unittest.TestCase):
 
     def test_v1_v2_migration_preserves_obligations_and_receipts_without_guessing_weekdays(self):
         source=(ROOT/'android-voice/src/local/doja/voice/AgendaStore.java').read_text(encoding='utf-8')
-        statements=[json.loads('"'+value+'"') for value in re.findall(r'db\.execSQL\("(ALTER TABLE agenda [^"\n]+)"\)',source)]
+        statements=[json.loads('"'+value+'"') for value in re.findall(r'db\.execSQL\("(ALTER TABLE agenda ADD COLUMN [^"\n]+)"\)',source)]
         self.assertEqual(len(statements),3)
         action=re.search(r'db\.execSQL\("(CREATE TABLE agenda_actions [^"\n]+)"\)',source).group(1)
         for version in (1,2):
@@ -215,6 +215,35 @@ class AlarmLifecycleTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT status FROM agenda_receipts').fetchone(),('DELIVERED',))
                 self.assertEqual(db.execute('SELECT COUNT(*) FROM agenda_actions').fetchone(),(0,))
                 with self.assertRaises(sqlite3.IntegrityError): db.execute('UPDATE agenda SET weekday=1,minute_of_day=1020')
+
+    def test_daily_schedule_parses_todos_los_dias_for_alarm_and_reminder(self):
+        value = daily('todos los días a las 8 de la mañana', WALL)
+        self.assertIsNotNone(value); self.assertEqual(value['weekday'], 0); self.assertEqual(value['minute_of_day'], 480)
+        self.assertEqual(label(0, 480), 'cada día a las 08:00, hora de Bogotá')
+        self.assertEqual(schedule('REMINDER', 'todos los días a las 8 de la mañana', WALL)['minute_of_day'], 480)
+        self.assertEqual(schedule('ALARM', 'cada día a las 8 de la noche', WALL)['minute_of_day'], 1200)
+        self.assertIsNone(daily('mañana a las 8', WALL))
+        self.assertIsNone(daily('cada martes a las 8', WALL))
+
+    def test_daily_dialogue_asks_time_then_combines(self):
+        form = AgendaDialogue(64, True)
+        def t(seq, text):
+            now = self.now[0]
+            return dict(id=f'{seq:032x}', seq=seq, text=text, speech_end=now-100,
+                calendar_anchor_ms=WALL+now-100000, calendar_boot_ms=now)
+        first = t(1, 'pon un recordatorio')
+        form.begin('REMINDER', first, self.now[0]); form.spoken(first['id'], True)
+        self.now[0] += 3000
+        second = t(2, 'bañarme')
+        form.answer(second, self.now[0]); form.spoken(second['id'], True)
+        self.now[0] += 3000
+        third = t(3, 'todos los días')
+        q = form.answer(third, self.now[0]); form.spoken(third['id'], True)
+        self.assertIn('hora', q['text'])
+        self.now[0] += 3000
+        result = form.answer(t(4, 'a las 8 de la noche'), self.now[0])
+        self.assertEqual(result['kind'], 'guided_agenda_proposal')
+        self.assertEqual(result['weekday'], 0); self.assertEqual(result['minute_of_day'], 1200)
 
 
 if __name__=='__main__': unittest.main()

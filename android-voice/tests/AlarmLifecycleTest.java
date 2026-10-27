@@ -58,6 +58,8 @@ public final class AlarmLifecycleTest {
         AgendaRequestGuard.Value natural=AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"una alarma a las 8pm los martes","a las 8pm los martes","",WALL,true);
         check(natural.weekday==2 && natural.minute==1200 && natural.due==1792544400000L);
         reject(()->AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"no una alarma a las 8pm los martes","a las 8pm los martes","",WALL,true));
+        AgendaRequestGuard.Value dailyValue=AgendaRequestGuard.parse(AgendaEntry.Kind.REMINDER,"recuérdame bañarme todos los días a las 8 de la noche","todos los días a las 8 de la noche","bañarme",WALL,true);
+        check(dailyValue.weekday==0 && dailyValue.minute==1200);
         AlarmDeletion deletion=new AlarmDeletion(); AgendaEntry selected=sounding(1,1020); AgendaDialogue.Human opening=human(1,"elimina la alarma del lunes a las 17:00");
         deletion.select(opening,selected,BOOT); reject(() -> deletion.human(human(2,"sí"),BOOT+3000));
         deletion.select(opening,selected,BOOT); deletion.spoken(opening.id,false); check(!deletion.active());

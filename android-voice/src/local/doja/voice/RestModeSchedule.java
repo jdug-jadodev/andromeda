@@ -56,6 +56,15 @@ final class RestModeSchedule {
         return best;
     }
 
+    /** True during the configured night window, including across midnight. */
+    boolean nightAt(long nowWall) {
+        Calendar now = Calendar.getInstance(LightSchedule.ZONE);
+        now.setTimeInMillis(nowWall);
+        int current = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE);
+        if (nightMinute < morningMinute) return current >= nightMinute && current < morningMinute;
+        return current >= nightMinute || current < morningMinute;
+    }
+
     boolean matchesNow(Action action, long nowWall, int toleranceMinutes) {
         if (action == null || toleranceMinutes < 0) return false;
         Calendar now = Calendar.getInstance(LightSchedule.ZONE);

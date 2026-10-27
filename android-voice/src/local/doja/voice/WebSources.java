@@ -10,10 +10,18 @@ final class WebSources {
     private static String last = "";
     private static long expires;
     static String query(String human) {
+        String raw = AgendaRequestGuard.clean(human);
         Matcher match = Pattern.compile("(?:busca|investiga|consulta) (?:en (?:internet|la web)|por internet) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE)
-            .matcher(AgendaRequestGuard.clean(human));
-        if (!match.matches() || match.group(1).length() > 160) throw new IllegalArgumentException("Explicit web query required");
-        return match.group(1);
+            .matcher(raw);
+        if (match.matches()) {
+            String explicit = match.group(1);
+            if (explicit.length() > 160) throw new IllegalArgumentException("Explicit web query required");
+            return explicit;
+        }
+        // Non-explicit: the model decided it did not know it. Only a real question is a valid query.
+        if (raw.length() < 6 || raw.startsWith("no ") || Pattern.compile("\\b(?:ayer|dije|dijiste|antes)\\b").matcher(raw).find()
+                || raw.length() > 160) throw new IllegalArgumentException("Explicit web query required");
+        return raw;
     }
     static String validate(String human, JSONObject event) throws Exception {
         query(human);

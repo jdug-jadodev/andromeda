@@ -9,6 +9,10 @@ import java.util.Deque;
 final class SilenceWindowPolicy {
     static final long ARM_MS = 1500;
     static final long CALLBACK_MS = 500;
+    /** Local Vosk grammar: only the interruption/cancel/name vocabulary plus unknown. */
+    static final String COMMAND_GRAMMAR =
+        "[\"silencio\",\"andromeda\",\"andromeda silencio\",\"cancelalo\",\"cancela\","
+        + "\"cancela eso\",\"cancela lo\",\"olvidalo\",\"andromeda cancelalo\",\"[unk]\"]";
     private static final int ARMING=0, READY=1, PLAYING=2, DETECTED=3, CLAIMED=4, FAILED=5, ENDED=6;
     static final class Ticket {
         final String id;
@@ -28,10 +32,15 @@ final class SilenceWindowPolicy {
     // Every async operation uses ticket identity, so eviction never revives an old callback.
     private final Deque<String> seen = new ArrayDeque<>(32);
     synchronized Ticket arm(String id,long expires,long startBefore,long now,long maximumMs) {
+        return arm(id,expires,startBefore,now,maximumMs,ARM_MS);
+    }
+
+    synchronized Ticket arm(String id,long expires,long startBefore,long now,long maximumMs,long readyMs) {
         if(closed || generation==Long.MAX_VALUE || id==null || id.isEmpty() || id.length()>80 || seen.contains(id)
-                || (maximumMs!=30000 && maximumMs!=60000) || now<=0 || expires<=now || expires-now>maximumMs
-                || startBefore<=now || now>Long.MAX_VALUE-ARM_MS) return null;
-        long readyBefore=Math.min(now+ARM_MS,startBefore-100);
+                || (maximumMs!=30000 && maximumMs!=60000) || (readyMs!=ARM_MS && readyMs!=5000)
+                || now<=0 || expires<=now || expires-now>maximumMs
+                || startBefore<=now || now>Long.MAX_VALUE-readyMs) return null;
+        long readyBefore=Math.min(now+readyMs,startBefore-100);
         if(readyBefore<=now) return null;
         if(seen.size()==32) seen.removeFirst(); seen.addLast(id);
         if(current!=null) current.state=ENDED;
@@ -45,11 +54,29 @@ final class SilenceWindowPolicy {
         Ticket ticket=arm(value,deadline,deadline,now,maximumMs);
         return ticket!=null && ready(ticket,now) && start(ticket,now);
     }
-    static boolean isCommand(String text) {
-        if (text == null || text.length() > 80) return false;
-        String plain = Normalizer.normalize(text.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
-            .replaceAll("\\p{M}", "").trim().replaceAll("\\s+", " ").replaceAll("^[ .,!¡?¿]+|[ .,!¡?¿]+$", "");
+    static String plain(String text) {
+        if (text == null || text.length() > 80) return "";
+        return Normalizer.normalize(text.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
+            .replaceAll("\\p{M}", "").trim().replaceAll("\\s+", " ")
+            .replaceAll("^[ .,!¡?¿]+|[ .,!¡?¿]+$", "");
+    }
+
+    static boolean isSilence(String text) {
+        String plain = plain(text);
         return plain.matches("(?:andromeda[, ]+)?silencio");
+    }
+
+    static boolean isCancel(String text) {
+        String plain = plain(text);
+        return plain.matches("(?:andromeda[, ]+)?(?:cancelalo|cancela|cancela eso|cancela lo|olvidalo)");
+    }
+
+    static boolean isWakeOnly(String text) {
+        return "andromeda".equals(plain(text));
+    }
+
+    static boolean isCommand(String text) {
+        return isSilence(text) || isCancel(text) || isWakeOnly(text);
     }
     synchronized boolean current(Ticket ticket,long now) { return !closed && ticket!=null && current==ticket && ticket.state<FAILED && now<ticket.expires; }
     synchronized boolean preparing(Ticket ticket,long now) { return current(ticket,now) && ticket.state<=READY && now<ticket.readyBefore; }
@@ -70,8 +97,17 @@ final class SilenceWindowPolicy {
     synchronized boolean acceptOutputControl(String value, boolean explicit, double confidence, long now) {
         return current!=null && current.id.equals(value) && accept(current,explicit,confidence,now);
     }
-    synchronized boolean accept(Ticket ticket,boolean explicit,double confidence,long now) {
-        if(!playing(ticket,now) || !Double.isFinite(confidence) || confidence<.8 || confidence>1 || !explicit) return false;
+    synchronized boolean accept(Ticket ticket, boolean explicit, double confidence, long now) {
+        return accept(ticket, null, explicit, confidence, now);
+    }
+    /**
+     * Short barge-in commands are accepted at a lower confidence because the
+     * exact phrase is also required; normal prose-like commands keep 0.8.
+     */
+    synchronized boolean accept(Ticket ticket, String text, boolean explicit, double confidence, long now) {
+        if(!playing(ticket,now) || !Double.isFinite(confidence) || confidence>1 || !explicit) return false;
+        double minimum = (isCancel(text) || isWakeOnly(text)) ? .55 : .8;
+        if (confidence < minimum) return false;
         ticket.state=DETECTED; ticket.detected=now; return true;
     }
     synchronized boolean claimCallback(Ticket ticket,long now) {
