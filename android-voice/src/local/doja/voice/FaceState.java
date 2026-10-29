@@ -4,6 +4,7 @@ package local.doja.voice;
 public enum FaceState {
     IDLE("En reposo"), PREPARING("Preparando"), READY("Sesión preparada"),
     LISTENING("Escuchando"), THINKING("Procesando"), SPEAKING("Hablando"),
+    DROWSY("Con sueño"), ASLEEP("Dormida"),
     MUTED("Micrófono apagado"), ERROR("Requiere atención");
 
     public final String label;

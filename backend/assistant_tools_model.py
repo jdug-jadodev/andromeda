@@ -124,8 +124,13 @@ class AssistantToolsModel(ConversationModel):
     guided_agenda = False
     alarm_lifecycle = False
     anchor_wall = anchor_boot = 0
-    response_start_ms = 60000
-    compute_ms = 55000
+    # Web search is slow by nature: network fetch (~30s) + local translation of
+    # a non-Spanish answer (up to 512 tokens ≈ 53-73s on the LFM 1.2B). The old
+    # 55-60s budget timed out mid-translation, closing the socket and killing the
+    # llama-server via SIGPIPE when it wrote the response (see worker_answers).
+    # This turn budget is a ceiling, not a delay: fast turns still finish early.
+    response_start_ms = 150000
+    compute_ms = 150000
     # The five-tool cold prefix exceeded 30s on Moto. This public-only startup
     # budget is separate from human turns and remains below the 90s worker guard.
     preparation_ms = 45000

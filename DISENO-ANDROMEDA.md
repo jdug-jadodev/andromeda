@@ -233,3 +233,11 @@ Interfaz se aborda **después** de que funcione el núcleo:
 - Activación: cara dinámica de Andrómeda, entrada suave desde un lado como si llegara corriendo, animaciones, movimientos, gestos y estados expresivos. Mantener la cara al pensar, con expresión pensativa. No presentar emoción animada como sentimientos reales del modelo.
 - Brillo con cola que recorre todo el borde **durante procesamiento**, color personalizable; no ocultar la cara. El usuario ya concretó este loader como indicador de pensamiento. No añadir efectos de batería bajo esta autorización.
 - Reemplazar y finalmente retirar el **APK launcher Doha** cuando la nueva interfaz funcione como HOME y haya recuperación probada. Mantener respaldo y posibilidad de volver atrás. No desinstalar ni cambiar HOME ahora; no confundir launcher con backend Debian/Nginx/SSH ni borrar sus datos por compartir el nombre Doha.
+
+## Cara solo con ojos y sueño por silencio (2026-10-28)
+
+- `FaceView` dibuja solo ojos, sin boca, y todo valor visible se acerca despacio a su objetivo (sin saltos). La referencia visual es `artifacts/andromeda-face-preview.html`, con las mismas fórmulas. El único cambio de color de los ojos es el fallo (`ERROR` y la reacción `SAD`).
+- Estados nuevos `DROWSY` (con sueño) y `ASLEEP` (dormida: ojos como paréntesis acostado y «Z» a la derecha). Reacciones dibujadas: tristeza, llorar, cariño y chiste (ojos de luna). Frío, calor, niebla, celebrar, asco y genial no se dibujan por ahora.
+- `ListeningSleepPolicy`: mientras el diálogo escucha y nadie habla, 15 s despierta, 10 s con sueño, 5 s dormida. Si una voz llega con sueño o dormida (pasa a pensando o hablando), se despierta asustada. A los 30 s el backend cierra la escucha y la cara se desvanece hacia el reloj.
+- La ventana de escucha era de 50 s. Ahora es 30 s en `backend/conversation_voice.py` (`LISTEN_IDLE_MS`) y en `ListeningSleepPolicy.CLOSE_AFTER_MS`; la app rechaza el `ready` del backend si los dos números no coinciden, así que se cambian juntos.
+- Límite conocido: el susto llega cuando el backend entrega la transcripción (al terminar de hablar), no al empezar la voz.

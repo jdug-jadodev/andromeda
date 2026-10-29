@@ -30,6 +30,15 @@ public class MainActivity extends Activity {
     TextView clock, date, weather, weatherDetail, wakeHint, state, transcript, previewBadge, optionsCountdown;
     Button microphoneStop, assistantStart, assistantAction;
     final UiPolicy policy = new UiPolicy();
+    private final ListeningSleepPolicy sleep = new ListeningSleepPolicy();
+    private boolean sleepWatching;
+    /** While listening, re-evaluates the face a few times per second so drowsy/asleep start on time. */
+    private final Runnable sleepWatch = new Runnable() {
+        public void run() {
+            sleepWatching = false;
+            if (resumed && VoiceService.active && VoiceService.uiState == FaceState.LISTENING) refreshServiceState();
+        }
+    };
     final Handler handler = new Handler(Looper.getMainLooper());
     private final SimpleDateFormat clockFormat = new SimpleDateFormat("HH:mm", new Locale("es", "CO"));
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("EEEE d 'de' MMMM", new Locale("es", "CO"));
@@ -920,10 +929,19 @@ public class MainActivity extends Activity {
     }
     void present(FaceState value, String text) {
         boolean nextFace = UiPolicy.showsFace(value);
+        boolean fallingAsleepToClock = !nextFace && face.getState() == FaceState.ASLEEP;
         face.setState(value); state.setText(text);
         if (nextFace != showingFace) {
             showingFace = nextFace; idleLayer.animate().cancel(); idleLayer.animate().withEndAction(null);
-            if (nextFace) {
+            faceLayer.animate().cancel(); faceLayer.setAlpha(1);
+            if (fallingAsleepToClock && resumed && !reducedMotion()) {
+                // She fell asleep and the session closed: the face fades out while the clock fades in.
+                idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(0); idleLayer.animate().alpha(1).setDuration(1200).start();
+                faceLayer.animate().alpha(0).setDuration(1200).withEndAction(() -> {
+                    if (!showingFace) faceLayer.setVisibility(View.GONE);
+                    faceLayer.setAlpha(1);
+                }).start();
+            } else if (nextFace) {
                 faceLayer.setVisibility(View.VISIBLE); face.enterRunning();
                 if (resumed && !reducedMotion()) idleLayer.animate().alpha(0).setDuration(180).withEndAction(() -> {
                     if (showingFace) idleLayer.setVisibility(View.GONE);
@@ -952,8 +970,16 @@ public class MainActivity extends Activity {
                 : "Di silencio una vez en cada fase · no habrá voz ni tonos"); transcript.setVisibility(View.VISIBLE);
             updateMicrophoneStop(); return;
         }
-        present(UiPolicy.serviceState(VoiceService.active,RingService.ringing || SilenceListener.recording(),VoiceService.uiState), SilenceListener.recording() ? "MICRÓFONO ACTIVO · silencio o Andrómeda, silencio"
+        FaceState service = UiPolicy.serviceState(VoiceService.active,RingService.ringing || SilenceListener.recording(),VoiceService.uiState);
+        // Dialogue listening only: after 15 s of silence she gets drowsy, at 25 s she sleeps, at 30 s the backend closes.
+        boolean dialogue = VoiceService.active && !RingService.ringing && !SilenceListener.recording();
+        long quietNow = SystemClock.uptimeMillis();
+        if (!dialogue) sleep.present(FaceState.IDLE, quietNow); // Any other audio restarts the silence clock.
+        FaceState shown = dialogue ? sleep.present(service, quietNow) : service;
+        if (ListeningSleepPolicy.startles(face.getState(), service)) face.startle();
+        present(shown, SilenceListener.recording() ? "MICRÓFONO ACTIVO · silencio o Andrómeda, silencio"
             : RingService.ringing ? "Temporizador sonando · micrófono de interrupción todavía apagado" : VoiceService.lastStatus);
+        if (dialogue && service == FaceState.LISTENING && !sleepWatching) { sleepWatching = true; handler.postDelayed(sleepWatch, 250); }
         transcript.setText(VoiceService.lastTranscript);
         transcript.setVisibility(VoiceService.lastTranscript.isEmpty() ? View.GONE : View.VISIBLE);
         updateMicrophoneStop();

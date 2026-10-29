@@ -85,8 +85,8 @@ class ReminderClarificationTests(unittest.TestCase):
         model.prepare();path,body,deadline=model.post.call_args.args
         self.assertEqual(path,'/v1/chat/completions');self.assertEqual(deadline,155000)
         self.assertEqual(body['max_tokens'],1);model.memory.messages.assert_not_called()
-        self.assertEqual(model.response_start_ms,baseline.response_start_ms);self.assertEqual(model.response_start_ms,60000)
-        self.assertEqual(model.compute_ms,baseline.compute_ms);self.assertEqual(model.compute_ms,55000)
+        self.assertEqual(model.response_start_ms,baseline.response_start_ms);self.assertEqual(model.response_start_ms,150000)
+        self.assertEqual(model.compute_ms,baseline.compute_ms);self.assertEqual(model.compute_ms,150000)
         self.assertEqual(model.turn_deadline(99900,400000),baseline.turn_deadline(99900,400000))
         self.assertEqual(baseline.preparation_ms,45000);self.assertEqual(model.preparation_ms,55000)
 

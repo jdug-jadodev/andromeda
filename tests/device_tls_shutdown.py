@@ -47,7 +47,7 @@ def main():
                     'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': 90,
                     'response_start_ms': 30000, 'input_source': 'synthetic_pcm', 'test_fixture': True,
                     'context_id': context_id, 'context_version': 1, 'restored_turns': len(memory.pairs),
-                    'session_id': uuid.uuid4().hex, 'continuous_chat': True, 'listen_idle_ms': 50000,
+                    'session_id': uuid.uuid4().hex, 'continuous_chat': True, 'listen_idle_ms': 30000,
                     'followup_offer': True, 'closing_farewell': True})
                 conn.settimeout(10)
                 if conn.recv(1) != b'': raise ValueError('Expected shutdown, not audio/control data')

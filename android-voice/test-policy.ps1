@@ -145,3 +145,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Greeting/reaction policy compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Face reaction policy tests failed' }
 & java -cp $output local.doja.voice.GreetingPolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Greeting period tests failed' }
+& javac -encoding UTF-8 -d $output "$source\FaceState.java" "$source\ListeningSleepPolicy.java" "$source\UiPolicy.java" "$PSScriptRoot\tests\ListeningSleepPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Listening sleep policy compilation failed' }
+& java -cp $output local.doja.voice.ListeningSleepPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Listening sleep policy tests failed' }

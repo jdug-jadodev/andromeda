@@ -1,39 +1,32 @@
 # ============================================================
 # Andrómeda — arrancar el motor (IA local)
 #
-# Cómo usarlo: abre PowerShell en esta carpeta y ejecuta:
+# Uso: abre PowerShell en esta carpeta y ejecuta:
 #     .\start-ia.ps1
 #
-# Qué hace: detiene el motor si está corriendo, lo arranca de
-# nuevo y espera a que cargue el modelo (~60-70 s).
+# Detiene el motor si está corriendo, lo arranca de nuevo y
+# espera a que cargue el modelo (~60-70 s).
 # ============================================================
 
-$ErrorActionPreference = 'Continue'
-
-Write-Host "== Andrómeda: arrancando el motor ==" -ForegroundColor Cyan
+Write-Host "== Andromeda: arrancando el motor ==" -ForegroundColor Cyan
 
 # 1) Si ya hay un motor corriendo, lo detenemos para arrancar limpio.
 $procs = adb shell "su -c 'ps -A'" 2>$null
-$running = ($procs | Select-String 'llama-server|start-andromeda-resident')
-if ($running) {
-    Write-Host "Motor activo detectado; deteniéndolo..." -ForegroundColor Yellow
-    # Mata el supervisor (sh), que dispara la limpieza del modelo y el backend.
-    $lockPid = (adb shell "su -c 'cat /data/local/tmp/andromeda-resident.lock/pid'").Trim()
-    if ($lockPid -and $lockPid -match '^\d+$') {
-        adb shell "su -c 'kill -TERM $lockPid'" | Out-Null
-    }
-    # Por si acaso, mata directamente los procesos del modelo y del backend.
-    adb shell "su -c 'pkill -f llama-server'" | Out-Null
-    adb shell "su -c 'pkill -f resident_voice'" | Out-Null
-    adb shell "su -c 'pkill -f start-andromeda-resident'" | Out-Null
+if ($procs -match 'llama-server') {
+    Write-Host "Motor activo detectado; deteniendolo..." -ForegroundColor Yellow
+    $lockPid = (adb shell "su -c 'cat /data/local/tmp/andromeda-resident.lock/pid'" 2>$null).Trim()
+    if ($lockPid -match '^\d+$') { adb shell "su -c 'kill -TERM $lockPid'" 2>&1 | Out-Null }
+    adb shell "su -c 'pkill -f llama-server; pkill -f resident_voice; pkill -f start-andromeda-resident'" 2>&1 | Out-Null
     Start-Sleep -Seconds 6
 }
 
-# 2) Arrancar el motor.
+# 2) Arrancar el motor. Usamos Start-Process (retorna al instante) para
+#    no quedarnos colgados esperando al proceso de fondo.
 Write-Host "Arrancando el motor..." -ForegroundColor Cyan
-adb shell "su -c 'cd /data/local/doha-voice && setsid nohup /system/bin/sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms >/data/local/tmp/andromeda-start.log 2>&1 < /dev/null &'" | Out-Null
+$suCmd = "su -c 'cd /data/local/doha-voice && setsid nohup /system/bin/sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms >/data/local/tmp/andromeda-start.log 2>&1 < /dev/null &'"
+Start-Process -FilePath "adb" -ArgumentList @("shell", $suCmd) -WindowStyle Hidden | Out-Null
 
-# 3) Esperar a que cargue el modelo (tarda ~60-70 s).
+# 3) Esperar a que cargue el modelo (~60-70 s).
 Write-Host "Esperando a que cargue el modelo (~70 s)..." -ForegroundColor Cyan
 $ok = $false
 for ($i = 1; $i -le 18; $i++) {

@@ -120,7 +120,7 @@ final class VoiceConnection implements Closeable {
                         ready.optString("dialogue_reset_policy"),ready.optLong("action_window_ms"),ready.optLong("stream_start_ms"),ready.optLong("stream_idle_ms"),lifecycle)
                     || lifecycle && !AlarmSchedule.POLICY.equals(ready.optString("alarm_lifecycle_policy"))
                     || lifecycle && !ReminderDeletion.POLICY.equals(ready.optString("reminder_delete_policy"))
-                    || !ready.optBoolean("continuous_chat") || ready.optInt("listen_idle_ms") != 50000
+                    || !ready.optBoolean("continuous_chat") || ready.optLong("listen_idle_ms") != ListeningSleepPolicy.CLOSE_AFTER_MS
                     || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
                     || catalog != null && !ready.optBoolean("voice_entry")
                     || !snapshot.conversationId.equals(ready.optString("context_id"))

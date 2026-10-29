@@ -27,6 +27,8 @@ from conversation_entry import ConversationEntry
 
 PROTOCOL = 6
 MAX_STORED_TURNS = 24
+# Listening window. Android's ListeningSleepPolicy.CLOSE_AFTER_MS must match: 15 s awake, 10 s drowsy, 5 s asleep.
+LISTEN_IDLE_MS = 30000
 MAX_TEXT_UNITS = 5700  # Same text budget as six maximum-sized 0.5 turns.
 
 
@@ -713,7 +715,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         **({'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,
                             'action_window_ms': ACTION_WINDOW_MS, 'stream_start_ms': STREAM_START_MS, 'stream_idle_ms': STREAM_IDLE_MS} if continuous_voice else {}),
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
-                       'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True,
+                       'listen_idle_ms': LISTEN_IDLE_MS, 'followup_offer': True, 'closing_farewell': True,
                        'voice_entry': entry is not None, 'speech_interrupt': True})
     try:
         while continuous_voice or now_ms() < session_end:
@@ -735,7 +737,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 if (pending_reset is None and turn is None and model.memory.last_human
                         and current-model.memory.last_human >= 3600000): request_context('human_inactivity')
             # Inactivity pauses reception; it does not delete or split a chat.
-            if state == 'listen' and current - activation >= 50000: reset()
+            if state == 'listen' and current - activation >= LISTEN_IDLE_MS: reset()
             if turn is not None:
                 if state == 'thinking' and current >= turn['compute_end']:
                     if assistant_tools: observe_tools_technical(model, sequence, turn['speech_end'], 2)

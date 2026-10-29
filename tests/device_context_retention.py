@@ -65,7 +65,7 @@ def main():
                         'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': False, 'test_fixture': True,
                         'clock': 'boottime_ms', 'server_time_ms': now_ms(), 'seconds': 90, 'response_start_ms': 30000,
                         'input_source': 'synthetic_pcm', 'context_version': 1, 'restored_turns': expected,
-                        'continuous_chat': True, 'listen_idle_ms': 50000, 'followup_offer': True, 'closing_farewell': True})
+                        'continuous_chat': True, 'listen_idle_ms': 30000, 'followup_offer': True, 'closing_farewell': True})
                     conn.settimeout(6)
                     if phase in (0, 1):
                         last_human = now_ms() - 300; turn_id = uuid.uuid4().hex

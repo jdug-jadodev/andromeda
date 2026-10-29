@@ -156,9 +156,9 @@ class WorkerFirstTests(unittest.TestCase):
             model=AssistantToolsModel(key,owned=Mock(),clock=lambda:100000)
             with patch.object(model,'post',side_effect=TimeoutError()):
                 deadline=model.start('hola',99000,400000); model.thread.join(1)
-            self.assertEqual(deadline,155000); self.assertEqual(model.work_deadline,deadline)
-            self.assertLess(deadline,99000+60000)
-            self.assertEqual(model.turn_deadline(80000,400000),136500)
+            self.assertEqual(deadline,245500); self.assertEqual(model.work_deadline,deadline)
+            self.assertLess(deadline,99000+150000)
+            self.assertEqual(model.turn_deadline(80000,400000),226500)
             self.assertEqual(model.turn_deadline(99000,110000),108500)
             plain=ConversationModel(key,owned=Mock(),clock=lambda:100000)
             self.assertEqual(plain.turn_deadline(99000,400000),122000)

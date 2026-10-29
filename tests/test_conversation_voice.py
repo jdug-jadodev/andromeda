@@ -397,10 +397,16 @@ class ConversationVoiceTests(unittest.TestCase):
         self.assertEqual(model.observed_contexts[-1][-1]['content'], 'sí y las luces de la sala')
         self.assertEqual(model.observed_contexts[-1][-2]['content'], '¿Necesitas algo más?')
 
-    def test_fifty_second_listen_timeout_pauses_without_forgetting_chat(self):
-        events, model = self.run_session([(100000, [self.control('activate')]), (150000, [])])
+    def test_thirty_second_listen_timeout_pauses_without_forgetting_chat(self):
+        events, model = self.run_session([(100000, [self.control('activate')]), (130000, [])])
         self.assertEqual(events[-1]['state'], 'wake'); self.assertNotIn('conversation_closed', [e['type'] for e in events])
         model.start.assert_not_called()
+
+    def test_listening_window_is_announced_and_stays_open_until_thirty_seconds(self):
+        # 15 s awake + 10 s drowsy + 5 s asleep on the phone face; Android must receive the same window.
+        events, _ = self.run_session([(100000, [self.control('activate')]), (129900, [])])
+        self.assertEqual(next(e for e in events if e['type'] == 'ready')['listen_idle_ms'], 30000)
+        self.assertEqual(events[-1]['state'], 'command')
 
     def test_speech_tail_is_not_fed_to_a_followup_recognizer(self):
         def ack_and_echo(events):
