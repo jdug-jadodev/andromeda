@@ -9,7 +9,7 @@ import uuid
 from doja_intents import normalized
 
 
-ASK = '¿Quieres que ejecute esa orden de luces? Di sí para confirmar o no para descartarla.'
+ASK = '¿Quieres que ejecute esa orden de luces?'
 CANCELLED = 'He descartado la orden de luces. No cambié ninguna luz.'
 YES = {'si', 'si por favor', 'si gracias', 'si hazlo', 'si adelante', 'si correcto',
        'correcto', 'exacto', 'adelante', 'hazlo', 'de acuerdo', 'confirmo', 'dale'}

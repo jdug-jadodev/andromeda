@@ -198,8 +198,10 @@ public class MainActivity extends Activity {
         faceLayer.addView(face, new FrameLayout.LayoutParams(-1, -1));
         LinearLayout caption = new LinearLayout(this); caption.setOrientation(LinearLayout.VERTICAL);
         caption.setPadding(dp(42), 0, dp(42), dp(20));
+        // The status line is hidden on screen but kept in the tree so TalkBack still announces it.
         state = label(caption, "", 18, Color.rgb(221, 232, 251)); state.setMaxLines(2);
         state.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        state.setAlpha(0);
         transcript = label(caption, "", 14, Color.rgb(154, 180, 202)); transcript.setMaxLines(2);
         faceLayer.addView(caption, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
         faceLayer.setVisibility(View.GONE); root.addView(faceLayer, new FrameLayout.LayoutParams(-1, -1));

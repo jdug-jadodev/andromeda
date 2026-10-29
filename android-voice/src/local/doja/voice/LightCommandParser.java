@@ -79,6 +79,8 @@ public final class LightCommandParser {
         if(value.matches(".*\\b(calido|calido tranquilo|tranquilo|relajante)\\b.*"))
             return LightCommand.preset(target,"calido_tranquilo");
         if(value.matches(".*\\b(gamer|gaming|videojuegos)\\b.*"))return LightCommand.pattern(target,"gamer");
+        String closest = closestSavedColorName(value, saved);
+        if (closest != null) return LightCommand.color(target, saved.get(closest), requestedBrightness);
         throw new IllegalArgumentException("Color o preset de luz no reconocido");
     }
 
@@ -94,6 +96,44 @@ public final class LightCommandParser {
             }
         }
         return null;
+    }
+
+    private static int levenshtein(String a, String b) {
+        int[][] d = new int[a.length() + 1][b.length() + 1];
+        for (int i = 0; i <= a.length(); i++) d[i][0] = i;
+        for (int j = 0; j <= b.length(); j++) d[0][j] = j;
+        for (int i = 1; i <= a.length(); i++)
+            for (int j = 1; j <= b.length(); j++)
+                d[i][j] = Math.min(Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1),
+                    d[i - 1][j - 1] + (a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1));
+        return d[a.length()][b.length()];
+    }
+
+    /** Nearest saved color name by edit distance, to propose a close match when the
+     *  exact name was misheard (e.g. "hizo" for "isa"). Null if none is close. */
+    static String closestSavedColorName(String value, Map<String, LightColor> saved) {
+        if (saved == null || saved.isEmpty()) return null;
+        String[] words = value.split("\\s+");
+        String best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (String key : saved.keySet()) {
+            for (String alias : presetAliases(key)) {
+                if (alias.isEmpty() || alias.length() > 32 || PRESET_STOP.contains(alias)) continue;
+                for (String word : words) {
+                    int distance = levenshtein(phonetic(word), phonetic(alias));
+                    if (distance < bestDistance) { bestDistance = distance; best = key; }
+                }
+            }
+        }
+        if (best == null || bestDistance > 2) return null;
+        return best;
+    }
+
+    /** Spanish phonetic key: the leading 'h' is silent and 'z' sounds like 's'. */
+    private static String phonetic(String s) {
+        if (s == null || s.isEmpty()) return s;
+        String value = s.charAt(0) == 'h' ? s.substring(1) : s;
+        return value.replace('z', 's');
     }
 
     private static List<String> presetAliases(String key){

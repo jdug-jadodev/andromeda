@@ -9,10 +9,7 @@ from conversation_flow import ConversationFlow
 from phone_volume import VolumeTrial
 from light_trial import LightTrial
 
-REJECTION = ('No he confirmado ninguna acción ni búsqueda con esa petición. '
-             'Indica una sola petición completa: fecha y hora inequívocas para la alarma, '
-             'contenido y momento para el recordatorio, «busca en Internet» y la consulta, volumen de 0 a 100 por ciento, '
-             'o una orden clara para una luz.')
+REJECTION = 'No pude confirmar esa petición. Dime claramente qué quieres hacer.'
 
 
 def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False, weekday=0, minute_of_day=-1):

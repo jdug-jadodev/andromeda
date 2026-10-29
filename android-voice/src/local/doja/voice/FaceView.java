@@ -11,7 +11,6 @@ import android.view.View;
 public final class FaceView extends View implements Choreographer.FrameCallback {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF bounds = new RectF();
-    private final Path mouth = new Path();
     private FaceState state = FaceState.IDLE;
     private FaceReaction reaction = FaceReaction.NONE;
     private long reactionUntil;
@@ -104,7 +103,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
             case PREPARING: targetOpen = .6f; targetSmile = .15f; break;
             case READY: color = Color.rgb(111, 215, 234); break;
             case LISTENING: targetOpen = 1; targetSeparation = 1.05f; color = Color.rgb(111, 231, 248); break;
-            case THINKING: targetOpen = .65f; targetSmile = .1f; color = Color.rgb(191, 163, 255); break;
+            case THINKING: targetOpen = .65f; targetSmile = .1f; break;
             case SPEAKING: targetOpen = .9f; targetSmile = .8f; color = Color.rgb(124, 235, 205); break;
             case ERROR: targetOpen = .55f; targetSmile = -.3f; color = Color.rgb(247, 193, 119); break;
         }
@@ -133,7 +132,8 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         float time = reducedMotion ? 0 : (now % 120000) / 1000f;
         float breath = reducedMotion ? 0 : (float)Math.sin(time * 1.7f);
         float gaze = reducedMotion ? 0 : (float)Math.sin(time * .48f) * size * .055f;
-        if (state == FaceState.THINKING) gaze += size * .09f;
+        // Thinking sweeps the eyes left and right, like searching for an answer.
+        if (state == FaceState.THINKING && !reducedMotion) gaze = (float)Math.sin(time * 1.5f) * size * .17f;
         float cx = getWidth() / 2f + gaze, cy = getHeight() * .44f + breath * size * .025f;
         int saved = canvas.save();
         if (!reducedMotion && entranceStarted > 0) {
@@ -150,57 +150,22 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
             long phase = now % 4700;
             if (phase < 150) blink = .06f + .94f * Math.abs(phase - 75) / 75f;
         }
-        float eyeWidth = size * .62f, eyeHeight = Math.max(size * .045f, size * .93f * openness * blink);
-        float gap = size * .9f * separation;
+        // Perfectly round, larger and closer eyes like the reference. Blink squashes them to a line.
+        float eyeWidth = size * 1.2f, eyeHeight = Math.max(size * .06f, eyeWidth * blink);
+        float gap = size * .66f * separation;
         paint.setStyle(Paint.Style.FILL);
-        // A few translucent outlines give depth without blur/shadow buffers.
-        for (int layer = 3; layer >= 1; layer--) {
-            paint.setColor(faceColor); paint.setAlpha(5 + (3 - layer) * 3);
-            float spread = size * .055f * layer;
-            eye(canvas, cx - gap, cy, eyeWidth + spread, eyeHeight + spread, size * .22f);
-            eye(canvas, cx + gap, cy, eyeWidth + spread, eyeHeight + spread, size * .22f);
-        }
         paint.setColor(faceColor); paint.setAlpha(255);
-        eye(canvas, cx - gap, cy, eyeWidth, eyeHeight, size * .22f);
-        eye(canvas, cx + gap, cy, eyeWidth, eyeHeight, size * .22f);
-        if (state == FaceState.THINKING) {
-            // Asymmetric brows and a sideways glance, rather than hiding the face.
-            paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, size * .045f));
-            paint.setStrokeCap(Paint.Cap.ROUND);
-            canvas.drawLine(cx - gap - eyeWidth * .45f, cy - eyeHeight * .7f,
-                cx - gap + eyeWidth * .4f, cy - eyeHeight * .9f, paint);
-            canvas.drawLine(cx + gap - eyeWidth * .4f, cy - eyeHeight * .85f,
-                cx + gap + eyeWidth * .4f, cy - eyeHeight * .6f, paint);
-            paint.setStyle(Paint.Style.FILL);
-        }
+        eye(canvas, cx - gap, cy, eyeWidth, eyeHeight);
+        eye(canvas, cx + gap, cy, eyeWidth, eyeHeight);
 
-        float y = cy + size * .82f;
-        if (state == FaceState.SPEAKING) {
-            float opening = reducedMotion ? .12f : .08f + .16f * Math.abs((float)Math.sin(time * 11));
-            bounds.set(cx - size * .25f, y - size * opening, cx + size * .25f, y + size * opening);
-            canvas.drawRoundRect(bounds, size * .12f, size * .12f, paint);
-        } else {
-            mouth.reset(); mouth.moveTo(cx - size * .32f, y);
-            mouth.quadTo(cx, y + size * .34f * smile, cx + size * .32f, y);
-            paint.setStyle(Paint.Style.STROKE); paint.setStrokeCap(Paint.Cap.ROUND);
-            paint.setStrokeWidth(Math.max(2, size * .045f)); canvas.drawPath(mouth, paint);
-            paint.setStyle(Paint.Style.FILL);
-        }
-        if (state == FaceState.THINKING || state == FaceState.PREPARING) {
-            for (int dot = 0; dot < 3; dot++) {
-                float wave = reducedMotion ? .5f : .5f + .5f * (float)Math.sin(time * 4 - dot * .9f);
-                paint.setAlpha(70 + Math.round(150 * wave));
-                canvas.drawCircle(cx + (dot - 1) * size * .24f, y + size * .42f, size * .035f, paint);
-            }
-            paint.setAlpha(255);
-        }
-        drawReaction(canvas, cx, cy, size, gap, eyeWidth, eyeHeight, y);
+        // Eyes only: no mouth and no state dots below the face.
+        drawReaction(canvas, cx, cy, size, gap, eyeWidth, eyeHeight);
         paint.setAlpha(255);
         paint.setStyle(Paint.Style.FILL);
         canvas.restoreToCount(saved);
     }
     private void drawReaction(Canvas canvas, float cx, float cy, float size,
-            float gap, float eyeWidth, float eyeHeight, float mouthY) {
+            float gap, float eyeWidth, float eyeHeight) {
         switch (reaction) {
             case SAD:
                 paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, size * .035f));
@@ -214,16 +179,16 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
                 paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(91, 165, 235));
                 for (int side = -1; side <= 1; side += 2) {
                     float x = cx + side * gap;
-                    canvas.drawOval(new RectF(x - size * .035f, cy + eyeHeight * .45f,
-                        x + size * .035f, cy + eyeHeight * .8f), paint);
-                    canvas.drawCircle(x, cy + eyeHeight * .92f, size * .04f, paint);
+                    canvas.drawOval(new RectF(x - size * .035f, cy + eyeHeight * .62f,
+                        x + size * .035f, cy + eyeHeight * .92f), paint);
+                    canvas.drawCircle(x, cy + eyeHeight * .98f, size * .04f, paint);
                 }
                 break;
             case COLD:
                 paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, size * .03f));
                 paint.setColor(Color.rgb(111, 179, 245));
                 for (int side = -1; side <= 1; side += 2) {
-                    float x = cx + side * size * 1.05f;
+                    float x = cx + side * size * 1.65f;
                     for (int i = 0; i < 3; i++) {
                         float y = cy + (i - 1) * size * .18f;
                         canvas.drawLine(x - size * .08f, y, x + size * .08f, y, paint);
@@ -232,7 +197,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
                 break;
             case HOT:
                 paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(255, 111, 87));
-                float sweatX = cx + size * .62f, sweatY = cy - size * .2f;
+                float sweatX = cx + size * 1.55f, sweatY = cy - size * .2f;
                 Path drop = new Path(); drop.moveTo(sweatX, sweatY - size * .1f);
                 drop.quadTo(sweatX + size * .09f, sweatY + size * .06f, sweatX, sweatY + size * .13f);
                 drop.quadTo(sweatX - size * .09f, sweatY + size * .06f, sweatX, sweatY - size * .1f);
@@ -249,28 +214,15 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
                 paint.setStyle(Paint.Style.FILL);
                 for (int i = 0; i < 9; i++) {
                     paint.setColor(colors[i % colors.length]);
-                    float angle = (float)(Math.PI * 2 * i / 9), radius = size * (1.05f + (i % 2) * .18f);
+                    float angle = (float)(Math.PI * 2 * i / 9), radius = size * (1.7f + (i % 2) * .2f);
                     canvas.drawCircle(cx + (float)Math.cos(angle) * radius,
                         cy + (float)Math.sin(angle) * radius * .8f, size * .045f, paint);
                 }
                 break;
             case LOVE:
                 paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(255, 105, 170));
-                drawHeart(canvas, cx - size * .95f, cy - size * .35f, size * .14f);
-                drawHeart(canvas, cx + size * .95f, cy - size * .45f, size * .11f);
-                break;
-            case SILLY:
-                paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(242, 123, 153));
-                canvas.drawOval(new RectF(cx - size * .12f, mouthY + size * .02f,
-                    cx + size * .12f, mouthY + size * .26f), paint);
-                break;
-            case DISGUST:
-                paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, size * .035f));
-                paint.setColor(Color.rgb(83, 145, 83));
-                Path wave = new Path(); wave.moveTo(cx - size * .3f, mouthY);
-                for (int i = 1; i <= 4; i++) wave.lineTo(cx - size * .3f + i * size * .15f,
-                    mouthY + (i % 2 == 0 ? -1 : 1) * size * .08f);
-                canvas.drawPath(wave, paint);
+                drawHeart(canvas, cx - size * 1.7f, cy - size * .35f, size * .14f);
+                drawHeart(canvas, cx + size * 1.7f, cy - size * .45f, size * .11f);
                 break;
             case COOL:
                 paint.setStyle(Paint.Style.FILL); paint.setColor(Color.rgb(24, 27, 38)); paint.setAlpha(235);
@@ -292,8 +244,8 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         canvas.drawPath(heart, paint);
     }
 
-    private void eye(Canvas canvas, float x, float y, float width, float height, float radius) {
+    private void eye(Canvas canvas, float x, float y, float width, float height) {
         bounds.set(x - width / 2, y - height / 2, x + width / 2, y + height / 2);
-        canvas.drawRoundRect(bounds, radius, radius, paint);
+        canvas.drawOval(bounds, paint);
     }
 }

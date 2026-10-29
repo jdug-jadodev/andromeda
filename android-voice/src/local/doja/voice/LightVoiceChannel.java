@@ -14,7 +14,7 @@ import org.json.JSONObject;
  * called.
  */
 final class LightVoiceChannel {
-    static final String ASK = "¿Quieres que ejecute esa orden de luces? Di sí para confirmar o no para descartarla.";
+    static final String ASK = "¿Quieres que ejecute esa orden de luces?";
     static final String CANCELLED = "He descartado la orden de luces. No cambié ninguna luz.";
     private static final String UNKNOWN = "No llegó la confirmación de las luces. El resultado es incierto; revísalas antes de pedir otra.";
     private static final Set<String> YES = new HashSet<>(Arrays.asList("si", "si por favor", "si gracias", "si hazlo", "si adelante",
