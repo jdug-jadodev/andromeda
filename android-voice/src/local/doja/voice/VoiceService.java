@@ -16,6 +16,8 @@ import java.util.concurrent.*;
 public class VoiceService extends Service {
     public static final String STATE = "local.doja.voice.STATE";
     public static volatile boolean active = false;
+    /** True once she has said her closing words and is only waiting for the authenticated close (face may jump out). */
+    public static volatile boolean closingAfterSpeech = false;
     public static volatile boolean wakeListening = false;
     public static volatile boolean wakeTestActive = false;
     public static volatile boolean conversationTestActive = false;
@@ -211,6 +213,7 @@ public class VoiceService extends Service {
             .setContentText(assistantTools ? "Agenda y web explícita · experimental. Toca Detener." : timerTrial ? "Timer por petición validada; resultado y cierre. Toca Detener." : conversationOnly ? "Conversación LFM sin acciones. Toca Detener." : wakeOnly ? "Solo activación y transcripción local; sin órdenes. Toca Detener." : "Audio local. Toca Detener para silenciar.").setOngoing(true)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop).build();
         startForeground(10, notification);
+        closingAfterSpeech = false;
         running = active = true;
         if (!wakeOnly && !decoderCheck) {
             silenceListener = new SilenceListener(this, () -> {
@@ -1277,6 +1280,7 @@ public class VoiceService extends Service {
         boolean closing = conversationOnly && conversationTurn.awaitingClose();
         if (closing) {
             activeSpeechId = ""; speaking = true; // Keep capture stopped until authenticated close.
+            closingAfterSpeech = true;
             state("Cerrando charla · micrófono en pausa", FaceState.PREPARING, null);
             main.postDelayed(() -> { if (running && conversationTurn.awaitingClose()) {
                 lastError = "No se confirmó el cierre de la charla"; stopSelf();

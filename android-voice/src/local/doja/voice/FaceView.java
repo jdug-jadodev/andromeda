@@ -29,7 +29,8 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     private final int[] colorTarget = new int[3];
     private FaceState state = FaceState.IDLE;
     private FaceReaction reaction = FaceReaction.NONE;
-    private long reactionUntil, stateSince, startleAt;
+    private final float[] jump = new float[4];
+    private long reactionUntil, stateSince, startleAt, jumpStart;
     private boolean attached, foreground, scheduled, reducedMotion;
     private long lastFrame, lastDraw, drawnFrames;
     private long entranceStarted;
@@ -69,6 +70,11 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     void startle() {
         startleAt = reducedMotion ? 0 : SystemClock.uptimeMillis(); invalidate();
     }
+    /** The session ended after she spoke: crouch, spring up and fall out of the bottom (see FaceExitMotion). */
+    void startJump() {
+        jumpStart = reducedMotion ? 0 : SystemClock.uptimeMillis(); invalidate();
+    }
+    void endJump() { jumpStart = 0; invalidate(); }
 
     public void setForeground(boolean value) {
         foreground = value;
@@ -109,7 +115,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     public void doFrame(long nanos) {
         if (!scheduled) return;
         // Active face capped at 30 fps; ambient face at 15 fps to spare CPU/battery.
-        boolean ambient = state == FaceState.IDLE || state == FaceState.MUTED || state == FaceState.ASLEEP;
+        boolean ambient = jumpStart == 0 && (state == FaceState.IDLE || state == FaceState.MUTED || state == FaceState.ASLEEP);
         long interval = ambient ? 65000000L : 32000000L;
         if (lastFrame == 0 || nanos - lastFrame >= interval) {
             lastFrame = nanos; invalidate();
@@ -123,7 +129,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         java.util.Arrays.fill(t, 0);
         t[SCALE] = t[GAP] = t[HEIGHT] = t[BREATH] = 1;
         color[0] = BASE[0]; color[1] = BASE[1]; color[2] = BASE[2];
-        switch (state) {
+        switch (jumpStart > 0 ? FaceState.READY : state) {   // while jumping she looks like a plain, awake face
             case MUTED: t[SCALE] = .72f; break;
             case PREPARING: t[SCALE] = .88f; break;
             case READY: t[SCALE] = .94f; break;
@@ -205,7 +211,9 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         // No blinking once the lids are already coming down.
         blink = 1 - (1 - blink) * (1 - Math.min(1, Math.max(current[CUT_UP], current[LID]) * 3));
 
-        float radius = size * .6f * current[SCALE] * (1 - .05f * current[CUT_DOWN]);
+        boolean jumping = jumpStart > 0 && !reducedMotion;
+        if (jumping) FaceExitMotion.jumpPose((now - jumpStart) / 1000f, jump);
+        float radius = size * .6f * current[SCALE] * (1 - .05f * current[CUT_DOWN]) * (jumping ? jump[3] : 1);
         float gap = size * .66f * current[GAP];
         // Thinking: looks diagonally up to one side, holds, then to the other. Eases in and out with THINK.
         float think = current[THINK];
@@ -222,9 +230,12 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         float pulse = reducedMotion ? 1 : 1 - .07f * (.5f + .5f * (float)Math.sin(time * 9.5f)) * speak;
         float hop = reducedMotion ? 0 : -Math.abs((float)Math.sin(time * 6.5f)) * size * .07f * current[CUT_DOWN];
         float y = cy + current[LOOK_Y] * size + thinkUp + bob + hop;
-        float scaleY = Math.max(.05f, blink * current[HEIGHT] * pulse);
+        float scaleY = Math.max(.05f, blink * current[HEIGHT] * pulse * (jumping ? jump[2] : 1));
         float leftX = x0 + sway - gap + radius * (1 - narrowLeft), rightX = x0 + sway + gap - radius * (1 - narrowRight);
 
+        if (jumping) {   // the whole face crouches, springs up and falls, tilting as it goes
+            canvas.translate(cx, cy + jump[0] * size); canvas.rotate((float)Math.toDegrees(jump[1])); canvas.translate(-cx, -cy);
+        }
         paint.setStyle(Paint.Style.FILL); paint.setColor(faceColor); paint.setAlpha(255);
         drawEye(canvas, leftX, y, radius, narrowLeft, scaleY, -1);
         drawEye(canvas, rightX, y, radius, narrowRight, scaleY, 1);

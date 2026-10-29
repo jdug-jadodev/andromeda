@@ -111,13 +111,57 @@ public final class FaceInstrumentation extends Instrumentation {
                 check(frames[1] - frames[0] >= 8, "Animation did not advance");
                 activity.present(FaceState.SPEAKING, "Vista previa · hablando (simulado)");
                 check(!activity.border.isProcessing() && !activity.border.isAnimating(), "Border continued outside processing");
+                activity.present(FaceState.LISTENING, "Vista previa · escuchando (simulado)");
                 activity.present(FaceState.READY, "Esperando activación");
                 check(activity.idleLayer.getVisibility() == View.VISIBLE && activity.faceLayer.getVisibility() == View.GONE, "Ready did not return to clock");
+                // She says goodbye and the session ends: the face jumps out while the clock screen falls in.
+                activity.present(FaceState.SPEAKING, "Vista previa · despedida (simulado)");
+                activity.present(FaceState.READY, "Esperando activación");
+                check(activity.isClosingFace() && activity.faceLayer.getVisibility() == View.VISIBLE
+                    && activity.idleLayer.getVisibility() == View.VISIBLE, "Goodbye did not start the jump");
                 activity.stopPreview(); activity.refreshServiceState();
+                check(activity.isClosingFace(), "A service refresh interrupted the goodbye");
                 activity.face.setForeground(false);
                 check(!activity.face.isAnimating(), "Background face still schedules frames");
                 activity.face.setForeground(true); activity.face.setReducedMotion(true);
                 check(!activity.face.isAnimating(), "Reduced motion still schedules frames");
+            });
+            SystemClock.sleep(FaceExitMotion.GONE_MS + 600);
+            runOnMainSync(() -> {
+                check(!activity.isClosingFace() && activity.faceLayer.getVisibility() == View.GONE
+                    && activity.idleLayer.getVisibility() == View.VISIBLE && activity.idleLayer.getTranslationY() == 0
+                    && activity.idleLayer.getAlpha() == 1f, "Goodbye did not finish at the clock");
+                // Falling asleep: when the session closes her eyes must stay closed while the face fades out.
+                activity.present(FaceState.ASLEEP, "Vista previa · dormida (simulado)");
+                activity.present(FaceState.READY, "Esperando activación");
+                check(activity.isClosingFace() && activity.face.getState() == FaceState.ASLEEP, "Eyes opened while falling asleep to the clock");
+                // Woken mid-exit: the exit is cancelled and the face stays on screen.
+                activity.present(FaceState.LISTENING, "Vista previa · escuchando (simulado)");
+                check(!activity.isClosingFace() && activity.faceLayer.getVisibility() == View.VISIBLE
+                    && activity.faceLayer.getAlpha() == 1f, "Waking her did not cancel the exit");
+                activity.present(FaceState.ASLEEP, "Vista previa · dormida (simulado)");
+                activity.present(FaceState.READY, "Esperando activación");
+            });
+            SystemClock.sleep(1800);
+            runOnMainSync(() -> check(!activity.isClosingFace() && activity.faceLayer.getVisibility() == View.GONE
+                && activity.idleLayer.getVisibility() == View.VISIBLE && activity.idleLayer.getAlpha() == 1f, "Sleep exit did not finish at the clock"));
+            // The real goodbye: after her last words the face reads "Cerrando charla" (PREPARING) and then the service stops.
+            runOnMainSync(() -> {
+                VoiceService.closingAfterSpeech = true;
+                activity.present(FaceState.PREPARING, "Cerrando charla · micrófono en pausa");
+                activity.present(FaceState.MUTED, "Micrófono apagado");
+                check(activity.isClosingFace() && activity.faceLayer.getVisibility() == View.VISIBLE, "Closing words then stop did not make the face jump");
+            });
+            SystemClock.sleep(FaceExitMotion.GONE_MS + 600);
+            runOnMainSync(() -> {
+                VoiceService.closingAfterSpeech = false;
+                check(!activity.isClosingFace() && activity.faceLayer.getVisibility() == View.GONE
+                    && activity.idleLayer.getVisibility() == View.VISIBLE && activity.idleLayer.getTranslationY() == 0,
+                    "Real goodbye did not finish at the clock");
+                // Without the closing words (for example a failed start) the face leaves without a jump.
+                activity.present(FaceState.PREPARING, "Preparando canal local");
+                activity.present(FaceState.MUTED, "Micrófono apagado");
+                check(!activity.isClosingFace() && activity.faceLayer.getVisibility() == View.GONE, "Face jumped without closing words");
             });
             result.putLong("draws_in_1200ms", frames[1] - frames[0]);
             check(!VoiceService.active && !RingService.ringing, "Visual test started audio");

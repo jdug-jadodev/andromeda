@@ -241,3 +241,10 @@ Interfaz se aborda **después** de que funcione el núcleo:
 - `ListeningSleepPolicy`: mientras el diálogo escucha y nadie habla, 15 s despierta, 10 s con sueño, 5 s dormida. Si una voz llega con sueño o dormida (pasa a pensando o hablando), se despierta asustada. A los 30 s el backend cierra la escucha y la cara se desvanece hacia el reloj.
 - La ventana de escucha era de 50 s. Ahora es 30 s en `backend/conversation_voice.py` (`LISTEN_IDLE_MS`) y en `ListeningSleepPolicy.CLOSE_AFTER_MS`; la app rechaza el `ready` del backend si los dos números no coinciden, así que se cambian juntos.
 - Límite conocido: el susto llega cuando el backend entrega la transcripción (al terminar de hablar), no al empezar la voz.
+
+### Salidas de la cara (2026-10-28)
+
+- **Despedida** (la cara pasaba de «hablando» a la pantalla del reloj): `MainActivity.present` detecta `SPEAKING` → cara oculta y llama a `FaceView.startJump()`. La cara se agacha, salta y cae por abajo; a los 0,55 s el reloj cae desde arriba con dos rebotes (`FaceExitMotion`, mismos números que el HTML). A los 1,6 s termina y se oculta la capa de la cara. Con animaciones desactivadas en el sistema no hay salto.
+- **Dormida que se cierra**: antes el estado pasaba a «sesión preparada» durante el desvanecimiento y los ojos se abrían un instante. Ahora la cara conserva `ASLEEP` (ojos cerrados) hasta desaparecer.
+- Mientras una salida está en curso, los refrescos del servicio no cambian la cara; si alguien llama a Andrómeda a mitad de la salida, se cancela y vuelve la cara normal.
+- `FaceInstrumentation` comprueba el salto, los ojos cerrados al dormirse y la cancelación.

@@ -149,3 +149,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Greeting period tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Listening sleep policy compilation failed' }
 & java -cp $output local.doja.voice.ListeningSleepPolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Listening sleep policy tests failed' }
+& javac -encoding UTF-8 -d $output "$source\FaceExitMotion.java" "$PSScriptRoot\tests\FaceExitMotionTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Face exit motion compilation failed' }
+& java -cp $output local.doja.voice.FaceExitMotionTest
+if ($LASTEXITCODE -ne 0) { throw 'Face exit motion tests failed' }

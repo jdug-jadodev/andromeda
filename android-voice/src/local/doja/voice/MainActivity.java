@@ -31,7 +31,9 @@ public class MainActivity extends Activity {
     Button microphoneStop, assistantStart, assistantAction;
     final UiPolicy policy = new UiPolicy();
     private final ListeningSleepPolicy sleep = new ListeningSleepPolicy();
-    private boolean sleepWatching;
+    private boolean sleepWatching, closingFace;
+    private android.animation.ValueAnimator clockDrop;
+    private final Runnable closingDone = new Runnable() { public void run() { finishClosing(); } };
     /** While listening, re-evaluates the face a few times per second so drowsy/asleep start on time. */
     private final Runnable sleepWatch = new Runnable() {
         public void run() {
@@ -927,20 +929,63 @@ public class MainActivity extends Activity {
                             .putExtra("seconds", index == 1 ? 300 : 90)); }
                     }).setNegativeButton("Volver", null).create())).create());
     }
+    boolean isClosingFace() { return closingFace; }
+    /** Finishes the exit animation: the face layer goes away and everything is back to normal. */
+    private void finishClosing() {
+        if (!closingFace) return;
+        closingFace = false;
+        handler.removeCallbacks(closingDone);
+        if (!showingFace) faceLayer.setVisibility(View.GONE);
+        faceLayer.setAlpha(1); transcript.setAlpha(1); idleLayer.setTranslationY(0); face.endJump();
+    }
+    /** Someone woke her while she was leaving: stop the exit and let the normal face path take over. */
+    private void cancelClosing() {
+        handler.removeCallbacks(closingDone);
+        if (clockDrop != null) { clockDrop.removeAllListeners(); clockDrop.cancel(); clockDrop = null; }
+        transcript.animate().cancel(); transcript.setAlpha(1);
+        faceLayer.animate().cancel(); faceLayer.setAlpha(1);
+        idleLayer.animate().cancel(); idleLayer.setTranslationY(0);
+        face.endJump(); closingFace = false;
+    }
+    /** She said goodbye: the face jumps into the void while the clock screen falls in with a bounce. */
+    private void startJumpExit() {
+        face.startJump();
+        idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(1);
+        final float height = Math.max(1, root.getHeight());
+        idleLayer.setTranslationY(-height * 1.12f);
+        clockDrop = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        clockDrop.setDuration(FaceExitMotion.CLOCK_DROP_MS); clockDrop.setStartDelay(FaceExitMotion.CLOCK_DELAY_MS);
+        clockDrop.setInterpolator(new android.view.animation.LinearInterpolator());
+        clockDrop.addUpdateListener(a ->
+            idleLayer.setTranslationY(FaceExitMotion.clockDropPercent((float)a.getAnimatedValue()) / 100f * height));
+        clockDrop.start();
+        transcript.animate().alpha(0).setStartDelay(FaceExitMotion.CLOCK_DELAY_MS).setDuration(800).start();
+        handler.postDelayed(closingDone, FaceExitMotion.GONE_MS);
+    }
     void present(FaceState value, String text) {
         boolean nextFace = UiPolicy.showsFace(value);
-        boolean fallingAsleepToClock = !nextFace && face.getState() == FaceState.ASLEEP;
-        face.setState(value); state.setText(text);
+        if (closingFace) {
+            if (!nextFace) { state.setText(text); border.setProcessing(false); return; } // Never change the face under its exit.
+            cancelClosing();
+        }
+        FaceState before = face.getState();
+        boolean animateExit = !nextFace && showingFace && resumed && !reducedMotion();
+        boolean sleepExit = animateExit && before == FaceState.ASLEEP;   // fell asleep and the session closed
+        // Said goodbye and the session closed. At that point the face reads "Cerrando charla" (PREPARING), not SPEAKING.
+        boolean jumpExit = animateExit && (before == FaceState.SPEAKING
+            || VoiceService.closingAfterSpeech && before == FaceState.PREPARING);
+        if (!sleepExit && !jumpExit) face.setState(value);               // while asleep her eyes stay closed until gone
+        state.setText(text);
         if (nextFace != showingFace) {
             showingFace = nextFace; idleLayer.animate().cancel(); idleLayer.animate().withEndAction(null);
-            faceLayer.animate().cancel(); faceLayer.setAlpha(1);
-            if (fallingAsleepToClock && resumed && !reducedMotion()) {
-                // She fell asleep and the session closed: the face fades out while the clock fades in.
+            faceLayer.animate().cancel(); faceLayer.setAlpha(1); idleLayer.setTranslationY(0);
+            if (sleepExit) {
+                // The face fades out with its eyes still closed while the clock fades in.
+                closingFace = true;
                 idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(0); idleLayer.animate().alpha(1).setDuration(1200).start();
-                faceLayer.animate().alpha(0).setDuration(1200).withEndAction(() -> {
-                    if (!showingFace) faceLayer.setVisibility(View.GONE);
-                    faceLayer.setAlpha(1);
-                }).start();
+                faceLayer.animate().alpha(0).setDuration(1200).withEndAction(this::finishClosing).start();
+            } else if (jumpExit) {
+                closingFace = true; startJumpExit();
             } else if (nextFace) {
                 faceLayer.setVisibility(View.VISIBLE); face.enterRunning();
                 if (resumed && !reducedMotion()) idleLayer.animate().alpha(0).setDuration(180).withEndAction(() -> {
