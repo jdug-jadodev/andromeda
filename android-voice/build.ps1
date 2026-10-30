@@ -35,7 +35,9 @@ $generatedSource = "package local.doja.voice; public final class AssistantConfig
 [System.IO.File]::WriteAllText($generated, $generatedSource, (New-Object System.Text.UTF8Encoding($false)))
 $sources = @(Get-ChildItem "$root\src" -Recurse -Filter *.java | ForEach-Object FullName)
 $sources += $generated
-& javac -encoding UTF-8 -source 8 -target 8 -classpath (($android + ';') + ($speechJars -join ';')) -d "$output\classes" @sources
+$errorPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # javac prints notes on stderr
+& javac -encoding UTF-8 -source 8 -target 8 -nowarn -Xlint:-options -classpath (($android + ';') + ($speechJars -join ';')) -d "$output\classes" @sources
+$ErrorActionPreference = $errorPreference
 if ($LASTEXITCODE -ne 0) { throw 'javac failed' }
 & jar cf "$output\classes.jar" -C "$output\classes" .
 if ($LASTEXITCODE -ne 0) { throw 'jar failed' }

@@ -40,6 +40,7 @@ WORK=''
 INNER=''
 WORK_INODE=''
 SUPERVISOR=''
+TV_API_PID=''
 cleanup() {
   if [ -n "$WORK" ]; then
     debian_user -c 'import sys; sys.path.insert(0,"/opt/doha-voice/pilot"); from resident_runtime import request_stop; request_stop(sys.argv[1])' "$INNER" 2>/dev/null || true
@@ -48,6 +49,7 @@ cleanup() {
     # Retain only the bounded, numeric, private metrics.json for later collection.
     rmdir "$WORK" 2>/dev/null || true
   fi
+  if [ -n "$TV_API_PID" ]; then kill -TERM "$TV_API_PID" 2>/dev/null || true; fi
   rm -f "$LOCK/work" "$LOCK/pid"
   rmdir "$LOCK" 2>/dev/null || true
 }
@@ -67,6 +69,19 @@ else
   chown 10218:10218 "$WORK/mode"
 fi
 chown 10218:10218 "$WORK"
+# API TV (control HTTP local de la TV LG): arranca junto al motor, se mata en cleanup.
+if [ -f "$ROOT/opt/doha-voice/tv/tv_api.py" ] && [ -f "$ROOT/opt/doha-voice/tv/api_token.txt" ]; then
+  if ! ss -lnt | grep -qE ':8770[[:space:]]'; then
+    TV_API_TOKEN=$(cat "$ROOT/opt/doha-voice/tv/api_token.txt")
+    chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
+      /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin \
+      TV_IP=192.168.1.9 TV_MAC=8C:83:94:0D:F9:B4 TV_API_TOKEN="$TV_API_TOKEN" \
+      TV_DEFAULT_OUTPUT=external_optical TV_WATCHDOG_SECONDS=120 \
+      /opt/doha-voice/bin/python -B /opt/doha-voice/tv/tv_api.py serve \
+      >/data/local/tmp/tvapi.log 2>&1 < /dev/null &
+    TV_API_PID=$!
+  fi
+fi
 debian_user /opt/doha-voice/benchmark-warm-client.py init "$INNER"
 su -g 10218 -G 3003 10218 -c "'/system/bin/env' -i PATH=/system/bin:/system/xbin HOME=/data/local/tmp '/data/local/doha-inference/resident-model-worker.sh' '$WORK' '$WORKER_MODE'" &
 SUPERVISOR=$!

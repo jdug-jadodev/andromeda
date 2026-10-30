@@ -30,7 +30,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     private FaceState state = FaceState.IDLE;
     private FaceReaction reaction = FaceReaction.NONE;
     private final float[] jump = new float[4];
-    private long reactionUntil, stateSince, startleAt, jumpStart;
+    private long reactionUntil, reactionStarted, stateSince, startleAt, jumpStart;
     private boolean attached, foreground, scheduled, reducedMotion;
     private long lastFrame, lastDraw, drawnFrames;
     private long entranceStarted;
@@ -55,9 +55,13 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         invalidate();
     }
     FaceState getState() { return state; }
+    private boolean blank;
+    void setBlank(boolean value) { blank = value; invalidate(); }
+    boolean isBlank() { return blank; }
     public void setReaction(FaceReaction value, long durationMs) {
         reaction = value == null ? FaceReaction.NONE : value;
-        reactionUntil = durationMs <= 0 ? 0 : SystemClock.uptimeMillis() + durationMs;
+        reactionStarted = SystemClock.uptimeMillis();
+        reactionUntil = durationMs <= 0 ? 0 : reactionStarted + durationMs;
         invalidate();
     }
     FaceReaction getReaction() { return reaction; }
@@ -172,6 +176,8 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         lastDraw = now;
         float size = Math.min(getWidth() / 4.6f, getHeight() / 2.6f);
         if (size <= 0) return;
+        if (blank) return;   // after a self-destruct there is no face left to draw
+        if (reaction.scene()) { drawScene(canvas, (now - reactionStarted) / 1000f, size); return; }
         float time = reducedMotion ? 0 : (now % 120000) / 1000f;
 
         computeTargets(time, now, colorTarget);
@@ -315,6 +321,135 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         canvas.restoreToCount(saved);
     }
 
+    // --- Self-destruct scenes. Same timelines, eye shapes, bomb, explosion and countdown as
+    // artifacts/andromeda-face-preview.html (sceneAt, drawEye, drawBomb, drawBoom, drawCountdown).
+    // One colour for everything, no mouth, no horns, no text on screen. ---
+    private static final int SCENE_COLOR = Color.rgb(164, 178, 255);
+    private static final float COUNT_START = 1.6f, COUNT_STEP = .7f;
+    private static final int COUNT_N = 10;
+
+    private void drawScene(Canvas canvas, float t, float size) {
+        float W = getWidth(), H = getHeight();
+        float scale = 1f, gapF = 1f, lookY = 0f, heightF = 1f, droop = 0f, cutDown = 0f, cutUp = 0f, lid = 0f;
+        float shake = 0f;
+        float bombAppear = -1f, bombBurn = 0f, boomE = -1f;
+        boolean hideFace = false;
+        int countN = 0; float countFrac = 0f;
+        switch (reaction) {
+            case EVIL_BOMB:   // «Ok, pero los llevaré conmigo»: lids, laugh, lit bomb, explosion.
+                if (t < 1.3f) { scale = 1.04f; lid = .25f; }
+                else if (t < 3.4f) { gapF = 1.05f; cutDown = 1f; lookY = -.03f; }
+                else { gapF = 1.05f; scale = 1.08f; shake = .008f; }
+                if (t >= 1f && t < 5.4f) { bombAppear = Math.min(1f, (t - 1f) / .4f); bombBurn = clamp01((t - 3.4f) / 2f); }
+                if (t >= 5.4f) { hideFace = true; boomE = Math.min(1f, t - 5.4f); }
+                break;
+            case COUNTDOWN:   // «Está bien»: calm eyes, full-screen countdown 10..1, then the complaint.
+                if (t < COUNT_START) { lid = .12f; lookY = .04f; }
+                else if (t < COUNT_START + COUNT_N * COUNT_STEP) {
+                    int i = (int) ((t - COUNT_START) / COUNT_STEP);
+                    hideFace = true; countN = COUNT_N - i; countFrac = (t - COUNT_START - i * COUNT_STEP) / COUNT_STEP;
+                } else { lid = .3f; lookY = .08f; scale = .92f; }
+                break;
+            case WINK_BOMB:   // «Ajá, claro. Adiós, humano»: both eyes open, the bomb goes off.
+                if (t < 1.2f) lid = .3f;
+                else lookY = -.02f;
+                if (t >= 1.2f && t < 3f) { bombAppear = Math.min(1f, (t - 1.2f) / .4f); bombBurn = clamp01((t - 1.6f) / 1.4f); }
+                if (t >= 3f) { hideFace = true; boomE = Math.min(1f, t - 3f); }
+                break;
+            default: return;
+        }
+        float jitter = shake > 0f ? (float) Math.sin(t * 60) * size * shake : 0f;
+        float cx = W / 2f + jitter, cy = H * .44f;
+        float R = size * .6f * scale * (1f - .05f * cutDown);
+        float gap = size * .66f * gapF;
+        float y = cy + lookY * size;
+        paint.setStyle(Paint.Style.FILL); paint.setColor(SCENE_COLOR); paint.setAlpha(255);
+        if (!hideFace) {
+            sceneEye(canvas, cx - gap, y, R, heightF, cutDown, cutUp, droop, lid, -1);
+            sceneEye(canvas, cx + gap, y, R, heightF, cutDown, cutUp, droop, lid, 1);
+        }
+        if (bombAppear >= 0f) bomb(canvas, W / 2f, H * .86f, size * .16f, bombAppear, bombBurn, t);
+        if (boomE >= 0f) boom(canvas, W / 2f, H * .86f, size * .16f, boomE, W, H);
+        if (countN > 0) countdown(canvas, countN, countFrac, size);
+        paint.setAlpha(255); paint.setStyle(Paint.Style.FILL);
+    }
+
+    private static float clamp01(float v) { return Math.max(0f, Math.min(1f, v)); }
+
+    // Eye as drawn by the HTML preview: a disc, cut by the lids, droop, a laughing arc, or a closed stroke.
+    private void sceneEye(Canvas c, float x, float y, float R, float sy, float cutDown, float cutUp, float droop, float lid, int side) {
+        float BIG = R * 20f, r2 = R * .92f;
+        c.save();
+        c.translate(x, y); c.scale(1f, sy);
+        if (lid > .002f) { float top = R * (-1f + 1.5f * lid); c.clipRect(-BIG, top, BIG, top + BIG); }
+        if (droop > .002f) {
+            float yo = R * (-1.3f + .84f * droop), yi = R * (-1.3f + .4f * droop), outer = side * R, inner = -side * R;
+            Path p = new Path();
+            p.moveTo(outer + side * 2f, yo); p.lineTo(inner - side * 2f, yi);
+            p.lineTo(inner - side * 2f, R * 2f); p.lineTo(outer + side * 2f, R * 2f); p.close();
+            c.clipPath(p);
+        }
+        if (cutDown > .002f) {
+            float d = R * (2f - 1.45f * cutDown);
+            Path p = new Path(); p.addRect(-BIG, -BIG, BIG, BIG, Path.Direction.CW);
+            Path hole = new Path(); hole.addCircle(0f, d, r2, Path.Direction.CW);
+            p.op(hole, Path.Op.DIFFERENCE); c.clipPath(p);
+        }
+        if (cutUp > .002f) {
+            float r = R * (1f - .88f * cutUp), half = R - r, sag = .4f * R * cutUp, yEnd = -sag / 2f;
+            Path p = new Path(); p.moveTo(-half, yEnd); p.quadTo(0f, yEnd + 2f * sag, half, yEnd);
+            paint.setStyle(Paint.Style.STROKE); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeWidth(r * 2f);
+            c.drawPath(p, paint);
+        } else c.drawCircle(0f, 0f, R, paint);
+        c.restore(); paint.setStyle(Paint.Style.FILL);
+    }
+    // Lit bomb: the fuse shortens from its tip toward the body as burn goes 0 -> 1.
+    private void bomb(Canvas c, float x, float y, float s, float appear, float burn, float t) {
+        float r = s * (.3f + .7f * appear);
+        paint.setStyle(Paint.Style.FILL); paint.setAlpha(Math.round(255 * Math.min(1f, appear * 1.5f)));
+        c.drawCircle(x, y, r, paint);
+        float endU = 1 - burn, px = x, py = y - r;
+        Path fuse = new Path();
+        for (int i = 0; i <= 24; i++) {
+            float u = endU * i / 24f, a = (1 - u) * (1 - u), b = 2 * (1 - u) * u, d = u * u;
+            px = a * x + b * (x + s * .9f) + d * (x + s * 1.1f);
+            py = a * (y - r) + b * (y - s * 2.6f) + d * (y - s * 1.9f);
+            if (i == 0) fuse.moveTo(px, py); else fuse.lineTo(px, py);
+        }
+        stroke(c, fuse, Math.max(2, s * .07f));
+        if (burn < 1f) {   // spark at the burning tip
+            for (int k = 0; k < 3; k++)
+                c.drawCircle(px + (k - 1) * s * .06f, py + (float) Math.sin(t * 35 + k) * s * .05f,
+                    s * (.06f + .04f * (float) Math.abs(Math.sin(t * 40 + k))), paint);
+        }
+        paint.setAlpha(255);
+    }
+    private void stroke(Canvas c, Path p, float width) {
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeWidth(width);
+        c.drawPath(p, paint); paint.setStyle(Paint.Style.FILL);
+    }
+    // Explosion: white flash, an expanding ring and twelve particles. e goes 0 -> 1.
+    private void boom(Canvas c, float x, float y, float s, float e, float W, float H) {
+        float k = 1 - e;
+        if (e < .3f) { paint.setColor(Color.WHITE); paint.setAlpha(Math.round(230 * (1 - e / .3f))); c.drawRect(0, 0, W, H, paint); }
+        paint.setColor(SCENE_COLOR); paint.setAlpha(Math.round(255 * k));
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, s * .25f * k));
+        c.drawCircle(x, y, s * (.6f + 2.6f * e), paint);
+        paint.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 12; i++) {
+            float a = (float) (i * Math.PI / 6 + .3), d = s * (.5f + 2.9f * e);
+            c.drawCircle(x + (float) Math.cos(a) * d, y + (float) Math.sin(a) * d, s * .12f * k, paint);
+        }
+        paint.setAlpha(255);
+    }
+    // Full-screen digit: pops in, then settles.
+    private void countdown(Canvas c, int n, float frac, float size) {
+        float k = 1.25f - .45f * Math.min(1, frac * 3);
+        paint.setColor(SCENE_COLOR); paint.setTypeface(Typeface.DEFAULT_BOLD); paint.setTextAlign(Paint.Align.CENTER);
+        paint.setTextSize(size * 1.5f * k);
+        c.drawText(String.valueOf(n), getWidth() / 2f, getHeight() / 2f - (paint.descent() + paint.ascent()) / 2f, paint);
+        paint.setTextAlign(Paint.Align.LEFT); paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD_ITALIC));
+    }
     private void drawHeart(Canvas canvas, float x, float y, float size) {
         path.reset();
         path.moveTo(x, y + size * .35f);

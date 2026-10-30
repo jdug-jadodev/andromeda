@@ -122,6 +122,13 @@ class AssistantToolsTrial:
         return response
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind'] == 'self_destruct':
+            # The model chose the tool; its scene is shown by Android while this line is spoken.
+            # No timer_control: the app's TimerActionChannel rejects unknown values as
+            # "Confirmación de acción no permitida". self_destruct is display+TTS only.
+            # explicit_close ends the chat after the line like "no necesito nada más", so the clock falls in.
+            return {'text': result['text'], 'face_scene': result['scene'], 'offered_more': False,
+                    'close_reason': 'explicit_close'}
         if self.read.inflight is not None: raise ValueError('A read result is already pending')
         if self.reminder_delete.active or self.reminder_delete.grant is not None:
             raise ValueError('A reminder deletion is already pending')

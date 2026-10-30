@@ -42,8 +42,9 @@ TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('create_reminder', 'Programa el recordatorio solicitado, también «recuérdame».'),
          tool('search_web', 'Busca en internet un dato actual que no sabes.'),
          tool('set_phone_volume', 'Ajusta el volumen multimedia del teléfono al porcentaje pedido. Ejemplos: sube el volumen al cien por ciento; baja el volumen al veinte por ciento; a la mitad. Sin argumentos.'),
-         tool('control_lights', 'Controla o programa SOLO las luces: encender, apagar, color validado, brillo con porcentaje y horario diario. La frase actual contiene el objetivo, las horas y los valores; sin argumentos. No hay televisor, estufa ni otros electrodomésticos.')]
-SYSTEM = ('Andrómeda. Responde con tu conocimiento las preguntas generales, cuentos e historias; usa herramientas solo para acciones (alarmas, recordatorios, luces, volumen). '
+         tool('control_lights', 'Controla o programa SOLO las luces: encender, apagar, color validado, brillo con porcentaje y horario diario. La frase actual contiene el objetivo, las horas y los valores; sin argumentos. No hay televisor, estufa ni otros electrodomésticos.'),
+         tool('self_destruct', 'Autodestrucción de Andrómeda si el humano dice autodestruyete, destruyete o muerete. Sin argumentos.')]
+SYSTEM = ('Andrómeda. Responde con tu conocimiento las preguntas generales, cuentos e historias; usa herramientas solo para acciones (alarmas, recordatorios, luces, volumen) y para autodestrucción (self_destruct).'
            'Para una orden de luces o su horario selecciona control_lights; no inventes objetivo, horas, color ni éxito. '
            'Solo puedes controlar las luces; para otros aparatos di que no puedes. '
            'Usa search_web solo para datos concretos que no sabes. '
@@ -78,6 +79,7 @@ TOOL_INTENT = {
     'search_web': r'\b(?:busca|buscar|internet|web|investiga|consulta|que es|quien es)\b',
     'set_phone_volume': r'\b(?:volumen|sube|baja|subir|bajar|silencio)\b',
     'control_lights': r'\b(?:luz|luces|enciende|apaga|prende|color|brillo|ilumina)\b',
+    'self_destruct': r'\b(?:auto ?destru\w*|destruy(?:ete|e te|e ti|ecte|ase)|muer(?:ete|ecte|e te|e ti)|morite)\b',
     'list_reminders': r'\b(?:recordatorio|recordatorios|lista|listar|muestra|lee|leeme|ver)\b',
     'delete_reminder': r'\b(?:elimina|borra|cancela|quita)\b',
 }
@@ -240,7 +242,11 @@ class AssistantToolsModel(ConversationModel):
     def enable_reminder_clarification(self):
         if self.reminder_clarification: return
         if not self.guided_agenda: raise ValueError('Reminder clarification requires guided tools')
-        self.preparation_ms = 55000  # Public prefix only; human response/compute/action deadlines stay unchanged.
+        self.preparation_ms = 75000  # Public prefix only; human response/compute/action deadlines stay unchanged.
+        # El prefijo del modo agenda+alarmas (~776 tokens) rondaba los 55s y cualquier
+        # herramienta nueva (p.ej. self_destruct) lo empujaba por encima del límite y
+        # daba TimeoutError en prepare(). Subimos el margen para absorber adiciones de
+        # personalidad/herramientas sin tocar el arranque. (Ver PARA-CLAUDE-AUTODESTRUCCION.md)
         self.reminder_clarification = True; original = self.payload
         def payload(messages, maximum=96):
             result = original(messages, maximum)
@@ -345,6 +351,9 @@ class AssistantToolsModel(ConversationModel):
                         opening(kind, human, self.reminder_clarification, self.anchor_wall)  # Question only; Android independently reconstructs.
                         return finish({'kind': 'agenda_dialogue_start', 'event_kind': kind}, 'agenda_question')
                     return finish(dict(value, kind='agenda_proposal'), 'accepted')
+                if name == 'self_destruct':
+                    from self_destruct import choose
+                    return finish(choose(), 'accepted')
                 if name == 'set_phone_volume':
                     if self.confirmed_volume:
                         return finish({'kind': 'volume_dialogue_start'}, 'volume_question')
@@ -379,6 +388,10 @@ class AssistantToolsModel(ConversationModel):
                 return finish({'kind': 'tools_rejected'}, 'web_' + reason)
             except (ValueError, KeyError, TypeError, AgendaValidationError, TimerValidationError):
                 return finish({'kind': 'tools_rejected'}, validation)
+        if tool_intent_matches('self_destruct', human):
+            # Phrases like "autodestruye", "auto destruye te" or "muerete" always start the self-destruct scene.
+            from self_destruct import choose
+            return finish(choose(), 'self_destruct_phrase')
         plain = normalized(human)
         if self.basic_assistant and re.search(r'\brecordatorios?\b',plain) and re.search(r'\b(?:lista|listar|listame|muestra|muestrame|dime|lee|leeme|leer|ver|que|cuales|cuantos|tengo|hay)\b',plain):
             return finish({'kind':'tools_rejected'},'missing_native_call')

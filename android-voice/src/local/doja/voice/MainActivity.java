@@ -90,8 +90,11 @@ public class MainActivity extends Activity {
             long faceAt = VoiceService.faceReactionAt;
             if (faceAt > lastFaceReactionAt) {
                 lastFaceReactionAt = faceAt;
-                if (face != null && VoiceService.faceReaction != FaceReaction.NONE)
-                    face.setReaction(VoiceService.faceReaction, 5000);
+                if (face != null && VoiceService.faceReaction != FaceReaction.NONE) {
+                    FaceReaction reaction = VoiceService.faceReaction;
+                    if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
+                    face.setReaction(reaction, reaction.durationMs());
+                }
             }
             if (CaptureProbeService.active) {
                 refreshServiceState();
@@ -948,8 +951,8 @@ public class MainActivity extends Activity {
         face.endJump(); closingFace = false;
     }
     /** She said goodbye: the face jumps into the void while the clock screen falls in with a bounce. */
-    private void startJumpExit() {
-        face.startJump();
+    private void startJumpExit(boolean selfDestructed) {
+        if (!selfDestructed) face.startJump();   // after a self-destruct there is no face to jump: only the clock falls
         idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(1);
         final float height = Math.max(1, root.getHeight());
         idleLayer.setTranslationY(-height * 1.12f);
@@ -962,8 +965,21 @@ public class MainActivity extends Activity {
         transcript.animate().alpha(0).setStartDelay(FaceExitMotion.CLOCK_DELAY_MS).setDuration(800).start();
         handler.postDelayed(closingDone, FaceExitMotion.GONE_MS);
     }
+    // A self-destruct scene outlasts its spoken line: keep the face until the scene ends, then Andrómeda is back on screen.
+    private String heldText; private long faceHoldUntil, sceneEnd;
+    // When the scene ends the clock falls in with the same goodbye exit as "no necesito nada más".
+    private final Runnable releaseHeldFace = new Runnable() { public void run() {
+        faceHoldUntil = 0; face.setState(FaceState.SPEAKING); present(FaceState.READY, heldText); } };
     void present(FaceState value, String text) {
         boolean nextFace = UiPolicy.showsFace(value);
+        long now = SystemClock.uptimeMillis();
+        if (!nextFace && showingFace && now < faceHoldUntil) {
+            heldText = text;
+            state.setText(text); border.setProcessing(false);
+            handler.removeCallbacks(releaseHeldFace);
+            handler.postDelayed(releaseHeldFace, faceHoldUntil - now);
+            return;
+        }
         if (closingFace) {
             if (!nextFace) { state.setText(text); border.setProcessing(false); return; } // Never change the face under its exit.
             cancelClosing();
@@ -974,6 +990,9 @@ public class MainActivity extends Activity {
         // Said goodbye and the session closed. At that point the face reads "Cerrando charla" (PREPARING), not SPEAKING.
         boolean jumpExit = animateExit && (before == FaceState.SPEAKING
             || VoiceService.closingAfterSpeech && before == FaceState.PREPARING);
+        // Leaving after a self-destruct scene: the face is gone, so draw nothing while the clock falls.
+        boolean selfDestructed = jumpExit && sceneEnd != 0 && now >= sceneEnd - 100 && now - sceneEnd < 20000;
+        if (selfDestructed) face.setBlank(true);
         if (!sleepExit && !jumpExit) face.setState(value);               // while asleep her eyes stay closed until gone
         state.setText(text);
         if (nextFace != showingFace) {
@@ -985,8 +1004,9 @@ public class MainActivity extends Activity {
                 idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(0); idleLayer.animate().alpha(1).setDuration(1200).start();
                 faceLayer.animate().alpha(0).setDuration(1200).withEndAction(this::finishClosing).start();
             } else if (jumpExit) {
-                closingFace = true; startJumpExit();
+                closingFace = true; startJumpExit(selfDestructed);
             } else if (nextFace) {
+                face.setBlank(false); sceneEnd = 0;
                 faceLayer.setVisibility(View.VISIBLE); face.enterRunning();
                 if (resumed && !reducedMotion()) idleLayer.animate().alpha(0).setDuration(180).withEndAction(() -> {
                     if (showingFace) idleLayer.setVisibility(View.GONE);
@@ -1001,7 +1021,8 @@ public class MainActivity extends Activity {
     void showReaction(FaceReaction reaction) {
         if (face == null || reaction == null || reaction == FaceReaction.NONE) return;
         lastFaceReactionAt = VoiceService.faceReactionAt;
-        face.setReaction(reaction, 5000);
+        if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
+        face.setReaction(reaction, reaction.durationMs());
     }
     void refreshServiceState() {
         if (AgendaDeliveryService.active) {

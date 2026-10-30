@@ -113,7 +113,7 @@ class AssistantToolsTests(unittest.TestCase):
         with self.assertRaises(ValueError): native_call(duplicate, 'tool_calls')
         payload = AssistantToolsModel.payload([{'role': 'system', 'content': 'old'}, {'role': 'user', 'content': 'Hola'}])
         self.assertEqual(payload['max_tokens'], 96); self.assertEqual(payload['tool_choice'], 'auto')
-        self.assertFalse(payload['parallel_tool_calls']); self.assertEqual(len(payload['tools']), 6)
+        self.assertFalse(payload['parallel_tool_calls']); self.assertEqual(len(payload['tools']), 7)
         self.assertTrue(all('required' in item['function']['parameters'] for item in TOOLS))
         self.assertTrue(all('required' not in item['function']['parameters'] for item in payload['tools']))
         self.assertEqual(next(item['function']['parameters']['properties'] for item in TOOLS if item['function']['name'] == 'search_web'), {})

@@ -20,11 +20,13 @@ if ($procs -match 'llama-server') {
     Start-Sleep -Seconds 6
 }
 
-# 2) Arrancar el motor. Usamos Start-Process (retorna al instante) para
-#    no quedarnos colgados esperando al proceso de fondo.
+# 2) Arrancar el motor en un job de fondo. El `adb shell` se queda "colgado"
+#    porque el proceso de fondo retiene su stdout, pero el job corre aparte y
+#    no nos bloquea; el motor arranca igual (setsid nohup lo desacopla).
 Write-Host "Arrancando el motor..." -ForegroundColor Cyan
-$suCmd = "su -c 'cd /data/local/doha-voice && setsid nohup /system/bin/sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms >/data/local/tmp/andromeda-start.log 2>&1 < /dev/null &'"
-Start-Process -FilePath "adb" -ArgumentList @("shell", $suCmd) -WindowStyle Hidden | Out-Null
+$job = Start-Job -ScriptBlock {
+    adb shell "su -c 'cd /data/local/doha-voice && setsid nohup /system/bin/sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms >/data/local/tmp/andromeda-start.log 2>&1 < /dev/null &'"
+}
 
 # 3) Esperar a que cargue el modelo (~60-70 s).
 Write-Host "Esperando a que cargue el modelo (~70 s)..." -ForegroundColor Cyan
@@ -34,6 +36,10 @@ for ($i = 1; $i -le 18; $i++) {
     $p = adb shell "su -c 'cat /proc/net/tcp'" 2>$null
     if ($p -match '2CAB' -and $p -match '2CAC') { $ok = $true; break }
 }
+
+# Limpiar el job de arranque (su `adb shell` queda colgado; el motor ya está
+# desacoplado con setsid, así que matar el cliente adb no lo afecta).
+Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
 
 if ($ok) {
     Write-Host "OK: motor arriba (puertos 11435/11436). Toca 'Activar Andromeda' en la app." -ForegroundColor Green

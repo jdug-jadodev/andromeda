@@ -100,9 +100,9 @@ def record_protocol_technical(inference_key,value):
 
 TOOLS_TECHNICAL_ENUMS = {
     'choice': ('text', 'native', 'local'),
-    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder'),
+    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder', 'self_destruct'),
     'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
-               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request'),
+               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request', 'self_destruct'),
     'validation': ('invalid_native_call', 'missing_native_call', 'unsupported_reply', 'volume_request_rejected',
                    'agenda_request_rejected', 'timer_request_rejected', 'accepted', 'reply', 'agenda_question',
                    'web_query_rejected', 'web_results', 'web_no_results', 'web_provider_unavailable',
@@ -654,6 +654,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
              'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
               'timer_control': turn.get('timer_control', ''),
+              **({'face_scene': turn['face_scene']} if turn.get('face_scene') else {}),
                  **({'reminder_read':turn['reminder_read']} if turn.get('timer_control')=='reminder_list' else {}),
                  **({'reminder_delete':turn['reminder_delete']} if turn.get('reminder_delete') is not None else {}),
                **({'agenda_kind': turn['agenda_kind']} if turn.get('timer_control') == 'agenda_question' else {}),
@@ -668,6 +669,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         if response.get('executing'):
             state = 'executing'; return
         turn['timer_control'] = response.get('timer_control', '')
+        turn['face_scene'] = response.get('face_scene', '')
         turn['agenda_kind'] = response.get('agenda_kind', '')
         turn['sources'] = response.get('sources', [])
         turn['web_answer'] = response.get('web_answer')
@@ -763,7 +765,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         try:
                             if timers is not None:
                                 response = timers.model_result(model.result, turn, session_id, context_id, session_end)
-                                if response.get('timer_control') or response.get('executing'):
+                                if response.get('timer_control') or response.get('executing') or response.get('face_scene'):
                                     timer_response(response); continue
                                 result = response['text']
                             else: result = model.result

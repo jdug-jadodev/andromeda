@@ -1114,7 +1114,19 @@ public class VoiceService extends Service {
             toolResult(event.optString("tool_call_id"), ok, message);
             return;
         }
+        // The model chose a self-destruct tool: its scene plays as she starts to speak.
+        final FaceReaction scene = FaceReaction.parseScene(event.optString("face_scene", ""));
+        noteReaction(scene);
         noteReaction(FaceReactionPolicy.forAssistant(message));
+        if (conversationOnly && scene.speechDelayMs() > 0) {
+            // The countdown runs in silence; her line comes once it reaches 1.
+            final String line = message; final int turnGeneration = speechGeneration;
+            main.postDelayed(() -> { if (running && !cancelling && turnGeneration == speechGeneration) startSpeech(event, line); }, scene.speechDelayMs());
+            return;
+        }
+        startSpeech(event, message);
+    }
+    private void startSpeech(JSONObject event, String message) {
         speechDiagnostic = SpeechDiagnostics.begin(SystemClock.elapsedRealtime(), message.length());
         if (!ttsReady) { state(message + " (voz no disponible)", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.NOT_READY); return; }
         long now = System.currentTimeMillis();
