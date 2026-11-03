@@ -33,10 +33,10 @@ TOOL_ORDER = (
     'tv_inputs',
     'tv_status',
     'delete_reminder',
-    'list_reminders',
-    'create_timer',
-    'create_alarm',
     'create_reminder',
+    'create_alarm',
+    'create_timer',
+    'list_reminders',
     'set_phone_volume',
     'control_lights',
 )
@@ -156,6 +156,17 @@ def route(text, model):
                 return _dispatch(name, text, model)
             except (ValueError, KeyError, TypeError):
                 return {'kind': 'tools_rejected'}
+    # Duración a secas ("5 minutos", "media hora") → temporizador, como follow-up
+    # tras "pon un temporizador". El guard Java acepta la misma forma.
+    try:
+        literal_seconds(text)
+    except TimerValidationError:
+        pass
+    else:
+        try:
+            return _dispatch('create_timer', text, model)
+        except (ValueError, KeyError, TypeError):
+            return {'kind': 'tools_rejected'}
     return {'kind': 'reply', 'text': FALLBACK}
 
 

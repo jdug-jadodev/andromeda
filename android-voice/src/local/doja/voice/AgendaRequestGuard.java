@@ -52,18 +52,27 @@ final class AgendaRequestGuard {
             else if (date.matches("[0-9]{2}/[0-9]{2}/[0-9]{4}")) day = LocalDate.parse(date, DateTimeFormatter.ofPattern("dd/MM/uuuu").withResolverStyle(ResolverStyle.STRICT));
             else {
                 String[] months = "enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre".split(" ");
-                Matcher parts = Pattern.compile("(.+?) de (" + String.join("|", months) + ") (?:de|del) (.+)").matcher(date);
+                Matcher parts = Pattern.compile("(.+?) de (" + String.join("|", months) + ")(?: (?:de|del) (.+))?").matcher(date);
                 if (!parts.matches()) throw new IllegalArgumentException("Explicit date required");
-                String yearText = parts.group(3); int year;
-                if (yearText.matches("[0-9]{4}")) year = Integer.parseInt(yearText);
-                else {
-                    Matcher spoken = Pattern.compile("dos mil(?: (.+))?").matcher(yearText);
-                    if (!spoken.matches()) throw new IllegalArgumentException("Explicit year required");
-                    int suffix = spoken.group(1) == null ? 0 : TimerRequestGuard.amount(spoken.group(1));
-                    if (suffix < 0 || suffix > 99) throw new IllegalArgumentException("Invalid spoken year");
-                    year = 2000 + suffix;
+                int month = Arrays.asList(months).indexOf(parts.group(2)) + 1;
+                int dayNum = TimerRequestGuard.amount(parts.group(1));
+                String yearText = parts.group(3);
+                if (yearText == null) {
+                    // Día y mes sin año: asume el actual; si ya pasó, el próximo.
+                    day = LocalDate.of(today.getYear(), month, dayNum);
+                    if (day.isBefore(today)) day = LocalDate.of(today.getYear() + 1, month, dayNum);
+                } else {
+                    int year;
+                    if (yearText.matches("[0-9]{4}")) year = Integer.parseInt(yearText);
+                    else {
+                        Matcher spoken = Pattern.compile("dos mil(?: (.+))?").matcher(yearText);
+                        if (!spoken.matches()) throw new IllegalArgumentException("Explicit year required");
+                        int suffix = spoken.group(1) == null ? 0 : TimerRequestGuard.amount(spoken.group(1));
+                        if (suffix < 0 || suffix > 99) throw new IllegalArgumentException("Invalid spoken year");
+                        year = 2000 + suffix;
+                    }
+                    day = LocalDate.of(year, month, dayNum);
                 }
-                day = LocalDate.of(year, Arrays.asList(months).indexOf(parts.group(2)) + 1, TimerRequestGuard.amount(parts.group(1)));
             }
         }
         long ahead = java.time.temporal.ChronoUnit.DAYS.between(today, day);
@@ -72,7 +81,8 @@ final class AgendaRequestGuard {
     }
     static final class AmbiguousTime extends IllegalArgumentException {}
     static int[] clock(String text) {
-        String clock = TimerRequestGuard.normalize(clean(text)).replaceFirst("^a (?:las? )?", "");
+        String clock = TimerRequestGuard.normalize(clean(text)).replaceFirst("^(?:a )?(?:las? )?", "");
+        clock = clock.replaceAll("\\bmedio dia\\b", "mediodia").replaceAll("\\bmedia noche\\b", "medianoche");
         int hour, minute = 0;
         if (clock.equals("medianoche") || clock.equals("mediodia")) hour = clock.equals("medianoche") ? 0 : 12;
         else {
@@ -128,6 +138,10 @@ final class AgendaRequestGuard {
                 return new long[]{Math.addExact(anchor, delay), delay};
             } catch (IllegalArgumentException invalid) { /* Preserve strict date/time rejection. */ }
         }
+        try {
+            long delay = TimerRequestGuard.seconds("pon un temporizador de " + plain) * 1000L;
+            return new long[]{Math.addExact(anchor, delay), delay};
+        } catch (IllegalArgumentException invalid) { /* Not a bare duration; may be a calendar day. */ }
         day(plain, anchor);
         throw new IllegalArgumentException("Hour required");
     }
@@ -141,12 +155,12 @@ final class AgendaRequestGuard {
             if (prefix.matches()) {
                 String tail = prefix.group(1);
                 Matcher front = Pattern.compile("(.+?) (?:que|para) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
-                if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^para ", ""), front.group(2)});
+                if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^(?:para|de) ", ""), front.group(2)});
                 Matcher positions = Pattern.compile(" (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |todos los d[ií]as |cada d[ií]a |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
                 while (positions.find()) {
                     String body = tail.substring(0, positions.start());
                     if (!Pattern.compile("(?iu)\\bpara$").matcher(body).find())
-                        candidates.add(new String[]{tail.substring(positions.end()).replaceFirst("(?iu)^para ", ""), body});
+                        candidates.add(new String[]{tail.substring(positions.end()).replaceFirst("(?iu)^para ", ""), body.replaceFirst("(?iu)^(?:para|de) ", "")});
                 }
             }
         }

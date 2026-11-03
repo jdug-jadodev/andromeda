@@ -57,7 +57,7 @@ def _literal_opening(kind, human):
     # A full but ambiguous time is not silently kept as reminder content.
     candidates = parts(kind, raw)
     if candidates: raise ValueError('Incomplete/ambiguous reminder time')
-    return subject(re.sub(r'^para ', '', tail, flags=re.I))
+    return subject(re.sub(r'^(?:para|de) ', '', tail, flags=re.I))
 
 
 def may_clarify_reminder(human):
@@ -175,7 +175,7 @@ class AgendaDialogue:
         if self.answers > 8:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         plain = normalized(clean(human.text))
-        if plain in {'cancela', 'cancelar', 'cancela el aviso', 'cancela el recordatorio', 'cancela la alarma', 'no', 'dejalo', 'olvidalo'}:
+        if plain in {'cancela', 'cancelar', 'cancela el aviso', 'cancela el recordatorio', 'cancela la alarma', 'cancela el temporizador', 'cancelalo', 'cancelala', 'cancelame', 'no', 'dejalo', 'olvidalo'}:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         if self.needs_intent:
             confirmation = re.sub(r'\s*,\s*',' ',plain).strip(' .,!¡?¿')

@@ -41,18 +41,29 @@ def literal_duration(text):
     if any(c.isdecimal() and c not in '0123456789' for c in plain): raise TimerValidationError('invalid_request')
     plain = re.sub(r'^andromeda[, ]+', '', plain)
     plain = re.sub(r'^por favor\s+', '', plain)
-    if not re.match(r'^(?:(?:pon|pone|ponme|crea|inicia|programa)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
-        raise TimerValidationError('invalid_request')
-    if not re.search(r'\b(?:temporizador|timer|cuenta atras)\b', plain): raise TimerValidationError('invalid_request')
-    found = list(DURATION.finditer(plain)); seconds, seen = 0, set()
-    if not found: raise TimerValidationError('missing_duration')
-    # Match the entire structure, not a bag of harmless words: two separate
-    # commands or "one hour, in two minutes" must never become a summed timer.
+    # Fracciones comunes de hora → minutos, para que DURATION las reconozca.
+    plain = re.sub(r'\bmedia hora\b', '30 minutos', plain)
+    plain = re.sub(r'\bcuarto de hora\b', '15 minutos', plain)
     duration = DURATION.pattern
-    if not re.fullmatch(r'(?:(?:pon|pone|ponme|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
-                        r'(?:temporizador|timer|cuenta atras)\s+(?:(?:de|en)\s+)?' + duration +
-                        r'(?:\s+(?:y\s+)?' + duration + r')*(?:\s+por favor)?(?:\s+ahora)?', plain):
-        raise TimerValidationError('invalid_request')
+    has_timer_word = bool(re.search(r'\b(?:temporizador|timer|cuenta atras)\b', plain))
+    if has_timer_word:
+        if not re.match(r'^(?:(?:pon|pone|ponme|crea|inicia|programa)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
+            raise TimerValidationError('invalid_request')
+        found = list(DURATION.finditer(plain))
+        if not found: raise TimerValidationError('missing_duration')
+        # Match the entire structure, not a bag of harmless words: two separate
+        # commands or "one hour, in two minutes" must never become a summed timer.
+        if not re.fullmatch(r'(?:(?:pon|pone|ponme|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
+                            r'(?:temporizador|timer|cuenta atras)\s+(?:(?:de|en)\s+)?' + duration +
+                            r'(?:\s+(?:y\s+)?' + duration + r')*(?:\s+por favor)?(?:\s+ahora)?', plain):
+            raise TimerValidationError('invalid_request')
+    else:
+        # Duración a secas ("5 minutos", "media hora") como follow-up del
+        # temporizador. Sin duración y sin palabra de timer no es un timer.
+        if not re.fullmatch(duration + r'(?:\s+(?:y\s+)?' + duration + r')*', plain):
+            raise TimerValidationError('invalid_request')
+        found = list(DURATION.finditer(plain))
+    seconds, seen = 0, set()
     for match in found:
         unit = match[2][0]
         if unit in seen: raise TimerValidationError('invalid_request')

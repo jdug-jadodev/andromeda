@@ -154,7 +154,7 @@ final class AgendaDialogue {
         answers++;
         if (answers > 8) { clear(); return new Decision("cancelled", CANCELLED, "", "", human, null, null); }
         String raw = AgendaRequestGuard.clean(human.text), plain = TimerRequestGuard.normalize(raw);
-        if (plain.matches("cancela|cancelar|cancela el aviso|cancela el recordatorio|cancela la alarma|no|dejalo|olvidalo")) {
+        if (plain.matches("cancela|cancelar|cancela el aviso|cancela el recordatorio|cancela la alarma|cancela el temporizador|cancelalo|cancelala|cancelame|no|dejalo|olvidalo")) {
             clear(); return new Decision("cancelled", CANCELLED, "", "", human, null, null);
         }
         if(needsIntent) {

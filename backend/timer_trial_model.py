@@ -58,7 +58,7 @@ def rejection_reply(result):
     """Deterministic action-validation UX, not a generated conversation answer."""
     reason = result.get('reason') if isinstance(result, dict) else None
     prompts = {
-        'missing_duration': 'No he creado ningún temporizador con esa petición. ¿De cuánto tiempo lo quieres? Repite la petición completa con la duración.',
+        'missing_duration': '¿De cuánto tiempo quieres el temporizador?',
         'duration_mismatch': 'No he creado ningún temporizador con esa petición: no pude validar la duración. Repite una sola petición con la duración completa.',
         'invalid_request': 'No he creado ningún temporizador con esa petición. Repite una petición directa y completa; separa otras órdenes o preguntas, sin negaciones ni citas.',
         'out_of_range': 'No he creado ningún temporizador con esa petición. La duración permitida va de un segundo a veinticuatro horas.',

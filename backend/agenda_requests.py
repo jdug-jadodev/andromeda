@@ -54,24 +54,35 @@ def calendar_day(text, anchor_ms):
             if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', date): day = datetime.strptime(date, '%Y-%m-%d').date()
             elif re.fullmatch(r'[0-9]{2}/[0-9]{2}/[0-9]{4}', date): day = datetime.strptime(date, '%d/%m/%Y').date()
             else:
-                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r') (?:de|del) (.+)', date)
+                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r')(?: (?:de|del) (.+))?', date)
                 if not parts: raise ValueError()
+                month = MONTHS.index(parts[2]) + 1
+                day_num = number(parts[1])
                 year = parts[3]
-                if re.fullmatch(r'[0-9]{4}', year): year = int(year)
+                if year is None:
+                    # Día y mes sin año: asume el actual; si ya pasó, el próximo.
+                    day = datetime(today.year, month, day_num).date()
+                    if day < today:
+                        day = datetime(today.year + 1, month, day_num).date()
                 else:
-                    spoken = re.fullmatch(r'dos mil(?: (.+))?', year)
-                    if not spoken: raise ValueError()
-                    suffix = number(spoken[1]) if spoken[1] else 0
-                    if not 0 <= suffix <= 99: raise ValueError()
-                    year = 2000 + suffix
-                day = datetime(year, MONTHS.index(parts[2]) + 1, number(parts[1])).date()
+                    if re.fullmatch(r'[0-9]{4}', year): year = int(year)
+                    else:
+                        spoken = re.fullmatch(r'dos mil(?: (.+))?', year)
+                        if not spoken: raise ValueError()
+                        suffix = number(spoken[1]) if spoken[1] else 0
+                        if not 0 <= suffix <= 99: raise ValueError()
+                        year = 2000 + suffix
+                    day = datetime(year, month, day_num).date()
         if not 0 <= (day - today).days <= 366: raise ValueError()
         return day
     except (ValueError, OverflowError): raise AgendaValidationError('invalid_date') from None
 
 
 def calendar_clock(text):
-    clock = re.sub(r'^a (?:las? )?', '', normalized(clean(text)))
+    clock = normalized(clean(text))
+    clock = re.sub(r'^(?:a )?(?:las? )?', '', clock)
+    clock = re.sub(r'\bmedio dia\b', 'mediodia', clock)
+    clock = re.sub(r'\bmedia noche\b', 'medianoche', clock)
     if clock in {'medianoche', 'mediodia'}: hour, minute = (0 if clock == 'medianoche' else 12), 0
     else:
         suffix = re.search(r'\s*(a\.?\s*m\.?|p\.?\s*m\.?|a eme|pe eme)$', clock)
@@ -132,6 +143,11 @@ def calendar_due(when, anchor_ms):
         try: seconds = literal_seconds('pon un temporizador de ' + relative[1])
         except ValueError: pass
         else: return anchor_ms + seconds * 1000, seconds * 1000
+    # Duración a secas ("cinco minutos") como respuesta de "¿cuándo?": cuenta atrás,
+    # igual que "en cinco minutos". No es una fecha ni un reloj.
+    try: seconds = literal_seconds('pon un temporizador de ' + plain)
+    except ValueError: pass
+    else: return anchor_ms + seconds * 1000, seconds * 1000
     calendar_day(plain, anchor_ms)  # Distinguish an understood day from an invalid date.
     raise AgendaValidationError('missing_time')
 
@@ -146,11 +162,11 @@ def parts(kind, raw):
         if prefix:
             tail = prefix[1]
             front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
-            if front: candidates.append((re.sub(r'^para ', '', front[1], flags=re.I), front[2]))
+            if front: candidates.append((re.sub(r'^(?:para|de) ', '', front[1], flags=re.I), front[2]))
             for start in re.finditer(r' (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |todos los d[ií]as |cada d[ií]a |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))', tail, re.I):
                 body = tail[:start.start()]
                 if not re.search(r'\bpara$', body, re.I):
-                    candidates.append((re.sub(r'^para ', '', tail[start.end():], flags=re.I), body))
+                    candidates.append((re.sub(r'^para ', '', tail[start.end():], flags=re.I), re.sub(r'^(?:para|de) ', '', body, flags=re.I)))
     return list(dict.fromkeys(candidates))
 
 

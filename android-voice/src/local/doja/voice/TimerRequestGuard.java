@@ -9,6 +9,7 @@ final class TimerRequestGuard {
     private static final Map<String, Integer> NUMBERS = new HashMap<>();
     private static final Pattern DURATION;
     private static final Pattern REQUEST;
+    private static final Pattern DURATION_ONLY;
     static {
         String[] names = {"cero", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve",
             "diez", "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve",
@@ -24,6 +25,7 @@ final class TimerRequestGuard {
         REQUEST = Pattern.compile("(?:(?:pon|pone|ponme|crea|inicia|programa)\\s+)?(?:un |una |el |la )?"
             + "(?:temporizador|timer|cuenta atras)\\s+(?:(?:de|en)\\s+)?" + DURATION.pattern()
             + "(?:\\s+(?:y\\s+)?" + DURATION.pattern() + ")*(?:\\s+por favor)?(?:\\s+ahora)?");
+        DURATION_ONLY = Pattern.compile(DURATION.pattern() + "(?:\\s+(?:y\\s+)?" + DURATION.pattern() + ")*");
     }
     static String normalize(String value) {
         return Normalizer.normalize(value.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
@@ -45,7 +47,13 @@ final class TimerRequestGuard {
             throw new IllegalArgumentException("Solicitud no válida");
         String plain = normalize(text).replaceAll("^[ .,!¡?¿]+|[ .,!¡?¿]+$", "")
             .replaceFirst("^andromeda[, ]+", "").replaceFirst("^por favor\\s+", "");
-        if (!REQUEST.matcher(plain).matches()) throw new IllegalArgumentException("Petición única y explícita requerida");
+        plain = plain.replaceAll("\\bmedia hora\\b", "30 minutos").replaceAll("\\bcuarto de hora\\b", "15 minutos");
+        boolean hasTimerWord = Pattern.compile("\\b(?:temporizador|timer|cuenta atras)\\b").matcher(plain).find();
+        if (hasTimerWord) {
+            if (!REQUEST.matcher(plain).matches()) throw new IllegalArgumentException("Petición única y explícita requerida");
+        } else if (!DURATION_ONLY.matcher(plain).matches()) {
+            throw new IllegalArgumentException("Petición única y explícita requerida");
+        }
         Matcher found = DURATION.matcher(plain);
         Set<Character> units = new HashSet<>(); long total = 0; int count = 0;
         while (found.find()) {
