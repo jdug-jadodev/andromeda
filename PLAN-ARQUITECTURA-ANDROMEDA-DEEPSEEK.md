@@ -1,8 +1,8 @@
-# Plan: Andrómeda — Arquitectura determinista + DeepSeek (nube)
+﻿# Plan: Andrómeda — Arquitectura determinista + DeepSeek (nube)
 
 > **PRIORIDAD: ALTA** — cambio principal de arquitectura y diseño.
 >
-> **Estado: PLAN, no ejecutado.** Antes de ejecutar, hacer limpieza (§6).
+> **Estado: CERRADO (2026-11-03).** Fases 1 y 2 completadas y en uso. Continúa en `PLAN-ANDROMEDA-FASE-3-VOZ-Y-CASA.md`.
 > Objetivo del documento: dejar registrado por fases, para ejecutar luego sin
 > perder lo que ya funciona.
 
@@ -208,3 +208,5 @@ es solo de la IA local. Confirmar el inventario antes de borrar.
   los scripts `resident-model-worker.sh`/`warm-server-worker.sh`/`prepare-conversation.py`.
   Sacarlos requiere actualizar la suite de tests y el contrato de la app; se hará
   en una pasada coordinada aparte.
+
+- **2026-11-03** — **PLAN CERRADO.** Fase 1 (determinista) y Fase 2 (DeepSeek fallback) completadas, verificadas por voz y en uso. TV integrada y cerrada (`PLAN-INTEGRACION-TV-ANDROMEDA.md` §18). El trabajo nuevo continúa en `PLAN-ANDROMEDA-FASE-3-VOZ-Y-CASA.md` (cancelación global, confirmaciones cortas, voz natural, recursos, luces sin preset, aspiradora/lavadora, app remota).
