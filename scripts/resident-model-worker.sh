@@ -99,7 +99,7 @@ while owned; do
       case "$stamp" in ''|*[!0-9]*) exit 1 ;; esac
       [ "$stamp" -le "$((current+1000))" ] && [ "$((current-stamp))" -le 30000 ] || exit 1
     else
-      [ "$((current-BEGIN_MS))" -le 90000 ] || exit 1
+      [ "$((current-BEGIN_MS))" -le 180000 ] || exit 1
     fi
   fi
   sleep 1

@@ -121,6 +121,67 @@ class AssistantToolsTrial:
             response = dict(response, text=ConversationFlow.with_offer(response['text']), close_reason='', offered_more=True)
         return response
 
+    def _tv_result(self, result):
+        import tv_control
+        kind = result['kind']
+        try:
+            if kind == 'tv_status':
+                data = tv_control.status()
+                if not data.get('reachable'):
+                    return {'text': 'La TV está apagada. ¿La enciendo?', 'offered_more': True}
+                return {'text': f'La TV está encendida. Volumen {data.get("volume", "?")}.'}
+            if kind == 'tv_inputs':
+                data = tv_control.inputs()
+                names = [i.get('label') or i.get('id', '?') for i in data.get('inputs', [])]
+                if not names:
+                    return {'text': 'No pude leer las entradas de la TV.'}
+                return {'text': 'Entradas de la TV: ' + ', '.join(names) + '.'}
+            if kind == 'tv_power_on':
+                try:
+                    data = tv_control.power_on()
+                except tv_control.TVError:
+                    # El WoL ya se envió; la TV termina de encender sola.
+                    return {'text': 'La tele se está encendiendo, dale unos segundos.'}
+                return {'text': 'Encendí la TV.' if data.get('ok') else 'La tele se está encendiendo, dale unos segundos.'}
+            if kind == 'tv_power_off':
+                tv_control.power_off()
+                return {'text': 'Listo, la TV quedó apagada.'}
+            if kind == 'tv_volume':
+                if 'level' in result:
+                    tv_control.set_volume(result['level'])
+                    return {'text': f'Volumen en {result["level"]}.'}
+                if 'delta' in result:
+                    tv_control.bump_volume(result['delta'])
+                    st = tv_control.volume_state()
+                    return {'text': f'Volumen en {st.get("volume", "?")}.'}
+                if 'mute' in result:
+                    tv_control.set_mute(result['mute'])
+                    return {'text': 'TV silenciada.' if result['mute'] else 'Quité el silencio.'}
+                return {'text': 'No entendí el cambio de volumen.'}
+            if kind == 'tv_audio':
+                if 'output' in result:
+                    tv_control.set_output(result['output'])
+                    label = 'la barra' if result['output'] == 'external_optical' else 'los altavoces'
+                    return {'text': f'Puse el audio por {label}.'}
+                if 'enforce' in result:
+                    tv_control.enforce_output()
+                    return {'text': 'Restauré la salida de audio.'}
+                return {'text': 'No entendí el cambio de audio.'}
+            if kind == 'tv_input':
+                tv_control.switch_input(result['id'])
+                label = 'TV' if result['id'] == 'TV' else result['id'].replace('_', ' ')
+                return {'text': f'Puse {label}.'}
+            if kind == 'tv_open_app':
+                data = tv_control.open_app(name=result.get('name'))
+                title = data.get('matched_title') or data.get('id') or 'la aplicación'
+                return {'text': f'Abrí {title}.'}
+            if kind == 'tv_scene':
+                tv_control.scene(result['name'])
+                return {'text': f'Apliqué la escena {result["name"]}.'}
+        except tv_control.TVError:
+            return {'text': 'No pude hablar con la TV ahora mismo.'}
+        return {'text': REJECTION, 'timer_control': 'rejected'}
+
     def model_result(self, result, turn, session, context, session_end):
         if result['kind'] == 'self_destruct':
             # The model chose the tool; its scene is shown by Android while this line is spoken.
@@ -129,6 +190,8 @@ class AssistantToolsTrial:
             # explicit_close ends the chat after the line like "no necesito nada más", so the clock falls in.
             return {'text': result['text'], 'face_scene': result['scene'], 'offered_more': False,
                     'close_reason': 'explicit_close'}
+        if result['kind'].startswith('tv_'):
+            return self._tv_result(result)
         if self.read.inflight is not None: raise ValueError('A read result is already pending')
         if self.reminder_delete.active or self.reminder_delete.grant is not None:
             raise ValueError('A reminder deletion is already pending')

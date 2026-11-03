@@ -17,6 +17,7 @@ from phone_volume import current_volume
 from reminder_read import current_read
 from local_arithmetic import answer as arithmetic_answer
 from local_knowledge import answer as knowledge_answer
+from tv_intents import parse_volume, parse_input, parse_scene, parse_audio, parse_app
 
 
 _DEBUG_LOG = '/tmp/andromeda_debug.log'
@@ -44,9 +45,14 @@ TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('set_phone_volume', 'Ajusta el volumen multimedia del teléfono al porcentaje pedido. Ejemplos: sube el volumen al cien por ciento; baja el volumen al veinte por ciento; a la mitad. Sin argumentos.'),
          tool('control_lights', 'Controla o programa SOLO las luces: encender, apagar, color validado, brillo con porcentaje y horario diario. La frase actual contiene el objetivo, las horas y los valores; sin argumentos. No hay televisor, estufa ni otros electrodomésticos.'),
          tool('self_destruct', 'Autodestrucción de Andrómeda si el humano dice autodestruyete, destruyete o muerete. Sin argumentos.')]
+TV_TOOLS = [
+    tool('tv_status',   'Consulta si la TV está encendida, qué app muestra y el volumen. Sin argumentos.'),
+    tool('tv_inputs',   'Lista las entradas disponibles de la TV. Sin argumentos.'),
+    tool('tv_power_on', 'Enciende la TV. Sin argumentos.'),
+    tool('tv_power_off', 'Apaga la TV. Sin argumentos.'),
+]
 SYSTEM = ('Andrómeda. Responde con tu conocimiento las preguntas generales, cuentos e historias; usa herramientas solo para acciones (alarmas, recordatorios, luces, volumen) y para autodestrucción (self_destruct).'
            'Para una orden de luces o su horario selecciona control_lights; no inventes objetivo, horas, color ni éxito. '
-           'Solo puedes controlar las luces; para otros aparatos di que no puedes. '
            'Usa search_web solo para datos concretos que no sabes. '
            'Copia literal en español; no citas/negaciones.')
 READ_TOOL = tool('list_reminders', 'Consulta los recordatorios guardados en Andrómeda. Sin argumentos.')
@@ -83,8 +89,33 @@ TOOL_INTENT = {
     'list_reminders': r'\b(?:recordatorio|recordatorios|lista|listar|muestra|lee|leeme|ver)\b',
     'delete_reminder': r'\b(?:elimina|borra|cancela|quita)\b',
 }
+# Gate de TV: toda herramienta de TV exige la palabra "tele/tv" en la frase,
+# para no chocar con control_lights (luces) ni set_phone_volume (volumen del móvil).
+# Orden independiente: "¿qué entradas tiene la tele?" y "está encendida la tele"
+# ponen "tele" al final, no al principio, así que ambos términos se exigen por
+# lookahead y no por orden literal.
+TV = r'\b(?:tele|tele ?visor|television|tv|pantalla)\b'
+def _tv(keyword):
+    return r'(?=.*' + TV + r')(?=.*' + keyword + r')'
+# Las dos lecturas (estado y entradas) comparten un gate unificado: el modelo
+# LFM 1.2B a veces confunde tv_status con tv_inputs, y rechazar la orden por un
+# desvío entre lecturas inofensivas confunde al humano. El gate solo exige que la
+# frase sea de lectura de TV; el dispatch decide estado vs entradas por el texto.
+TV_READ = r'\b(?:estado|encendida|prendida|apagada|como esta|que hay|volumen|entradas?|hdmi|fuentes?)\b'
+TOOL_INTENT.update({
+    'tv_status':    _tv(TV_READ),
+    'tv_power_on':  _tv(r'\b(?:enciende|encender|prende|prender|despierta)\b'),
+    'tv_power_off': _tv(r'\b(?:apaga|apagar|cierra)\b'),
+    'tv_volume':    _tv(r'\b(?:volumen|sonido|silencio|mutea|mute)\b'),
+    'tv_audio':     _tv(r'\b(?:barra|soundbar|altavoz|parlante|optica|audio)\b'),
+    'tv_inputs':    _tv(TV_READ),
+    'tv_input':     _tv(r'\b(?:pon|poner|cambia|cambiar|entrada|hdmi)\b'),
+    'tv_open_app':  _tv(r'\b(?:abre|abrir|lanza|lanzar)\b'),
+    'tv_scene':     _tv(r'\b(?:modo|cine|noche|buenos dias|buenas noches)\b'),
+})
 
 FALLBACK = 'No te entendí, ¿puedes decirlo de otra forma?'
+TV_UNCLEAR = 'No entendí qué quieres hacer con la TV. Dímelo de otra forma, por ejemplo "sube el volumen de la tele".'
 
 
 def tool_intent_matches(name, human):
@@ -101,7 +132,7 @@ def native_call(message, finish):
     function = calls[0].get('function')
     if not isinstance(function, dict) or set(function) != {'name', 'arguments'}: raise ValueError('Invalid native function')
     name, args = function['name'], function['arguments']
-    spec = next((item['function'] for item in TOOLS + [READ_TOOL,DELETE_REMINDER_TOOL] if item['function']['name'] == name), None)
+    spec = next((item['function'] for item in TOOLS + [READ_TOOL,DELETE_REMINDER_TOOL] + TV_TOOLS if item['function']['name'] == name), None)
     if spec is None: raise ValueError('Unknown native tool')
     def unique(pairs):
         result = {}
@@ -125,12 +156,13 @@ class AssistantToolsModel(ConversationModel):
     confirmed_volume = False
     guided_agenda = False
     alarm_lifecycle = False
+    tv_enabled = False
+    web_in_progress = False
     anchor_wall = anchor_boot = 0
-    # Web search is slow by nature: network fetch (~30s) + local translation of
-    # a non-Spanish answer (up to 512 tokens ≈ 53-73s on the LFM 1.2B). The old
-    # 55-60s budget timed out mid-translation, closing the socket and killing the
-    # llama-server via SIGPIPE when it wrote the response (see worker_answers).
-    # This turn budget is a ceiling, not a delay: fast turns still finish early.
+    # Turn budget. Web search (network fetch + local translation) can exceed 60s,
+    # so keep a generous ceiling here; the Android app hard-caps a turn at 60s and
+    # the graceful "tardé demasiado" timeout is enforced in the main loop (see
+    # session()'s deadline handler), not by shrinking this ceiling.
     response_start_ms = 150000
     compute_ms = 150000
     # The five-tool cold prefix exceeded 30s on Moto. This public-only startup
@@ -215,29 +247,66 @@ class AssistantToolsModel(ConversationModel):
                 if self.clock()<self.work_deadline: self.result={'kind':'reply','text':local}
                 else: self.error='TimeoutError'
                 self.done.set(); return self.work_deadline
-        web = latest_web(self.memory)
-        if web and not self.requires_native_selection(text) and not (self.basic_assistant and self.mathematical_question(text)):
-            # A read-only continuation must not revisit the tool selector. This
-            # gate grants NOTHING: any possible new command keeps the original
-            # native selection + whole-current-request validators/executor.
-            self.cancelled.clear(); self.done.clear(); self.result = self.error = None
-            self.memory.messages(text, activity_ms=speech_end)
-            history = [{'user': group[0]['content'], 'assistant': group[1]['content'] if len(group) == 2 else ''}
-                       for group in self.memory.pairs[-4:] if 'web_answer' not in group[0]]
-            self.context_metrics = {'tools_model_choice': 'text', 'tools_selected_tool': 'none',
-                'tools_model_kind': 'reply', 'tools_validation': 'local_web_followup',
-                'tools_web_attempted': False, 'input_token_budget': 1536}
-            deadline = self.work_deadline
-            def work():
-                try:
-                    result = self.continuation(text, web, history, deadline - 1500)
-                    if not self.cancelled.is_set(): self.result = result
-                except Exception as error: self.error = type(error).__name__
-                finally: self.done.set()
-            self.thread = threading.Thread(target=work, daemon=True, name='read-only-web-followup')
-            self.thread.start()
-            return deadline
-        return super().start(text, speech_end, session_end)
+        # Fase 1: router determinista. Sin llama-server ni búsqueda web local.
+        # El import es tardío para evitar import circular con deterministic_router.
+        self.cancelled.clear(); self.done.clear(); self.result = self.error = None
+        self.memory.messages(text, activity_ms=speech_end)
+        self.context_metrics = {'tools_model_choice': 'deterministic', 'tools_selected_tool': 'none',
+            'tools_model_kind': 'reply', 'tools_validation': 'accepted',
+            'tools_web_attempted': False, 'input_tokens': 0, 'input_token_budget': 1536,
+            'history_turns_available': len(self.memory.pairs)}
+        try:
+            import deterministic_router
+            result = deterministic_router.route(text, self)
+            _debug(text, 'deterministic', result.get('kind', '?'), 'deterministic')
+        except Exception as error:
+            self.error = type(error).__name__; result = None
+        if result is None:
+            self.done.set()
+            return self.work_deadline
+        # Fase 2: si el determinista no entendió y DeepSeek está configurado,
+        # razona en la nube (asíncrono, sin bloquear el bucle de sesión).
+        if (result.get('kind') == 'reply' and result.get('text') == FALLBACK
+                and deterministic_router.cloud_enabled()):
+            self._cloud_fallback(text)
+            return self.work_deadline
+        self.result = result
+        self.done.set()
+        return self.work_deadline
+
+    def _cloud_fallback(self, text):
+        import deterministic_router
+        def work():
+            try:
+                result = deterministic_router.route_cloud(text, self)
+                if result is None:
+                    result = {'kind': 'reply', 'text': FALLBACK}
+                if not self.cancelled.is_set():
+                    self.result = result
+                    _debug(text, 'cloud', result.get('kind', '?'), 'cloud_fallback')
+            except Exception as error:
+                self.error = type(error).__name__
+            finally:
+                self.done.set()
+        self.thread = threading.Thread(target=work, daemon=True, name='deepseek-fallback')
+        self.thread.start()
+
+    def enable_tv(self):
+        if self.tv_enabled: return
+        self.tv_enabled = True
+        # TV tools add ~220 tokens to the public prefix; the cold prefill on the
+        # LFM 1.2B Q4 under load can exceed 85s. Give the warm-up a generous
+        # deadline (the worker's metrics guard is raised in parallel). Human turn
+        # response/compute/action deadlines stay unchanged.
+        if self.preparation_ms < 150000:
+            self.preparation_ms = 150000
+        original = self.payload
+        def payload(messages, maximum=96):
+            result = original(messages, maximum)
+            for item in TV_TOOLS:
+                result['tools'].append(copy.deepcopy(item))
+            return result
+        self.payload = payload
 
     def enable_reminder_clarification(self):
         if self.reminder_clarification: return
@@ -306,6 +375,7 @@ class AssistantToolsModel(ConversationModel):
     def interpret_result(self, message, finish_reason, human):
         selected, validation, web_attempted = 'none', 'invalid_native_call', False
         def finish(result, reason):
+            self.web_in_progress = False
             _debug(human, selected, result.get('kind') if isinstance(result, dict) else '?', reason)
             metrics = getattr(self, 'context_metrics', None)
             if isinstance(metrics, dict):
@@ -333,7 +403,13 @@ class AssistantToolsModel(ConversationModel):
                     return finish({'kind':'reminder_list_request'},'read_requested')
                 if name == 'create_timer':
                     validation = 'timer_request_rejected'
-                    return finish({'kind': 'timer_proposal', 'seconds': selected_timer_seconds(message, finish_reason, human)}, 'accepted')
+                    try:
+                        seconds = selected_timer_seconds(message, finish_reason, human)
+                    except TimerValidationError as invalid:
+                        # Ask for the missing/invalid duration instead of a flat
+                        # rejection, matching the guided timer dialogue.
+                        return finish({'kind': 'timer_rejected', 'reason': invalid.reason}, 'timer_request_rejected')
+                    return finish({'kind': 'timer_proposal', 'seconds': seconds}, 'accepted')
                 if name in {'create_alarm', 'create_reminder'}:
                     # The strict zero-argument schema rejects (never repairs)
                     # any model-supplied date, duration, text or copied request.
@@ -362,12 +438,48 @@ class AssistantToolsModel(ConversationModel):
                 if name == 'control_lights':
                     validation = 'light_request_rejected'
                     return finish({'kind': 'light_proposal'}, 'accepted')
+                if name in {'tv_status', 'tv_inputs'}:
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    # El modelo puede elegir cualquiera de las dos lecturas; el texto
+                    # decide la real. "entradas/hdmi/fuentes" -> tv_inputs, resto -> tv_status.
+                    if re.search(r'\b(?:entradas?|hdmi|fuentes?)\b', normalized(human)):
+                        return finish({'kind': 'tv_inputs'}, 'accepted')
+                    return finish({'kind': 'tv_status'}, 'accepted')
+                if name in {'tv_power_on', 'tv_power_off'}:
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    return finish({'kind': name}, 'accepted')
+                if name == 'tv_volume':
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    params = parse_volume(human)
+                    if params is None: return finish({'kind': 'reply', 'text': TV_UNCLEAR}, 'tv_volume_unclear')
+                    return finish(dict(kind='tv_volume', **params), 'accepted')
+                if name == 'tv_input':
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    params = parse_input(human)
+                    if params is None: return finish({'kind': 'reply', 'text': TV_UNCLEAR}, 'tv_input_unclear')
+                    return finish(dict(kind='tv_input', **params), 'accepted')
+                if name == 'tv_audio':
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    params = parse_audio(human)
+                    if params is None: return finish({'kind': 'reply', 'text': TV_UNCLEAR}, 'tv_audio_unclear')
+                    return finish(dict(kind='tv_audio', **params), 'accepted')
+                if name == 'tv_scene':
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    params = parse_scene(human)
+                    if params is None: return finish({'kind': 'reply', 'text': TV_UNCLEAR}, 'tv_scene_unclear')
+                    return finish(dict(kind='tv_scene', **params), 'accepted')
+                if name == 'tv_open_app':
+                    if not self.tv_enabled: raise ValueError('TV control not enabled')
+                    params = parse_app(human)
+                    if params is None: return finish({'kind': 'reply', 'text': TV_UNCLEAR}, 'tv_app_unclear')
+                    return finish(dict(kind='tv_open_app', **params), 'accepted')
                 validation = 'web_query_rejected'
                 # Like agenda calls, this schema accepts NO echoed human data.
                 # An added query argument is rejected by native_call(), never
                 # ignored/repaired. Only the exact native selection reaches here.
                 query = current_query(human)
                 try:
+                    self.web_in_progress = True  # Slow network+translation: exempt from the 55s graceful timeout.
                     remaining = (self.work_deadline - self.clock()) / 1000
                     web_attempted = True  # Search attempted, not proof that a provider received a request.
                     result = buscar_en_internet(query, time.monotonic() + max(0, remaining - 1.5), self.cancelled)

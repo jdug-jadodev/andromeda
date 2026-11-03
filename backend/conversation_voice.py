@@ -100,14 +100,14 @@ def record_protocol_technical(inference_key,value):
 
 TOOLS_TECHNICAL_ENUMS = {
     'choice': ('text', 'native', 'local'),
-    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder', 'self_destruct'),
+    'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder', 'self_destruct', 'tv_status', 'tv_power_on', 'tv_power_off', 'tv_volume', 'tv_audio', 'tv_inputs', 'tv_input', 'tv_open_app', 'tv_scene'),
     'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
-               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request', 'self_destruct'),
+               'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request', 'self_destruct', 'tv_status', 'tv_power_on', 'tv_power_off', 'tv_volume', 'tv_audio', 'tv_inputs', 'tv_input', 'tv_open_app', 'tv_scene'),
     'validation': ('invalid_native_call', 'missing_native_call', 'unsupported_reply', 'volume_request_rejected',
                    'agenda_request_rejected', 'timer_request_rejected', 'accepted', 'reply', 'agenda_question',
                    'web_query_rejected', 'web_results', 'web_no_results', 'web_provider_unavailable',
                    'local_web_followup', 'web_invalid_request', 'web_explicit_request_required',
-                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question', 'light_request_rejected', 'reminder_read_rejected', 'read_requested', 'local_arithmetic', 'reminder_delete_rejected', 'reminder_delete_requested'),
+                   'web_invalid_query', 'web_query_mismatch', 'web_mixed_request', 'volume_question', 'light_request_rejected', 'reminder_read_rejected', 'read_requested', 'local_arithmetic', 'reminder_delete_rejected', 'reminder_delete_requested', 'tv_volume_unclear', 'tv_input_unclear', 'tv_audio_unclear', 'tv_scene_unclear', 'tv_app_unclear'),
     'generation_error': ('TimeoutError', 'ValueError', 'OSError', 'RuntimeError', 'KeyError', 'TypeError'),
 }
 TOOLS_TECHNICAL_KEYS = frozenset({'version', 'at_ms', 'sequence', 'phase', 'elapsed_ms', 'choice', 'tool',
@@ -465,7 +465,7 @@ class ConversationModel:
     def post(self, path, body, deadline):
         if self.cancelled.is_set() or self.clock() >= deadline: raise TimeoutError()
         connection = http.client.HTTPConnection('127.0.0.1', 11435,
-            timeout=max(.1, min(self.compute_ms / 1000, (deadline - self.clock()) / 1000)))
+            timeout=max(.1, (deadline - self.clock()) / 1000))
         self.http = connection
         try:
             connection.request('POST', path, json.dumps(body, ensure_ascii=True).encode(),
@@ -485,9 +485,8 @@ class ConversationModel:
                 'temperature': 0, 'seed': 42, 'chat_template_kwargs': {'enable_thinking': False}}
 
     def prepare(self):
-        deadline = self.clock() + self.preparation_ms
-        self.post('/v1/chat/completions', self.payload([
-            {'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': 'Hola.'}], 1), deadline)
+        # Fase 1 determinista: sin llama-server, no hay prefijo público que calentar.
+        return
 
     def interpret_result(self, message, finish_reason, request):
         # The installed conversation path remains action-free. Experimental
@@ -580,7 +579,7 @@ class ConversationModel:
         self.cancel_generation()
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False):
     from vosk import KaldiRecognizer, SetLogLevel
     from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
         MAX_EPOCH_TURNS, STREAM_START_MS, STREAM_IDLE_MS, VOICE_POLICY, RESET_POLICY)
@@ -741,15 +740,15 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             # Inactivity pauses reception; it does not delete or split a chat.
             if state == 'listen' and current - activation >= LISTEN_IDLE_MS: reset()
             if turn is not None:
-                if state == 'thinking' and current >= turn['compute_end']:
+                if state == 'thinking' and current >= turn['deadline_ms'] - 5000 and not getattr(model, 'web_in_progress', False):
                     if assistant_tools: observe_tools_technical(model, sequence, turn['speech_end'], 2)
                     if continuous_voice:
                         # No executor was dispatched in thinking. Cancel the owned
                         # generation; never retry it or recover a stuck cancellation.
                         if not model.cancel_generation(): raise ContinuousVoiceFault('voice_cancellation_stuck')
                         model.memory.unanswered(turn['text'])
-                        emit({'type':'error','reason':'deadline','turn_id':turn['id'],'recoverable':True,'actions_executed':0})
-                        flow.reset(); completed_turn(True); continue
+                        say('Tardé demasiado en responder. Me detuve para evitar un fallo; vuelve a intentarlo.')
+                        continue
                     emit({'type': 'error', 'reason': 'deadline', 'turn_id': turn['id']})
                     return  # finally stops this dedicated inference process.
                 if state == 'thinking' and model.done.is_set():
@@ -1019,7 +1018,7 @@ def restore_catalog(value):
     return catalog
 
 
-def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
+def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False):
     from continuous_voice import ContinuousVoiceFault, END_REASONS
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
@@ -1052,6 +1051,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
         if reminder_read: value.enable_basic_assistant()
         if reminder_clarification: value.enable_reminder_clarification()
         if reminder_deletion: value.enable_reminder_deletion()
+        if tv_enabled: value.enable_tv()
         if continuous_voice: value.purge_cache = lambda: resident.purge_cache(value)
         return value
     model = make_model()
@@ -1119,7 +1119,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             try:
                                 end_reason = session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
-                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}), **({'reminder_read':True} if reminder_read else {}), **({'reminder_clarification':True} if reminder_clarification else {}), **({'reminder_deletion':True} if reminder_deletion else {}))
+                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}), **({'reminder_read':True} if reminder_read else {}), **({'reminder_clarification':True} if reminder_clarification else {}), **({'reminder_deletion':True} if reminder_deletion else {}), **({'tv_enabled': True} if tv_enabled else {}))
                             except ContinuousVoiceFault as fault:
                                 if not continuous_voice: raise
                                 if getattr(fault,'technical',None) is not None:

@@ -6,11 +6,28 @@ import signal
 import stat
 
 from assistant_config import SETTINGS
-from conversation_voice import OwnedInference, now_ms, serve
+from conversation_voice import now_ms, serve
 from resident_runtime import Monitor, ProcSampler, ResidentRuntime, ContinuousResidentRuntime, write_report
 from spanish_wake import SpanishWakeDetector
 from web_search_env import configure
-from inference_privacy import purge_engine_cache
+
+
+class _NoModelOwner:
+    """Fase 1 determinista: sin llama-server.
+
+    Sustituye a `OwnedInference`: no hay proceso de inferencia que verificar.
+    `pid` apunta al propio backend (válido para el muestreo numérico del Monitor),
+    `alive()` es siempre True y `stop()` es no-op.
+    """
+
+    def __init__(self):
+        self.pid = os.getpid()
+
+    def alive(self):
+        return True
+
+    def stop(self):
+        pass
 
 
 def main():
@@ -21,6 +38,7 @@ def main():
     parser.add_argument('--continuous-model',action='store_true',help='Explicit continuous model ownership; does not enable continuous Android capture')
     parser.add_argument('--continuous-voice',action='store_true',help='Explicit protocol12 continuous local voice, no bounded trial renewal')
     parser.add_argument('--alarm-lifecycle',action='store_true',help='Coordinated protocol13 weekly alarm/deletion policy')
+    parser.add_argument('--tv',action='store_true',help='Enable local TV control tools (LG webOS)')
     args=parser.parse_args()
     if args.continuous_voice and (not args.continuous_model or not args.guided_agenda): raise ValueError('Continuous voice requires continuous model and guided tools')
     if args.alarm_lifecycle and not args.continuous_voice: raise ValueError('Alarm lifecycle requires continuous voice')
@@ -39,7 +57,7 @@ def main():
     else:
         deadline=int((work/'deadline_ms').read_text())
         if not 0<deadline-now_ms()<=1800000 or (work/'mode').exists() or (work/'mode').is_symlink(): raise ValueError('Invalid resident lifetime')
-    owner=OwnedInference(work/'key'); runtime=None; monitor=None
+    owner=_NoModelOwner(); runtime=None; monitor=None
     stopping={'requested':False}
     def stop(*_): stopping['requested']=True
     signal.signal(signal.SIGTERM,stop); signal.signal(signal.SIGINT,stop)
@@ -51,13 +69,13 @@ def main():
         detector=SpanishWakeDetector(SETTINGS['wake_word'],Path('/opt/doha-voice/models/vosk-model-small-es-0.42'))
         monitor=Monitor(now_ms,ProcSampler(owner.pid,now_ms),deadline,
             report=lambda value:write_report(work/'metrics.json',value),stop_requested=lambda:stopping['requested'] or (work/'STOP').exists(),continuous_model=args.continuous_model)
-        runtime=ContinuousResidentRuntime(owner,now_ms,monitor,enabled=True,cache_purger=lambda model:purge_engine_cache(model.key,now_ms,owner.alive)) if args.continuous_model else ResidentRuntime(owner,now_ms,deadline,monitor)
+        runtime=ContinuousResidentRuntime(owner,now_ms,monitor,enabled=True,cache_purger=lambda model:0) if args.continuous_model else ResidentRuntime(owner,now_ms,deadline,monitor)
         if not runtime.check(): raise RuntimeError('Resident resource guard')
         try:
             serve('/var/lib/andromeda-conversation/token',work/'key',detector,0 if args.continuous_voice else 300,
                 '/var/lib/andromeda-conversation/server-cert.pem','/var/lib/andromeda-conversation/server-key.pem',
                 'synthetic_pcm' if args.synthetic_input else 'microphone',runtime.check,assistant_tools=True,resident=runtime,guided_agenda=args.guided_agenda,
-                continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle,confirmed_volume=args.guided_agenda,reminder_read=args.guided_agenda,reminder_clarification=args.guided_agenda,reminder_deletion=args.alarm_lifecycle)
+                continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle,confirmed_volume=args.guided_agenda,reminder_read=args.guided_agenda,reminder_clarification=args.guided_agenda,reminder_deletion=args.alarm_lifecycle,tv_enabled=args.tv)
         except RuntimeError:
             if monitor.reason not in {'manual_stop','time_limit','low_memory','battery_warm','stale_monitor','sensor_or_report_error','model_exit'}: raise
     finally:

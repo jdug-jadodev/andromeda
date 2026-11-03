@@ -27,6 +27,9 @@ LOCK=/data/local/tmp/andromeda-resident.lock
 debian_user() {
   chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
     /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin ANDROMEDA_MODEL=lfm \
+    TV_API_BASE=http://127.0.0.1:8770 \
+    TV_API_TOKEN="$(cat "$ROOT/opt/doha-voice/tv/api_token.txt" 2>/dev/null || true)" \
+    DEEPSEEK_API_KEY="$(cat "$ROOT/opt/doha-voice/deepseek/api_key.txt" 2>/dev/null || true)" \
     /opt/doha-voice/bin/python -B "$@"
 }
 if ss -lnt | grep -qE ':(11435|11436)[[:space:]]'; then exit 1; fi
@@ -83,13 +86,8 @@ if [ -f "$ROOT/opt/doha-voice/tv/tv_api.py" ] && [ -f "$ROOT/opt/doha-voice/tv/a
   fi
 fi
 debian_user /opt/doha-voice/benchmark-warm-client.py init "$INNER"
-su -g 10218 -G 3003 10218 -c "'/system/bin/env' -i PATH=/system/bin:/system/xbin HOME=/data/local/tmp '/data/local/doha-inference/resident-model-worker.sh' '$WORK' '$WORKER_MODE'" &
-SUPERVISOR=$!
-debian_user /opt/doha-voice/pilot/prepare-conversation.py "$INNER/key" --assistant-tools $GUIDED $ALARMS >/dev/null 2>&1
 # No raw backend/model output is saved. Numeric monitoring has its own schema.
 status=0
-debian_user /opt/doha-voice/pilot/resident_voice.py --work "$INNER" $GUIDED $CONTINUOUS $VOICE $ALARMS >/dev/null 2>&1 || status=$?
+debian_user /opt/doha-voice/pilot/resident_voice.py --work "$INNER" $GUIDED $CONTINUOUS $VOICE $ALARMS --tv >/dev/null 2>&1 || status=$?
 debian_user -c 'import sys; sys.path.insert(0,"/opt/doha-voice/pilot"); from resident_runtime import request_stop; request_stop(sys.argv[1])' "$INNER"
-wait "$SUPERVISOR" || true # Backend already verified/stopped its owned model.
-SUPERVISOR=''
 exit "$status"
