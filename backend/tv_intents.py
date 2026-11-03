@@ -2,11 +2,20 @@
 (accion, parametros) o None si no se puede determinar. Nunca inventa valores."""
 import re
 
-from doja_intents import normalized
+from doja_intents import normalized, number, NUMBER
 
 
 def _clamp(v):
     return max(0, min(100, v))
+
+
+def _level(value):
+    if value.isdigit():
+        return _clamp(int(value))
+    try:
+        return _clamp(number(value))
+    except ValueError:
+        return None
 
 
 def parse_volume(text):
@@ -17,10 +26,16 @@ def parse_volume(text):
         return {'mute': True}
     if 'a la mitad' in t:
         return {'level': 50}
-    m = (re.search(r'\b(?:volumen|sonido)\b[^\d]{0,12}(\d{1,3})\b', t)
-         or re.search(r'\b(\d{1,3})\s*(?:%|por ?ciento)\b', t))
+    # "al 50" / "al cincuenta" / "50 por ciento" / "volumen 20"
+    m = re.search(r'\b(?:al|a|en)\s+(' + NUMBER + r')\b', t)
+    if not m:
+        m = re.search(r'\b(' + NUMBER + r')\s*(?:%|por ?ciento)\b', t)
+    if not m:
+        m = re.search(r'\b(?:volumen|sonido)\b[^0-9]{0,20}\b(' + NUMBER + r')\b', t)
     if m:
-        return {'level': _clamp(int(m.group(1)))}
+        level = _level(m.group(1))
+        if level is not None:
+            return {'level': level}
     if re.search(r'\b(sube|subir|subele|mas|aumenta)\b', t):
         return {'delta': 5}
     if re.search(r'\b(baja|bajar|bajale|menos|disminuye)\b', t):
@@ -36,6 +51,12 @@ def parse_input(text):
     if re.search(r'\b(tele|antena|canales|tv en vivo|en vivo)\b', t):
         return {'id': 'TV'}
     m = re.search(r'\b(?:hdmi|entrada|fuente|puerto)\s*(?:numero\s*)?([1-4]|uno|dos|tres|cuatro)\b', t)
+    if m:
+        n = m.group(1)
+        return {'id': 'HDMI_%d' % (int(n) if n.isdigit() else NUM[n])}
+    # Sin la palabra "hdmi" (el ASR a veces se la come): un número 1-4 tras
+    # "cambia/pon/entrada/fuente" es un HDMI.
+    m = re.search(r'\b(?:cambia|cambiar|pon|poner|ponle|entrada|fuente)\b[^\d]{0,30}\b(uno|dos|tres|cuatro|[1-4])\b', t)
     if m:
         n = m.group(1)
         return {'id': 'HDMI_%d' % (int(n) if n.isdigit() else NUM[n])}

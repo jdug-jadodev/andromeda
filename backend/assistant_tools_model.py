@@ -94,7 +94,7 @@ TOOL_INTENT = {
 # Orden independiente: "¿qué entradas tiene la tele?" y "está encendida la tele"
 # ponen "tele" al final, no al principio, así que ambos términos se exigen por
 # lookahead y no por orden literal.
-TV = r'\b(?:tele|tele ?visor|television|tv|pantalla)\b'
+TV = r'\b(?:tele|tele ?visor|television|te ?ve|teve|tv|pantalla)\b'
 def _tv(keyword):
     return r'(?=.*' + TV + r')(?=.*' + keyword + r')'
 # Las dos lecturas (estado y entradas) comparten un gate unificado: el modelo
@@ -109,7 +109,7 @@ TOOL_INTENT.update({
     'tv_volume':    _tv(r'\b(?:volumen|sonido|silencio|mutea|mute)\b'),
     'tv_audio':     _tv(r'\b(?:barra|soundbar|altavoz|parlante|optica|audio)\b'),
     'tv_inputs':    _tv(TV_READ),
-    'tv_input':     _tv(r'\b(?:pon|poner|cambia|cambiar|entrada|hdmi)\b'),
+    'tv_input':     r'\bhdmi\b|\b(?:cambia|cambiar|cambiale)\b.*\b(?:uno|dos|tres|cuatro|[1-4])\b|' + _tv(r'\b(?:pon|poner|cambia|cambiar|entrada|hdmi)\b'),
     'tv_open_app':  _tv(r'\b(?:abre|abrir|lanza|lanzar)\b'),
     'tv_scene':     _tv(r'\b(?:modo|cine|noche|buenos dias|buenas noches)\b'),
 })
