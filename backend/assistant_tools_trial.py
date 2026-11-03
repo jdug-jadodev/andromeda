@@ -178,6 +178,9 @@ class AssistantToolsTrial:
             if kind == 'tv_scene':
                 tv_control.scene(result['name'])
                 return {'text': f'Apliqué la escena {result["name"]}.'}
+            if kind == 'tv_home':
+                tv_control.open_app(app_id='com.webos.app.home')
+                return {'text': 'Volví al inicio de la TV.'}
         except tv_control.TVError:
             return {'text': 'No pude hablar con la TV ahora mismo.'}
         return {'text': REJECTION, 'timer_control': 'rejected'}

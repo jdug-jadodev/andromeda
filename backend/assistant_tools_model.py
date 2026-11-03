@@ -112,6 +112,7 @@ TOOL_INTENT.update({
     'tv_input':     r'\bhdmi\b|\b(?:cambia|cambiar|cambiale)\b.*\b(?:uno|dos|tres|cuatro|[1-4])\b|' + _tv(r'\b(?:pon|poner|cambia|cambiar|entrada|hdmi)\b'),
     'tv_open_app':  _tv(r'\b(?:abre|abrir|lanza|lanzar)\b'),
     'tv_scene':     _tv(r'\b(?:modo|cine|noche|buenos dias|buenas noches)\b'),
+    'tv_home':      _tv(r'\b(?:inicio|home|menu principal|pantalla principal|pantalla de inicio)\b'),
 })
 
 FALLBACK = 'No te entendí, ¿puedes decirlo de otra forma?'

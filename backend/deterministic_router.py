@@ -29,6 +29,7 @@ TOOL_ORDER = (
     'tv_audio',
     'tv_open_app',
     'tv_scene',
+    'tv_home',
     'tv_input',
     'tv_inputs',
     'tv_status',
@@ -139,6 +140,10 @@ def _dispatch(name, text, model):
         if params is None:
             return {'kind': 'reply', 'text': TV_UNCLEAR}
         return dict(kind='tv_open_app', **params)
+    if name == 'tv_home':
+        if not model.tv_enabled:
+            raise ValueError('TV control not enabled')
+        return {'kind': 'tv_home'}
     raise ValueError('Unhandled tool: ' + name)
 
 
