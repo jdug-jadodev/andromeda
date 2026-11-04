@@ -248,3 +248,13 @@ Interfaz se aborda **después** de que funcione el núcleo:
 - **Dormida que se cierra**: antes el estado pasaba a «sesión preparada» durante el desvanecimiento y los ojos se abrían un instante. Ahora la cara conserva `ASLEEP` (ojos cerrados) hasta desaparecer.
 - Mientras una salida está en curso, los refrescos del servicio no cambian la cara; si alguien llama a Andrómeda a mitad de la salida, se cancela y vuelve la cara normal.
 - `FaceInstrumentation` comprueba el salto, los ojos cerrados al dormirse y la cancelación.
+
+## Modo Navidad (2026-11-03)
+
+- Un solo parámetro del teléfono, sin reinstalar: `adb shell settings put global andromeda_navidad 1` (0 o sin definir: apagado). `ChristmasMode` lo lee cada segundo, y al apagarlo desaparece todo.
+- Es solo presentación: no toca voz, herramientas ni tiempos de un turno. Con el parámetro apagado no se crea ninguna vista nueva. `ChristmasArt` dibuja con los mismos números que `artifacts/andromeda-face-preview.html`.
+- Reloj: corona a la izquierda y reno a la derecha, como fondo de la capa del reloj (`ChristmasClockDrawable`), así que no cambian su diseño y caen con él en la despedida.
+- La hora crece cuando se oculta el botón de abajo, y al ser de una sola línea su ajuste automático ignora el ancho. En Navidad se limita su tamaño máximo para que cualquier hora quepa entre los adornos.
+- Al llamarla: el fondo aparece y ella entra a los 2 s (`ChristmasFacePolicy`). Solo espera mientras escucha; cualquier otro estado la muestra al instante, para que una respuesta nunca se retrase.
+- Ojos blanco nieve solo en Navidad, por decisión del usuario: es la única excepción a «el color solo cambia por fallo». El error sigue en ámbar.
+- `ChristmasInstrumentation` (con el parámetro en 1) comprueba la secuencia; `FaceInstrumentation` debe pasar con el parámetro en 0 y en 1.

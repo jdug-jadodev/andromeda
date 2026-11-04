@@ -20,6 +20,9 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     // Only a failure changes the eye colour.
     private static final int[] BASE = {164, 178, 255}, AMBER = {247, 193, 119}, SAD_BLUE = {151, 174, 220};
     private static final float DROWSY_RAMP_MS = 10000f;
+    // Navidad only: snow white eyes with a soft shadow so they stand out from the Christmas backdrop.
+    private static final int[] SNOW_WHITE = {240, 246, 255};
+    private static final int EYE_SHADOW = Color.argb(166, 5, 8, 19);
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path(), cut = new Path(), clip = new Path();
@@ -55,7 +58,13 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         invalidate();
     }
     FaceState getState() { return state; }
-    private boolean blank;
+    private boolean blank, christmas;
+    private int[] base = BASE;
+    private int sceneColor = SCENE_COLOR;
+    void setChristmas(boolean value) {
+        christmas = value; base = value ? SNOW_WHITE : BASE;
+        sceneColor = Color.rgb(base[0], base[1], base[2]); invalidate();
+    }
     void setBlank(boolean value) { blank = value; invalidate(); }
     boolean isBlank() { return blank; }
     public void setReaction(FaceReaction value, long durationMs) {
@@ -132,7 +141,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         float[] t = target;
         java.util.Arrays.fill(t, 0);
         t[SCALE] = t[GAP] = t[HEIGHT] = t[BREATH] = 1;
-        color[0] = BASE[0]; color[1] = BASE[1]; color[2] = BASE[2];
+        color[0] = base[0]; color[1] = base[1]; color[2] = base[2];
         switch (jumpStart > 0 ? FaceState.READY : state) {   // while jumping she looks like a plain, awake face
             case MUTED: t[SCALE] = .72f; break;
             case PREPARING: t[SCALE] = .88f; break;
@@ -243,8 +252,10 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
             canvas.translate(cx, cy + jump[0] * size); canvas.rotate((float)Math.toDegrees(jump[1])); canvas.translate(-cx, -cy);
         }
         paint.setStyle(Paint.Style.FILL); paint.setColor(faceColor); paint.setAlpha(255);
+        if (christmas) paint.setShadowLayer(getWidth() * .011f, 0, 0, EYE_SHADOW);
         drawEye(canvas, leftX, y, radius, narrowLeft, scaleY, -1);
         drawEye(canvas, rightX, y, radius, narrowRight, scaleY, 1);
+        if (christmas) paint.clearShadowLayer();
 
         if (current[HEART] > .01f) {
             float s = size * .14f * (.6f + .4f * current[HEART]);
@@ -363,7 +374,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
         float R = size * .6f * scale * (1f - .05f * cutDown);
         float gap = size * .66f * gapF;
         float y = cy + lookY * size;
-        paint.setStyle(Paint.Style.FILL); paint.setColor(SCENE_COLOR); paint.setAlpha(255);
+        paint.setStyle(Paint.Style.FILL); paint.setColor(sceneColor); paint.setAlpha(255);
         if (!hideFace) {
             sceneEye(canvas, cx - gap, y, R, heightF, cutDown, cutUp, droop, lid, -1);
             sceneEye(canvas, cx + gap, y, R, heightF, cutDown, cutUp, droop, lid, 1);
@@ -432,7 +443,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     private void boom(Canvas c, float x, float y, float s, float e, float W, float H) {
         float k = 1 - e;
         if (e < .3f) { paint.setColor(Color.WHITE); paint.setAlpha(Math.round(230 * (1 - e / .3f))); c.drawRect(0, 0, W, H, paint); }
-        paint.setColor(SCENE_COLOR); paint.setAlpha(Math.round(255 * k));
+        paint.setColor(sceneColor); paint.setAlpha(Math.round(255 * k));
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(Math.max(2, s * .25f * k));
         c.drawCircle(x, y, s * (.6f + 2.6f * e), paint);
         paint.setStyle(Paint.Style.FILL);
@@ -445,7 +456,7 @@ public final class FaceView extends View implements Choreographer.FrameCallback 
     // Full-screen digit: pops in, then settles.
     private void countdown(Canvas c, int n, float frac, float size) {
         float k = 1.25f - .45f * Math.min(1, frac * 3);
-        paint.setColor(SCENE_COLOR); paint.setTypeface(Typeface.DEFAULT_BOLD); paint.setTextAlign(Paint.Align.CENTER);
+        paint.setColor(sceneColor); paint.setTypeface(Typeface.DEFAULT_BOLD); paint.setTextAlign(Paint.Align.CENTER);
         paint.setTextSize(size * 1.5f * k);
         c.drawText(String.valueOf(n), getWidth() / 2f, getHeight() / 2f - (paint.descent() + paint.ascent()) / 2f, paint);
         paint.setTextAlign(Paint.Align.LEFT); paint.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD_ITALIC));
