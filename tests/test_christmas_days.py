@@ -68,7 +68,7 @@ class ChristmasTurn(unittest.TestCase):
     def test_scene_is_only_a_spoken_answer_for_the_session(self):
         from assistant_tools_trial import AssistantToolsTrial
         response = AssistantToolsTrial(lambda: 1000).model_result({'kind': 'santa', 'text': 'Faltan 50 días para Navidad.'}, {'id': 'x'}, 's', 'c', 0)
-        self.assertEqual(response, {'text': 'Faltan 50 días para Navidad.', 'face_scene': 'SANTA', 'offered_more': False})
+        self.assertEqual(response, {'text': 'Faltan 50 días para Navidad. ¿Necesitas algo más?', 'face_scene': 'SANTA', 'offered_more': True})
 
 
 if __name__ == '__main__':
