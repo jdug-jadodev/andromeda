@@ -10,7 +10,6 @@ public final class ChristmasSantaTest {
         expect(ChristmasSanta.durationMs(50) == 13400, "count scene length");
         expect(ChristmasSanta.durationMs(0) == 17600, "Christmas day scene length");
         expect(FaceReaction.parseScene("SANTA") == FaceReaction.SANTA, "the backend name reaches the scene");
-        expect(FaceReaction.parseScene("SANTA_TODAY").santa() && FaceReaction.SANTA.santa() && !FaceReaction.EVIL_BOMB.santa(), "the simulation is a Santa scene");
         expect(FaceReaction.SANTA.speechDelayMs() < ChristmasSanta.durationMs(50), "she speaks during the scene");
         System.out.println("Christmas Santa tests passed.");
     }

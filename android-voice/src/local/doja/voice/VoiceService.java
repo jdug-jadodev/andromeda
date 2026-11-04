@@ -1119,7 +1119,7 @@ public class VoiceService extends Service {
         noteReaction(scene);
         noteReaction(FaceReactionPolicy.forAssistant(message));
         // Without the Christmas scene her answer is an ordinary one and must not wait for it.
-        final long sceneDelay = scene.santa() && !ChristmasMode.playsSanta(this) ? 0 : scene.speechDelayMs();
+        final long sceneDelay = scene == FaceReaction.SANTA && !ChristmasMode.playsSanta(this) ? 0 : scene.speechDelayMs();
         if (conversationOnly && sceneDelay > 0) {
             // The countdown runs in silence; her line comes once it reaches 1.
             final String line = message; final int turnGeneration = speechGeneration;

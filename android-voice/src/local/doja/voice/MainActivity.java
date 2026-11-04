@@ -111,8 +111,7 @@ public class MainActivity extends Activity {
                 lastFaceReactionAt = faceAt;
                 if (face != null && VoiceService.faceReaction != FaceReaction.NONE) {
                     FaceReaction reaction = VoiceService.faceReaction;
-                    if (reaction == FaceReaction.SANTA_TODAY) playSanta(0);
-                    else if (reaction == FaceReaction.SANTA) playSanta(ChristmasSanta.daysUntilChristmas(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
+                    if (reaction == FaceReaction.SANTA) playSanta(ChristmasSanta.daysUntilChristmas(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
                     else {
                         if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
                         face.setReaction(reaction, reaction.durationMs());

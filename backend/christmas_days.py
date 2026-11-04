@@ -14,8 +14,6 @@ BOGOTA = timezone(timedelta(hours=-5))
 _ASKS = re.compile(r'\b(?:cuantos|cuantas|cuanto|falta|faltan|quedan?|cuando|que dia|ya es|hoy es|es hoy)\b')
 _ORDER = re.compile(r'\b(?:recuerdame|recordatorio|alarma|temporizador|pon|ponme|programa|crea|busca)\b')
 _ALREADY = re.compile(r'\b(?:ya es|hoy es|es hoy)\b')
-# TEMPORARY: "simula que hoy es Navidad" plays the 24 December scene on any day, to try it out. Remove after testing.
-_SIMULATE = re.compile(r'\bsimula\w*\b')
 
 
 def days_to_christmas(today):
@@ -34,8 +32,6 @@ def answer(human, today=None):
     """A question about the days left gives the scene result; anything else gives None."""
     if not isinstance(human, str) or not 0 < len(human) <= 250: return None
     value = normalized(human)
-    if not re.search(r'\bnavidad\b', value): return None
-    if _SIMULATE.search(value): return {'kind': 'santa', 'scene': 'SANTA_TODAY', 'text': sentence(0, False)}
-    if not _ASKS.search(value) or _ORDER.search(value): return None
+    if not re.search(r'\bnavidad\b', value) or not _ASKS.search(value) or _ORDER.search(value): return None
     today = today if today is not None else datetime.now(BOGOTA).date()
     return {'kind': 'santa', 'text': sentence(days_to_christmas(today), bool(_ALREADY.search(value)))}
