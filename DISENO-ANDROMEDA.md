@@ -259,4 +259,5 @@ Interfaz se aborda **después** de que funcione el núcleo:
 - Ojos blanco nieve solo en Navidad, por decisión del usuario: es la única excepción a «el color solo cambia por fallo». El error sigue en ámbar.
 - `ChristmasInstrumentation` (con el parámetro en 1) comprueba la secuencia; `FaceInstrumentation` debe pasar con el parámetro en 0 y en 1.
 - «¿Cuántos días faltan para Navidad?» (también «ya es Navidad», «qué día es Navidad»): `backend/christmas_days.py` la reconoce antes que la fecha, la aritmética y la nube, y cuenta hasta el 24 de diciembre (hora de Bogotá), así que baja sola cada día. Manda `face_scene: SANTA`; con Navidad encendida Papá Noel abre su bolsa y sale el contador, y el 24 hay resplandor, «¡Es hoy!» y lluvia de regalos (`ChristmasArt.drawSanta`, tiempos en `ChristmasSanta`). Con Navidad apagada solo responde con la voz, sin esperar.
+- Al desatar la bolsa suena `android-voice/assets/navidad-bolsa.mp3` (jingle «Merry Christmas» de Alex Morgan, elegido por el usuario; `ChristmasJingle`). Empieza a los 2 s, baja al 30 % cuando ella habla y se detiene si la escena se corta.
 - Pendiente: la canción del 24 de diciembre.

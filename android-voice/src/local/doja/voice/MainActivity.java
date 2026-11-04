@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     ChristmasBackdropView backdrop;
     private ChristmasClockDrawable clockDecor;
     private boolean christmas, faceHeld, santaPlaying, santaSpoke;
+    ChristmasJingle jingle;
     private final Runnable christmasFaceEntry = () -> showHeldFace(true);
     // The time grows with the free height when the button below it hides. In navidad its size is capped so that
     // any time fits between the wreath and the reindeer; a single line ignores the width when it auto-sizes.
@@ -1026,6 +1027,8 @@ public class MainActivity extends Activity {
         faceHoldUntil = SystemClock.uptimeMillis() + ChristmasSanta.durationMs(days);
         faceLayer.setVisibility(View.INVISIBLE); border.setProcessing(false);
         backdrop.show(0); backdrop.playSanta(days, this::endSanta);
+        if (jingle == null) jingle = new ChristmasJingle(this);
+        jingle.play(FaceReaction.SANTA.speechDelayMs());
     }
     private void endSanta() {
         santaPlaying = false;
@@ -1035,6 +1038,7 @@ public class MainActivity extends Activity {
     }
     /** Someone is talking to her again, or navidad was turned off: she comes back now. */
     private void stopSanta() {
+        if (jingle != null) jingle.stop();
         backdrop.stopSanta(); faceHoldUntil = 0; endSanta();
     }
     boolean isSantaPlaying() { return santaPlaying; }
@@ -1330,6 +1334,7 @@ public class MainActivity extends Activity {
         // invalid. Do not block the UI thread on HttpURLConnection.disconnect().
         closeOptions(); stopPreview(); refreshServiceState(); face.setForeground(false); border.setForeground(false);
         if (christmas) { backdrop.setForeground(false); clockDecor.setRunning(false); }
+        if (jingle != null) jingle.stop();
         handler.removeCallbacks(tick); handler.removeCallbacks(weatherRefresh); unregisterReceiver(receiver); super.onPause();
     }
     public void onStop() {

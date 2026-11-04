@@ -89,6 +89,8 @@ public final class ChristmasInstrumentation extends Instrumentation {
                 });
                 long began = SystemClock.uptimeMillis();
                 long framesBefore = activity.backdrop.getDrawnFrames();
+                SystemClock.sleep(Math.max(0, began + ChristmasJingle.START_MS + 700 - SystemClock.uptimeMillis()));
+                runOnMainSync(() -> check(activity.jingle != null && activity.jingle.isPlaying(), "The bag jingle is not playing"));
                 if (shots) for (long at : new long[]{1500, 3000, 4500, 5600, 8000, 11000}) {
                     SystemClock.sleep(Math.max(0, began + at - SystemClock.uptimeMillis()));
                     screenshot("santa-" + days + "-" + at);
