@@ -46,7 +46,9 @@ public final class AlarmLifecycleTest {
             int day=Integer.parseInt(row[1]),minute=Integer.parseInt(row[2]); long due=Long.parseLong(row[3]);
             AgendaRequestGuard.Value value=AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"pon una alarma para "+when,AgendaRequestGuard.clean(when),"",WALL,true);
             check(value.weekday==day && value.minute==minute && value.due==due && value.delay==0);
-            check(AgendaSpeechPolicy.text("CREATED",value,true).startsWith("Alarma semanal guardada: "+AlarmSchedule.label(day,minute)+". Próxima: "));
+            int alarmHour=minute/60, alarmMinute=minute%60;
+            String clock=alarmMinute==0?String.valueOf(alarmHour):String.format(Locale.ROOT,"%d:%02d",alarmHour,alarmMinute);
+            check(AgendaSpeechPolicy.text("CREATED",value,true).equals("Listo, alarma los "+AlarmSchedule.DAYS[day-1]+" a las "+clock+"."));
             check(AlarmSchedule.next(day,minute,due)==due+7*86400000L); // Exact boundary always advances a week.
             reject(() -> AgendaRequestGuard.parse(AgendaEntry.Kind.ALARM,"pon una alarma para "+when,when,"",WALL));
             AgendaDialogue form=new AgendaDialogue(64,true); AgendaDialogue.Human first=human(1,"pon una alarma");

@@ -5,6 +5,7 @@ proposal, NEVER an execution permit. Python and Android reconstruct independentl
 """
 import re
 from dataclasses import dataclass
+from cancel_phrases import is_cancel
 from doja_intents import normalized, number, ONES, TENS
 
 ASK = '¿A qué porcentaje, de cero a cien, quieres dejar el volumen multimedia del teléfono?'
@@ -109,6 +110,7 @@ class VolumeDialogue:
             return self.cancelled()
         self.last_seq = human.seq; self.armed = False; self.answers += 1
         if self.answers > 6: return self.cancelled()
+        if is_cancel(human.text): return self.cancelled()
         try: text = re.sub(r'\s*,\s*', ' ', plain(human.text))
         except ValueError: return self.cancelled()
         if text in NO: return self.cancelled()

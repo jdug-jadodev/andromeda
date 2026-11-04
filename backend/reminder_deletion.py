@@ -8,6 +8,7 @@ import uuid
 
 from agenda_dialogue import Human
 from agenda_requests import clean
+from cancel_phrases import is_cancel
 from doja_intents import normalized
 
 POLICY = 'confirmed_reminder_delete_v1'
@@ -91,6 +92,8 @@ class ReminderDeletion:
                 or self.clock()-self.created >= MAX_AGE_MS):
             self.clear(); raise ValueError('unheard_or_stale_reminder_question')
         self.last_seq = human.seq; self.answers += 1
+        if is_cancel(human.text):
+            self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=True)
         if self.answers > 8:
             self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=True)
         if self.stage != 'CONFIRM' or not affirmative(human.text): return self.step(human, session_end)

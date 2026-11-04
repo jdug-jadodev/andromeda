@@ -101,7 +101,7 @@ class AgendaDialogueTests(unittest.TestCase):
         result = trial.result(packet, 'a'*32, 'b'*32)
         self.assertEqual(result['actions_executed'], 1); self.assertEqual(result['close_reason'], '')
         self.assertTrue(result['offered_more']); self.assertTrue(result['text'].endswith('¿Necesitas algo más?'))
-        self.assertIn('Recordatorio guardado: lavar la loza.', result['text']); self.assertIn('En 5 minutos', result['text'])
+        self.assertIn('Listo, te aviso en 5 minutos.', result['text']); self.assertNotIn('hora de Bogotá', result['text'])
         self.assertIsNone(trial.result(packet, 'a'*32, 'b'*32))
 
     def test_foreign_payload_turn_replay_and_expired_forms_never_authorize(self):

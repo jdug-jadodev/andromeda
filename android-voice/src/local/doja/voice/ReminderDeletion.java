@@ -106,7 +106,7 @@ final class ReminderDeletion {
             origin=h.id;created=now;lastSequence=h.sequence;stage="TARGET";target=openingContent(h.text);
         } else {
             fresh(h,now);answers++;
-            if(answers>8 || negative(h.text))return terminal("CANCELLED",CANCELLED);
+            if(answers>8 || negative(h.text) || CancelPhrases.isCancel(h.text))return terminal("CANCELLED",CANCELLED);
             if(stage.equals("CONFIRM"))return question(h); // A read-only step never authorizes a deletion, even for yes.
             if(stage.equals("CHOOSE")) {
                 int index=choice(h.text);

@@ -329,3 +329,4 @@ A y B son bugs de uso diario: van primero y se prueban por voz antes de seguir.
 ## 14. Historial
 
 - **2026-11-03** — Plan creado. Cierra la fase de TV y el plan de arquitectura determinista + DeepSeek. Fase A/B (cancelación y confirmaciones) declaradas P0 por ser bugs de uso diario.
+- **2026-11-03** — **Fases A y B implementadas** (pendiente instalar en el teléfono): gramática única `cancel_phrases.py` / `CancelPhrases.java` usada por volumen, agenda, recordatorios y luces; "cancélalo", "cancela eso", "detente", "olvídalo", "para ya" ya no vuelven a preguntar. Confirmaciones cortas sin año, sin segundos y sin "hora de Bogotá" ("Listo, te aviso en 5 minutos", "Listo, alarma los lunes a las 17"). Tests Python y Java en verde; se corrigieron dos fixtures desactualizados (`missing_year`, `AlarmLifecycleTest`).

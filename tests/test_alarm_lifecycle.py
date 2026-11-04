@@ -71,7 +71,7 @@ class AlarmLifecycleTests(unittest.TestCase):
         packet.update(action='agenda_result',status='CREATED',session_id=SESSION,context_id=CONTEXT)
         with self.assertRaises(ValueError): trial.result(dict(packet,minute_of_day=480),SESSION,CONTEXT)
         response=trial.result(packet,SESSION,CONTEXT)
-        self.assertIn('cada martes a las 20:00',response['text']); self.assertEqual(response['actions_executed'],1)
+        self.assertIn('los martes a las 20',response['text']); self.assertEqual(response['actions_executed'],1)
 
     def test_same_five_native_tools_and_no_model_supplied_target_or_schedule(self):
         payload=AssistantToolsModel.alarm_payload([{'role':'system','content':'Public'},{'role':'user','content':'Hola.'}])
@@ -145,7 +145,7 @@ class AlarmLifecycleTests(unittest.TestCase):
         packet.update(action='agenda_result',status='CREATED',session_id=SESSION,context_id=CONTEXT)
         with self.assertRaises(ValueError): trial.result(dict(packet,weekday=2),SESSION,CONTEXT)
         response=trial.result(packet,SESSION,CONTEXT)
-        self.assertEqual(response['text'],'Alarma semanal guardada: cada lunes a las 17:00, hora de Bogotá. Próxima: 26/10/2026 a las 17:00. ¿Necesitas algo más?')
+        self.assertEqual(response['text'],'Listo, alarma los lunes a las 17. ¿Necesitas algo más?')
         self.assertEqual(response['actions_executed'],1); self.assertFalse(response['close_reason'])
 
     def test_plain_model_output_cannot_claim_deletion_or_snooze_without_receipt(self):

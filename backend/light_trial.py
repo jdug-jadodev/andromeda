@@ -7,6 +7,7 @@ the current human phrase with LightCommandParser and owns the BLE write.
 import uuid
 
 from doja_intents import normalized
+from cancel_phrases import is_cancel
 
 
 ASK = '¿Quieres que ejecute esa orden de luces?'
@@ -73,7 +74,7 @@ class LightTrial:
             answer = _text(turn['text'])
         except (TypeError, ValueError):
             answer = ''
-        if answer in NO:
+        if answer in NO or is_cancel(turn['text']):
             self.clear()
             return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': True}
         if answer not in YES:

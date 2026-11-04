@@ -12,25 +12,35 @@ from light_trial import LightTrial
 REJECTION = 'No pude confirmar esa petición. Dime claramente qué quieres hacer.'
 
 
+DAYS = 'lunes martes miércoles jueves viernes sábado domingo'.split()
+
+
+def _short_clock(hour, minute):
+    return str(hour) if minute == 0 else f'{hour}:{minute:02d}'
+
+
+def _short_day(due):
+    return DAYS[datetime.fromtimestamp(due / 1000, BOGOTA).weekday()]
+
+
 def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False, weekday=0, minute_of_day=-1):
-    name = 'Alarma' if kind == 'ALARM' else 'Recordatorio'
-    when = datetime.fromtimestamp(due / 1000, BOGOTA).strftime('%d/%m/%Y a las %H:%M')
+    """Confirmación corta: sin año, sin segundos y sin repetir la zona horaria.
+
+    Debe coincidir carácter por carácter con AgendaSpeechPolicy.java: Android
+    compara el texto exacto antes de aceptar el recibo.
+    """
     if status == 'CREATED':
         if weekday:
-            from alarm_schedule import label
-            return f'Alarma semanal guardada: {label(weekday,minute_of_day)}. Próxima: {when}.'
+            return f'Listo, alarma los {DAYS[weekday - 1]} a las {_short_clock(minute_of_day // 60, minute_of_day % 60)}.'
         if minute_of_day >= 0:
-            from alarm_schedule import label
-            return f'Aviso diario guardado: {label(0, minute_of_day)}. Próxima: {when}.'
-        if detailed and kind == 'REMINDER':
-            prefix = ''
-            if delay_ms:
-                scale, unit = (3600000, 'hora') if delay_ms % 3600000 == 0 else (60000, 'minuto') if delay_ms % 60000 == 0 else (1000, 'segundo')
-                count = delay_ms // scale; prefix = f'En {count} {unit}{"s" if count != 1 else ""}, '
-            exact = datetime.fromtimestamp(due / 1000, BOGOTA).strftime('%d/%m/%Y a las %H:%M:%S')
-            scheduled = prefix + 'para el ' if prefix else 'Para el '
-            return f'Recordatorio guardado: {reminder_text}. {scheduled}{exact}, hora de Bogotá.'
-        return f'{name} programado para el {when}, hora de Bogotá.' if kind == 'REMINDER' else f'Alarma programada para el {when}, hora de Bogotá.'
+            return f'Listo, alarma todos los días a las {_short_clock(minute_of_day // 60, minute_of_day % 60)}.'
+        if delay_ms:
+            scale, unit = (3600000, 'hora') if delay_ms % 3600000 == 0 else (60000, 'minuto') if delay_ms % 60000 == 0 else (1000, 'segundo')
+            count = delay_ms // scale
+            return f'Listo, te aviso en {count} {unit}{"s" if count != 1 else ""}.'
+        moment = datetime.fromtimestamp(due / 1000, BOGOTA)
+        what = 'alarma' if kind == 'ALARM' else 'recordatorio'
+        return f'Listo, {what} para el {_short_day(due)} a las {_short_clock(moment.hour, moment.minute)}.'
     return {'DUPLICATE': 'Esa orden ya tenía un registro. No la repetí; revisa la agenda manual.',
             'REJECTED': 'Android rechazó la programación. No he confirmado un aviso nuevo.',
             'FAILED': 'La programación falló y se retiró ese intento. Revisa la agenda manual.',

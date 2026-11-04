@@ -106,7 +106,7 @@ class ReminderClarificationTests(unittest.TestCase):
         packet={key:grant[key] for key in ('event_id','nonce','event_kind','due_ms','request_turn_id','request_sequence','weekday','minute_of_day')}
         packet.update(action='agenda_result',session_id='a'*32,context_id='b'*32,status='CREATED')
         with self.assertRaises(ValueError):trial.result(dict(packet,nonce='f'*32),'a'*32,'b'*32)
-        reply=trial.result(packet,'a'*32,'b'*32);self.assertEqual(reply['actions_executed'],1);self.assertIn('Recordatorio guardado: regar las plantas',reply['text'])
+        reply=trial.result(packet,'a'*32,'b'*32);self.assertEqual(reply['actions_executed'],1);self.assertEqual(reply['text'].split(' ¿')[0],'Listo, te aviso en 5 minutos.')
         self.assertIsNone(trial.result(packet,'a'*32,'b'*32));self.assertEqual(len(trial.consumed),1)
 
     def test_yes_recorded_before_question_completion_replay_and_expiry_do_not_authorize(self):

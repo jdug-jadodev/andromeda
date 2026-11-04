@@ -119,5 +119,14 @@ class VolumeDialogueTests(unittest.TestCase):
         self.assertTrue(any(e.get('timer_control')=='volume_result' and '20 %' in e['text'] for e in events))
         self.assertFalse(any(e['type']=='error' for e in events))
 
+    def test_explicit_cancel_phrases_never_reask_after_a_question(self):
+        # Bug real: "baja el volumen" -> "¿qué porcentaje?" -> "cancélalo" volvía a preguntar.
+        for phrase in ('cancelalo','cancela eso','cancela esto','detente','deten','olvidalo',
+                       'dejalo','parate','no sigas','andromeda cancelalo','andromeda, cancelalo'):
+            form=self.form('baja el volumen'); form.spoken(A,True,100100)
+            result=form.answer(turn(phrase,B,2,100200),100220)
+            self.assertEqual(result['kind'],'volume_cancelled',phrase)
+            self.assertFalse(form.active,phrase)
+
 
 if __name__=='__main__': unittest.main()

@@ -93,7 +93,7 @@ final class VolumeDialogue {
         if(answers>6) return cancelled(human);
         String text;
         try { text=plain(human.text).replaceAll("\\s*,\\s*"," "); } catch(IllegalArgumentException error) { return cancelled(human); }
-        if(NO.contains(text)) return cancelled(human);
+        if(CancelPhrases.isCancel(human.text) || NO.contains(text)) return cancelled(human);
         if(percent>=0 && YES.contains(text)) {
             prepared=new Decision("confirmed_volume_proposal","",origin,questionTurn,human,percent); return prepared;
         }

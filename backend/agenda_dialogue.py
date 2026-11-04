@@ -8,6 +8,7 @@ import re
 import time as _time
 
 from agenda_requests import AgendaValidationError, calendar_day, calendar_due, day_due, clean, parts
+from cancel_phrases import is_cancel
 from doja_intents import normalized
 
 
@@ -175,7 +176,7 @@ class AgendaDialogue:
         if self.answers > 8:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         plain = normalized(clean(human.text))
-        if plain in {'cancela', 'cancelar', 'cancela el aviso', 'cancela el recordatorio', 'cancela la alarma', 'cancela el temporizador', 'cancelalo', 'cancelala', 'cancelame', 'no', 'dejalo', 'olvidalo'}:
+        if is_cancel(human.text) or plain in {'cancela', 'cancelar', 'cancela el aviso', 'cancela el recordatorio', 'cancela la alarma', 'cancela el temporizador', 'cancelalo', 'cancelala', 'cancelame', 'no', 'dejalo', 'olvidalo'}:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         if self.needs_intent:
             confirmation = re.sub(r'\s*,\s*',' ',plain).strip(' .,!¡?¿')

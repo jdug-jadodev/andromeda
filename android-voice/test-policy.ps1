@@ -62,13 +62,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Voice health privacy policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Unified voice compilation failed' }
 & java -cp $output local.doja.voice.UnifiedVoicePolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'Unified voice policy tests failed' }
-& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\VolumeDialogue.java" "$source\PhoneVolumePolicy.java" "$PSScriptRoot\tests\PhoneVolumePolicyTest.java" "$PSScriptRoot\tests\VolumeDialogueTest.java"
+& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\CancelPhrases.java" "$source\VolumeDialogue.java" "$source\PhoneVolumePolicy.java" "$PSScriptRoot\tests\PhoneVolumePolicyTest.java" "$PSScriptRoot\tests\VolumeDialogueTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Phone volume compilation failed' }
 & java -cp $output local.doja.voice.PhoneVolumePolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\phone_volume_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Phone volume policy tests failed' }
 & java -cp $output local.doja.voice.VolumeDialogueTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\volume_dialogue_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Confirmed volume dialogue tests failed' }
-& javac -encoding UTF-8 -d $output "$source\WebAnswerPolicy.java" "$source\FaceState.java" "$source\UiPolicy.java" "$source\WeatherData.java" "$source\VoiceSessionPolicy.java" "$source\ConversationTurnPolicy.java" "$source\VoiceSocketCleanup.java" "$source\ConversationMemory.java" "$source\ContinuousVoicePolicy.java" "$source\TimerRequestGuard.java" "$source\TimerActionPolicy.java" "$source\TimerCreation.java" "$source\SilenceWindowPolicy.java" "$source\SilenceDiagnostics.java" "$source\AudioInputGate.java" "$PSScriptRoot\tests\UiPolicyTest.java" "$PSScriptRoot\tests\VoiceSocketCleanupTest.java" "$PSScriptRoot\tests\ConversationMemoryTest.java" "$PSScriptRoot\tests\ContinuousVoicePolicyTest.java" "$PSScriptRoot\tests\TimerActionTest.java" "$PSScriptRoot\tests\SilencePolicyTest.java"
+& javac -encoding UTF-8 -d $output "$source\WebAnswerPolicy.java" "$source\FaceState.java" "$source\UiPolicy.java" "$source\WeatherData.java" "$source\VoiceSessionPolicy.java" "$source\ConversationTurnPolicy.java" "$source\VoiceSocketCleanup.java" "$source\ConversationMemory.java" "$source\ContinuousVoicePolicy.java" "$source\TimerRequestGuard.java" "$source\CancelPhrases.java" "$source\TimerActionPolicy.java" "$source\TimerCreation.java" "$source\SilenceWindowPolicy.java" "$source\SilenceDiagnostics.java" "$source\AudioInputGate.java" "$PSScriptRoot\tests\UiPolicyTest.java" "$PSScriptRoot\tests\VoiceSocketCleanupTest.java" "$PSScriptRoot\tests\ConversationMemoryTest.java" "$PSScriptRoot\tests\ContinuousVoicePolicyTest.java" "$PSScriptRoot\tests\TimerActionTest.java" "$PSScriptRoot\tests\SilencePolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'UI policy test compilation failed' }
 & java -cp $output local.doja.voice.UiPolicyTest
 if ($LASTEXITCODE -ne 0) { throw 'UI policy tests failed' }
@@ -91,7 +91,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Capture diagnostic timing/numeric-privacy test
 if ($LASTEXITCODE -ne 0) { throw 'Manual agenda management compilation failed' }
 & java -cp $output local.doja.voice.AgendaManagementTest
 if ($LASTEXITCODE -ne 0) { throw 'Manual agenda management tests failed' }
-& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\AlarmSchedule.java" "$source\AgendaEntry.java" "$source\AgendaRequestGuard.java" "$source\AgendaDialogue.java" "$source\AgendaPermit.java" "$source\AgendaSpeechPolicy.java" "$source\ActionCompletionPolicy.java" "$source\AlarmDeletion.java" "$source\AlarmOccurrencePolicy.java" "$source\AlarmOccurrenceTransaction.java" "$PSScriptRoot\tests\AgendaGuardTest.java" "$PSScriptRoot\tests\AgendaDialogueTest.java" "$PSScriptRoot\tests\AlarmLifecycleTest.java"
+& javac -encoding UTF-8 -d $output "$source\TimerRequestGuard.java" "$source\AlarmSchedule.java" "$source\AgendaEntry.java" "$source\AgendaRequestGuard.java" "$source\CancelPhrases.java" "$source\AgendaDialogue.java" "$source\AgendaPermit.java" "$source\AgendaSpeechPolicy.java" "$source\ActionCompletionPolicy.java" "$source\AlarmDeletion.java" "$source\AlarmOccurrencePolicy.java" "$source\AlarmOccurrenceTransaction.java" "$PSScriptRoot\tests\AgendaGuardTest.java" "$PSScriptRoot\tests\AgendaDialogueTest.java" "$PSScriptRoot\tests\AlarmLifecycleTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Calendar guard compilation failed' }
 & javac -encoding UTF-8 -cp $output -d $output "$source\ReminderListPolicy.java" "$PSScriptRoot\tests\ReminderListPolicyTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Reminder read policy compilation failed' }
@@ -109,7 +109,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Calendar date/hour independent validation test
 if ($LASTEXITCODE -ne 0) { throw 'Reminder clarification compilation failed' }
 & java -cp $output local.doja.voice.ReminderClarificationTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\reminder_clarification_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Reminder clarification human/receipt scope tests failed' }
-& javac -encoding UTF-8 -cp $output -d $output "$source\ReminderDeletion.java" "$PSScriptRoot\tests\ReminderDeletionTest.java"
+& javac -encoding UTF-8 -cp $output -d $output "$source\CancelPhrases.java" "$source\ReminderDeletion.java" "$PSScriptRoot\tests\ReminderDeletionTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Reminder deletion compilation failed' }
 & java -cp $output local.doja.voice.ReminderDeletionTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'tests\reminder_delete_cases.tsv')
 if ($LASTEXITCODE -ne 0) { throw 'Reminder deletion target/authorization/fault tests failed' }

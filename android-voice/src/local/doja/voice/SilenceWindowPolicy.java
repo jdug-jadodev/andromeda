@@ -67,8 +67,7 @@ final class SilenceWindowPolicy {
     }
 
     static boolean isCancel(String text) {
-        String plain = plain(text);
-        return plain.matches("(?:andromeda[, ]+)?(?:cancelalo|cancela|cancela eso|cancela lo|olvidalo)");
+        return CancelPhrases.isCancel(text);
     }
 
     static boolean isWakeOnly(String text) {
