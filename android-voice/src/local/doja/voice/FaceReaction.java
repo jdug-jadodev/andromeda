@@ -7,7 +7,9 @@ public enum FaceReaction {
     // COUNTDOWN is silent for its first 8.6 s (1.6 s of eyes + ten digits at .7 s, see FaceView); her line follows.
     EVIL_BOMB(true, 7000, 0), COUNTDOWN(true, 15000, 8600), WINK_BOMB(true, 4200, 0),
     // Santa's answer about the days to Christmas; she speaks as the count comes out. See ChristmasSanta for its length.
-    SANTA(true, 0, 5500);
+    SANTA(true, 0, 5500),
+    // TEMPORARY: "simula que hoy es Navidad" plays the 24 December scene on any day. Remove after testing.
+    SANTA_TODAY(true, 0, 5500);
 
     private final boolean scene;
     private final long durationMs, speechDelayMs;
@@ -18,6 +20,7 @@ public enum FaceReaction {
     }
 
     public boolean scene() { return scene; }
+    public boolean santa() { return this == SANTA || this == SANTA_TODAY; }
     public long durationMs() { return durationMs; }
     /** How long the scene plays before she starts speaking. */
     public long speechDelayMs() { return speechDelayMs; }

@@ -40,6 +40,17 @@ class ChristmasDays(unittest.TestCase):
         self.assertEqual(answer('ya es navidad', date(2026, 12, 24))['text'], '¡Es hoy! ¡Feliz Navidad!')
 
 
+class ChristmasSimulation(unittest.TestCase):
+    def test_plays_the_day_itself_on_any_day(self):
+        for phrase in ('simulación de que hoy es navidad', 'simula que hoy es navidad', 'simular navidad'):
+            result = answer(phrase, date(2026, 11, 4))
+            self.assertEqual(result, {'kind': 'santa', 'scene': 'SANTA_TODAY', 'text': '¡Es hoy! ¡Feliz Navidad!'}, phrase)
+
+    def test_needs_both_words(self):
+        self.assertIsNone(answer('simula una alarma', date(2026, 11, 4)))
+        self.assertNotIn('scene', answer('hoy es navidad', date(2026, 11, 4)))
+
+
 class ChristmasTurn(unittest.TestCase):
     def model(self):
         from assistant_tools_model import AssistantToolsModel
