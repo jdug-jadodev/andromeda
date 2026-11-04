@@ -68,7 +68,8 @@ class LightTrial:
                 or turn['seq'] > self.maximum_sequence or turn['speech_end'] < self.heard_at
                 or now - self.created >= 300000):
             self.clear()
-            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': True}
+            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
+                    'close_reason': 'explicit_close'}
         self.armed = False
         try:
             answer = _text(turn['text'])
@@ -76,17 +77,19 @@ class LightTrial:
             answer = ''
         if answer in NO or is_cancel(turn['text']):
             self.clear()
-            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': True}
+            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
+                    'close_reason': 'explicit_close'}
         if answer not in YES:
             self.clear()
-            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': True}
+            return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
+                    'close_reason': 'explicit_close'}
         before = now + 60000
         if session_end:
             before = min(before, session_end - 5000)
         if before - now < 500:
             self.clear()
             return {'text': 'La confirmación de luces venció. No cambié ninguna luz.',
-                    'timer_control': 'light_cancelled', 'offered_more': True}
+                    'timer_control': 'light_cancelled', 'offered_more': False, 'close_reason': 'explicit_close'}
         self.inflight = {
             'type': 'light_execute', 'session_id': session, 'context_id': context,
             'nonce': uuid.uuid4().hex, 'origin_turn_id': self.origin,

@@ -102,7 +102,7 @@ final class LightVoiceChannel {
             question = event.optString("turn_id"); questionSequence = event.optLong("turn_seq"); armed = false; return true;
         }
         if ("light_cancelled".equals(control)) {
-            if (count != 0 || !event.optBoolean("offered_more") || !event.optString("close_reason").isEmpty()
+            if (count != 0 || event.optBoolean("offered_more") || !"explicit_close".equals(event.optString("close_reason"))
                     || !CANCELLED.equals(AgendaActionChannel.text(event, "text"))) throw new IOException("Unverified light cancellation");
             clear(); return true;
         }

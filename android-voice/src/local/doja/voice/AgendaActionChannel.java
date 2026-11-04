@@ -114,15 +114,18 @@ final class AgendaActionChannel {
         String control = event.optString("timer_control"); long count = integer(event, "actions_executed");
         if (closed || !turn.equals(event.optString("turn_id")) || count < 0 || count > 1) throw new IOException("Unrelated tools reply");
         if (control.equals("agenda_question") || control.equals("agenda_cancelled")) {
-            if (!guided || accepted != null || timerAccepted || volumeAccepted || count != 0 || !event.optString("close_reason").isEmpty())
+            boolean cancelled = control.equals("agenda_cancelled");
+            if (!guided || accepted != null || timerAccepted || volumeAccepted || count != 0
+                    || (cancelled ? !"explicit_close".equals(event.optString("close_reason"))
+                        : !event.optString("close_reason").isEmpty()))
                 throw new IOException("Unverified agenda dialogue");
             if (control.equals("agenda_question")) {
                 AgendaEntry.Kind kind = AgendaEntry.Kind.valueOf(text(event, "agenda_kind"));
                 if (dialogueDecision == null) dialogueDecision = dialogue.begin(kind, latestHuman);
                 if (!"question".equals(dialogueDecision.kind) || dialogueDecision.eventKind != kind || event.optBoolean("offered_more", true)
                         || !dialogueDecision.text.equals(text(event, "text"))) throw new IOException("Unrelated agenda question");
-            } else if (dialogueDecision == null || !"cancelled".equals(dialogueDecision.kind) || !event.optBoolean("offered_more")
-                    || !ActionCompletionPolicy.text(AgendaDialogue.CANCELLED, true).equals(text(event, "text")))
+            } else if (dialogueDecision == null || !"cancelled".equals(dialogueDecision.kind) || event.optBoolean("offered_more")
+                    || !AgendaDialogue.CANCELLED.equals(text(event, "text")))
                 throw new IOException("Unrelated agenda cancellation");
             return true;
         }

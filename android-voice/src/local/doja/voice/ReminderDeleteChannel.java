@@ -63,7 +63,10 @@ final class ReminderDeleteChannel {
     }
     synchronized String speech(JSONObject e)throws Exception {
         String control=e.optString("timer_control");if(!control.startsWith("reminder_delete_"))return null;
-        if(closed || human==null || !human.id.equals(text(e,"turn_id")) || !e.optString("close_reason").isEmpty())throw new IOException("Unrelated reminder deletion speech");
+        if(closed || human==null || !human.id.equals(text(e,"turn_id"))
+                || (!control.equals("reminder_delete_cancelled") && !e.optString("close_reason").isEmpty())
+                || (control.equals("reminder_delete_cancelled") && !"explicit_close".equals(e.optString("close_reason"))))
+            throw new IOException("Unrelated reminder deletion speech");
         long count=number(e,"actions_executed");String wire=text(e,"text");boolean offer=e.optBoolean("offered_more");
         if(control.equals("reminder_delete_question") || control.equals("reminder_delete_selection")) {
             JSONObject meta=e.getJSONObject("reminder_delete");String status=text(meta,"status");
@@ -83,7 +86,7 @@ final class ReminderDeleteChannel {
         }
         if(control.equals("reminder_delete_cancelled")) {
             // Bounded dialogue exhaustion is never an authorization.
-            if(permit!=null || count!=0 || !offer || !wire.equals(ActionCompletionPolicy.text(ReminderDeletion.CANCELLED,true)))throw new IOException("Invalid deletion cancellation");
+            if(permit!=null || count!=0 || offer || !wire.equals(ReminderDeletion.CANCELLED))throw new IOException("Invalid deletion cancellation");
             dialogue.clear();return wire;
         }
         if(!control.equals("reminder_delete_result") || permit==null || !offer)throw new IOException("No deletion permit");

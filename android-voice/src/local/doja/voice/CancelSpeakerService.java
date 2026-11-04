@@ -17,7 +17,7 @@ import java.util.Locale;
 
 /** Speaks the fixed local cancellation phrase, then reopens the wake service. */
 public final class CancelSpeakerService extends Service {
-    static final String TEXT = "Está bien, aquí estaré cuando lo necesites.";
+    static final String TEXT = "Está bien.";
     private static final String CHANNEL = "cancel_voice";
     private static final int NOTIFICATION_ID = 18;
     private final Handler handler = new Handler(Looper.getMainLooper());

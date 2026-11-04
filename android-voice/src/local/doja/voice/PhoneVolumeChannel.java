@@ -68,9 +68,11 @@ final class PhoneVolumeChannel {
     synchronized boolean speech(JSONObject event) throws Exception {
         String control=event.optString("timer_control");
         if("volume_question".equals(control) || "volume_cancelled".equals(control)) {
+            boolean cancelled="volume_cancelled".equals(control);
             if(closed || dialogue==null || accepted!=null || !turn.equals(event.optString("turn_id"))
                     || AgendaActionChannel.integer(event,"actions_executed")!=0 || event.optBoolean("offered_more",true)
-                    || !event.optString("close_reason").isEmpty()) throw new IOException("Unrelated volume question");
+                    || (cancelled ? !"explicit_close".equals(event.optString("close_reason"))
+                        : !event.optString("close_reason").isEmpty())) throw new IOException("Unrelated volume question");
             if(decision==null) decision=dialogue.begin(latestHuman);
             if(!decision.kind.equals(control) || !decision.text.equals(AgendaActionChannel.text(event,"text")))
                 throw new IOException("Unverified volume question");

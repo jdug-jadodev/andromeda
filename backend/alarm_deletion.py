@@ -65,7 +65,7 @@ class AlarmDeletion:
             self.clear(); raise ValueError('Deletion question unheard/stale')
         plain=normalized(clean(human.text))
         if plain not in {'si','confirmo','si elimina esa alarma','elimina esa alarma','confirmo eliminar esa alarma'}:
-            self.clear(); return dict(text=CANCELLED,timer_control='alarm_delete_cancelled',offered_more=True)
+            self.clear(); return dict(text=CANCELLED,timer_control='alarm_delete_cancelled',offered_more=False,close_reason='explicit_close')
         now=self.clock(); before=min(now+4000,human.speech_end+26500,session_end-5000)
         if before-now<500 or session_end>now+300000: raise ValueError('Stale deletion confirmation')
         self.grant=dict(type='alarm_delete_execute',operation_id=str(uuid.uuid4()),nonce=uuid.uuid4().hex,

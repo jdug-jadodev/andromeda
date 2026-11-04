@@ -9,6 +9,7 @@ Android, `say`) no cambia.
 import re
 
 from doja_intents import normalized
+from cancel_phrases import is_cancel
 from assistant_tools_model import TOOL_INTENT, FALLBACK, TV_UNCLEAR
 from timer_proposals import literal_seconds, TimerValidationError
 from agenda_requests import current_event, AgendaValidationError
@@ -154,6 +155,11 @@ def route(text, model):
     DeepSeek (Fase 2) lo dispara `AssistantToolsModel.start()` a partir de ese
     FALLBACK, vía `cloud_enabled()`/`route_cloud()`.
     """
+    # Cancelación global: "cancélalo", "olvídalo", "detente" valen en cualquier
+    # punto, haya o no un diálogo abierto. Antes solo los diálogos la conocían y
+    # una propuesta de temporizador (que no es diálogo) se iba a la nube.
+    if is_cancel(text):
+        return {'kind': 'cancelled'}
     plain = normalized(text)
     for name in TOOL_ORDER:
         if _matches(name, plain):

@@ -93,9 +93,9 @@ class ReminderDeletion:
             self.clear(); raise ValueError('unheard_or_stale_reminder_question')
         self.last_seq = human.seq; self.answers += 1
         if is_cancel(human.text):
-            self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=True)
+            self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=False,close_reason='explicit_close')
         if self.answers > 8:
-            self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=True)
+            self.clear(); return dict(text=CANCELLED,timer_control='reminder_delete_cancelled',offered_more=False,close_reason='explicit_close')
         if self.stage != 'CONFIRM' or not affirmative(human.text): return self.step(human, session_end)
         now = self.clock(); before = min(now+4000,human.speech_end+26500,session_end-5000)
         if before-now < 500 or not now < session_end <= now+300000: raise ValueError('stale_deletion_confirmation')

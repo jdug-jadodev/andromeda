@@ -68,7 +68,10 @@ final class AlarmActionChannel {
             if(control.isEmpty() && AlarmDeletion.unsupportedClaim(text(event,"text"))) throw new IOException("Alarm claim without receipt");
             return false;
         }
-        if(closed || human==null || !human.id.equals(text(event,"turn_id")) || !event.optString("close_reason").isEmpty()) throw new IOException("Unrelated alarm speech");
+        if(closed || human==null || !human.id.equals(text(event,"turn_id"))
+                || (!control.equals("alarm_delete_cancelled") && !event.optString("close_reason").isEmpty())
+                || (control.equals("alarm_delete_cancelled") && !"explicit_close".equals(event.optString("close_reason"))))
+            throw new IOException("Unrelated alarm speech");
         long count=number(event,"actions_executed"); String expected; boolean offer=true;
         switch(control) {
             case "alarm_delete_question":
@@ -79,7 +82,7 @@ final class AlarmActionChannel {
                 if(status.isEmpty() || "FOUND".equals(status)) status="UNKNOWN";
                 expected=ActionCompletionPolicy.text(AlarmDeletion.selectionText(status),true); if(count!=0) throw new IOException("Selection is read-only"); deletion.clear(); break;
             case "alarm_delete_cancelled":
-                if(!cancelled || count!=0) throw new IOException("Unrelated cancellation"); expected=ActionCompletionPolicy.text(AlarmDeletion.CANCELLED,true); break;
+                if(!cancelled || count!=0) throw new IOException("Unrelated cancellation"); expected=AlarmDeletion.CANCELLED; offer=false; break;
             case "alarm_delete_result":
                 if(permit==null) throw new IOException("No authorized deletion");
                 boolean uncertain=count==0 && ActionCompletionPolicy.text(AlarmDeletion.UNKNOWN,true).equals(text(event,"text"));

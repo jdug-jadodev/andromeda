@@ -30,6 +30,8 @@ def direct_timer_prefix(text):
     plain = normalized(text).strip(' .,!¡?¿')
     plain = re.sub(r'^andromeda[, ]+', '', plain)
     plain = re.sub(r'^por favor\s+', '', plain)
+    # Conectores que el ASR antepone: "con un temporizador", "o un temporizador".
+    plain = re.sub(r'^(?:(?:o|con|y|tambien|ahora|por|de)\s+)+', '', plain)
     return re.match(r'^(?:(?:pon|pone|ponme|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
                     r'(?:temporizador|timer|cuenta atras)\b', plain) is not None
 
@@ -41,6 +43,8 @@ def literal_duration(text):
     if any(c.isdecimal() and c not in '0123456789' for c in plain): raise TimerValidationError('invalid_request')
     plain = re.sub(r'^andromeda[, ]+', '', plain)
     plain = re.sub(r'^por favor\s+', '', plain)
+    # Conectores que el ASR antepone: "con un temporizador", "o un temporizador".
+    plain = re.sub(r'^(?:(?:o|con|y|tambien|ahora|por|de)\s+)+', '', plain)
     # Fracciones comunes de hora → minutos, para que DURATION las reconozca.
     plain = re.sub(r'\bmedia hora\b', '30 minutos', plain)
     plain = re.sub(r'\bcuarto de hora\b', '15 minutos', plain)

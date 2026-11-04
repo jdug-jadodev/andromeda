@@ -10,6 +10,7 @@ from phone_volume import VolumeTrial
 from light_trial import LightTrial
 
 REJECTION = 'No pude confirmar esa petición. Dime claramente qué quieres hacer.'
+CANCEL_TEXT = 'Está bien.'
 
 
 DAYS = 'lunes martes miércoles jueves viernes sábado domingo'.split()
@@ -82,7 +83,9 @@ class AssistantToolsTrial:
         if result['kind'] == 'agenda_question':
             return {'text': result['text'], 'timer_control': 'agenda_question', 'agenda_kind': result['event_kind'], 'offered_more': False}
         if result['kind'] == 'agenda_cancelled':
-            return {'text': ConversationFlow.with_offer(result['text']), 'timer_control': 'agenda_cancelled', 'offered_more': True}
+            # Cancelar cierra la conversación: nada de "¿Necesitas algo más?".
+            return {'text': result['text'], 'timer_control': 'agenda_cancelled', 'offered_more': False,
+                    'close_reason': 'explicit_close'}
         raise ValueError('Unknown agenda dialogue response')
 
     def human(self, turn, session, context, session_end):
@@ -124,7 +127,9 @@ class AssistantToolsTrial:
     @staticmethod
     def volume_dialogue_response(result):
         if result['kind'] not in {'volume_question','volume_cancelled'}: raise ValueError('Unknown volume dialogue response')
-        return {'text':result['text'],'timer_control':result['kind'],'offered_more':False}
+        response = {'text':result['text'],'timer_control':result['kind'],'offered_more':False}
+        if result['kind'] == 'volume_cancelled': response['close_reason'] = 'explicit_close'
+        return response
 
     def completion(self, response):
         if self.guided_agenda and response is not None and response.get('close_reason') == 'action_result':
@@ -196,6 +201,12 @@ class AssistantToolsTrial:
         return {'text': REJECTION, 'timer_control': 'rejected'}
 
     def model_result(self, result, turn, session, context, session_end):
+        if result['kind'] == 'cancelled':
+            # Cancelación explícita en cualquier punto: descarta lo pendiente y
+            # cierra la conversación sin ofrecer nada más.
+            self.cancel()
+            self.inflight = None
+            return {'text': CANCEL_TEXT, 'offered_more': False, 'close_reason': 'explicit_close'}
         if result['kind'] == 'self_destruct':
             # The model chose the tool; its scene is shown by Android while this line is spoken.
             # No timer_control: the app's TimerActionChannel rejects unknown values as
