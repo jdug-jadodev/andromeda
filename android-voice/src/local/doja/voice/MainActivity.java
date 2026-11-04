@@ -35,7 +35,7 @@ public class MainActivity extends Activity {
     // Navidad: nothing below exists while ChristmasMode is off, and every use is guarded by christmas.
     ChristmasBackdropView backdrop;
     private ChristmasClockDrawable clockDecor;
-    private boolean christmas, faceHeld;
+    private boolean christmas, faceHeld, santaPlaying, santaSpoke;
     private final Runnable christmasFaceEntry = () -> showHeldFace(true);
     // The time grows with the free height when the button below it hides. In navidad its size is capped so that
     // any time fits between the wreath and the reindeer; a single line ignores the width when it auto-sizes.
@@ -110,8 +110,11 @@ public class MainActivity extends Activity {
                 lastFaceReactionAt = faceAt;
                 if (face != null && VoiceService.faceReaction != FaceReaction.NONE) {
                     FaceReaction reaction = VoiceService.faceReaction;
-                    if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
-                    face.setReaction(reaction, reaction.durationMs());
+                    if (reaction == FaceReaction.SANTA) playSanta(ChristmasSanta.daysUntilChristmas(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
+                    else {
+                        if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
+                        face.setReaction(reaction, reaction.durationMs());
+                    }
                 }
             }
             if (CaptureProbeService.active) {
@@ -1007,12 +1010,34 @@ public class MainActivity extends Activity {
             if (showingFace) backdrop.show(0);
         } else {
             if (faceHeld) showHeldFace(true);
+            if (santaPlaying) stopSanta();
             clockDecor.setRunning(false); idleLayer.setBackground(null); clockDecor = null;
             idleLayer.removeOnLayoutChangeListener(christmasClockFit); clockMostPx = 0;
             clock.setAutoSizeTextTypeUniformWithConfiguration(60, 180, 2, android.util.TypedValue.COMPLEX_UNIT_SP);
             backdrop.setForeground(false); root.removeView(backdrop); backdrop = null;
         }
     }
+    /** Santa answers on the backdrop while her face steps aside; without navidad the answer is only her voice. */
+    void playSanta(int days) {
+        if (!christmas || !showingFace || !resumed || reducedMotion() || santaPlaying) return;
+        if (faceHeld) showHeldFace(false);
+        santaPlaying = true; santaSpoke = false;
+        // A session closing during the scene waits for it, the same as a self-destruct scene.
+        faceHoldUntil = SystemClock.uptimeMillis() + ChristmasSanta.durationMs(days);
+        faceLayer.setVisibility(View.INVISIBLE); border.setProcessing(false);
+        backdrop.show(0); backdrop.playSanta(days, this::endSanta);
+    }
+    private void endSanta() {
+        santaPlaying = false;
+        if (!showingFace) return;
+        faceLayer.setVisibility(View.VISIBLE);
+        if (!handler.hasCallbacks(releaseHeldFace)) face.enterRunning();   // she is about to leave otherwise
+    }
+    /** Someone is talking to her again, or navidad was turned off: she comes back now. */
+    private void stopSanta() {
+        backdrop.stopSanta(); faceHoldUntil = 0; endSanta();
+    }
+    boolean isSantaPlaying() { return santaPlaying; }
     /** The backdrop had its moment, or something more important arrived: she comes out now. */
     private void showHeldFace(boolean enter) {
         handler.removeCallbacks(christmasFaceEntry); faceHeld = false;
@@ -1022,6 +1047,10 @@ public class MainActivity extends Activity {
         boolean nextFace = UiPolicy.showsFace(value);
         long now = SystemClock.uptimeMillis();
         if (faceHeld && (!nextFace || ChristmasFacePolicy.releasesHeldFace(value))) showHeldFace(nextFace);
+        if (santaPlaying) {
+            if (value == FaceState.SPEAKING) santaSpoke = true;
+            else if (value == FaceState.THINKING && santaSpoke) stopSanta();
+        }
         if (!nextFace && showingFace && now < faceHoldUntil) {
             heldText = text;
             state.setText(text); border.setProcessing(false);
@@ -1071,7 +1100,7 @@ public class MainActivity extends Activity {
                 faceLayer.setVisibility(View.GONE); idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(1);
             }
         }
-        border.setProcessing(value == FaceState.THINKING);
+        border.setProcessing(value == FaceState.THINKING && !santaPlaying);
     }
     void showReaction(FaceReaction reaction) {
         if (face == null || reaction == null || reaction == FaceReaction.NONE) return;

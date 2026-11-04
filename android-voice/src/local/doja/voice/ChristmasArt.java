@@ -17,7 +17,25 @@ final class ChristmasArt {
     }
     private static final Flake[] FAR = flakes(120, 11, .22f, .5f, .055f, .6f), NEAR = flakes(70, 907, .5f, 1.05f, .1f, .92f);
 
+    private static final class Gift {
+        final float x, at, size, tall, spin, rest, tilt;
+        final int color, dark, ribbon;
+        Gift(int i) {
+            x = (float)hash(i + .12); at = 5.5f + (float)hash(i + .22) * 8.2f; size = 5.5f + (float)hash(i + .32) * 6;
+            tall = .72f + .45f * (float)hash(i + .42); spin = ((float)hash(i + .52) - .5f) * 6;
+            rest = .84f + .13f * (float)hash(i + .62); tilt = ((float)hash(i + .72) - .5f) * .4f;
+            int[] colors = GIFT_COLORS[i % GIFT_COLORS.length]; color = colors[0]; dark = colors[1]; ribbon = colors[2];
+        }
+    }
+    private static final int[][] GIFT_COLORS = {{0xffd8303f, 0xff9c1a2b, 0xfff2c552}, {0xff2c9a5b, 0xff1a6a3e, 0xfff4f8ff},
+        {0xff3f7fd8, 0xff2553a0, 0xfff4f8ff}, {0xfff2c552, 0xffc8942a, 0xffc8283b}, {0xff9a5bd8, 0xff6a3aa0, 0xfff2c552}};
+    // From the far ones to the near ones, so the pile on the ground stacks by itself.
+    private static final Gift[] RAIN = gifts();
+    private static final Xfermode ADD = new PorterDuffXfermode(PorterDuff.Mode.ADD);
+    private static final Typeface BOLD = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD);
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint smooth = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Path path = new Path();
     private final RectF oval = new RectF();
     // Live parts redraw often, so their gradients (in local units) are built once.
@@ -39,6 +57,13 @@ final class ChristmasArt {
             list[i] = new Flake((float)hash(seed + i), (float)hash(seed + i + .37), r0 + (r1 - r0) * (float)hash(seed + i + .71),
                 fall * (.75f + .5f * (float)hash(seed + i + .13)), (float)hash(seed + i + .53) * 6.283f, alpha);
         }
+        return list;
+    }
+
+    private static Gift[] gifts() {
+        Gift[] list = new Gift[60];
+        for (int i = 0; i < list.length; i++) list[i] = new Gift(i);
+        java.util.Arrays.sort(list, (a, b) -> Float.compare(a.rest, b.rest));
         return list;
     }
 
@@ -379,6 +404,213 @@ final class ChristmasArt {
             reindeerLive(canvas, t, reduced);
             bell(canvas, 0, 46, 8.5f, 1, collar);
         });
+    }
+
+    // --- "¿Cuántos días faltan?": Santa walks in, opens his bag and the count rises out of it ---
+    private static float clamp01(float v) { return Math.max(0, Math.min(1, v)); }
+    private static float ease(float v) { return v * v * (3 - 2 * v); }
+    private static float mix(float a, float b, float v) { return a + (b - a) * v; }
+
+    private void santaArm(Canvas c, float x, float y, float angle) {
+        c.save(); c.translate(x, y); c.rotate(degrees(angle));
+        fill(0xffc8283b); c.drawRoundRect(-3.7f, -1, 3.7f, 14, 3.6f, 3.6f, paint);
+        fill(0xfff4f8ff); c.drawRoundRect(-4.5f, 12.6f, 4.5f, 16.2f, 1.8f, 1.8f, paint);
+        fill(0xff1f7a48); ellipse(c, 0, 18.6f, 4.5f, 4.7f, 0);
+        c.restore();
+    }
+
+    /** Origin at the ground between his boots. step -1..1 walks, reach 0..1 goes to the bag, wave 0..1 raises the other arm. */
+    private void santaFigure(Canvas c, float step, float reach, float wave, float time) {
+        for (int side = -1; side <= 1; side += 2) {
+            float lift = Math.max(0, side * step) * 2.4f;
+            fill(0xffa81f30); c.drawRoundRect(side * 7 - 4.4f, -15, side * 7 + 4.4f, -2 - lift, 2.5f, 2.5f, paint);
+            fill(0xff1b2029); ellipse(c, side * 8, -3.4f - lift, 7, 3.8f, 0);
+            fill(0x47ffffff); ellipse(c, side * 8 - 2, -4.6f - lift, 2.6f, .9f, 0);
+        }
+        santaArm(c, -13, -36, mix(.2f, 2.55f + .22f * sin(time * 9), wave));
+        shade(new LinearGradient(-16, 0, 16, 0, new int[]{0xffd8303f, 0xffd42a3a, 0xff9c1a2b}, new float[]{0, .55f, 1}, Shader.TileMode.CLAMP));
+        ellipse(c, 0, -26, 16.5f, 18.5f, 0);
+        fill(0xfff4f8ff); c.drawRect(-2.6f, -43, 2.6f, -11, paint);
+        c.drawRoundRect(-16, -13.5f, 16, -7.9f, 2.8f, 2.8f, paint);
+        fill(0xff1b2029); c.drawRect(-16.2f, -26.5f, 16.2f, -21.9f, paint);
+        fill(0xfff2c552); c.drawRoundRect(-4.2f, -28, 4.2f, -20.4f, 1.2f, 1.2f, paint);
+        fill(0xff1b2029); c.drawRoundRect(-2.2f, -26, 2.2f, -22.4f, .6f, .6f, paint);
+        santaArm(c, 13, -36, mix(-.2f, -1.25f, reach));
+        // Head: face, beard, moustache, hat.
+        fill(0xfff6c9a4); ellipse(c, 0, -50, 8.6f, 8.8f, 0);
+        fill(0xfff4f8ff);
+        for (int i = 0; i <= 8; i++) {
+            float a = .15f + i * .355f;
+            ellipse(c, cos(a) * 8.4f, -46 + sin(a) * 7.4f, 4.1f, 4.1f, 0);
+        }
+        ellipse(c, 0, -42, 8.6f, 7.6f, 0);
+        fill(0x73ee786e); ellipse(c, -5.4f, -48.6f, 2.1f, 1.5f, 0); ellipse(c, 5.4f, -48.6f, 2.1f, 1.5f, 0);
+        fill(0xff20262f); ellipse(c, -3.1f, -51.5f, 1, 1.15f, 0); ellipse(c, 3.1f, -51.5f, 1, 1.15f, 0);
+        fill(Color.WHITE); c.drawCircle(-3.4f, -51.9f, .32f, paint); c.drawCircle(2.8f, -51.9f, .32f, paint);
+        ellipse(c, -3.5f, -46, 4, 1.8f, .22f); ellipse(c, 3.5f, -46, 4, 1.8f, -.22f);
+        fill(0xffe8947e); ellipse(c, 0, -48.2f, 1.8f, 1.6f, 0);
+        fill(0xffc8283b); path.reset(); path.moveTo(-8.8f, -56.5f);
+        path.cubicTo(-7, -68, 3, -72, 9, -69); path.cubicTo(14, -66.5f, 16.5f, -62, 17, -56.5f);
+        path.quadTo(13, -60, 8.8f, -56.5f); path.close(); c.drawPath(path, paint);
+        fill(0xffa81f30); path.reset(); path.moveTo(9, -69); path.cubicTo(14, -66.5f, 16.5f, -62, 17, -56.5f);
+        path.quadTo(13, -60, 8.8f, -56.5f); path.quadTo(8, -63, 9, -69); path.close(); c.drawPath(path, paint);
+        fill(0xfff4f8ff); c.drawRoundRect(-10.2f, -59.4f, 10.2f, -54.4f, 2.5f, 2.5f, paint);
+        c.drawCircle(17.2f, -55, 3.2f, paint);
+    }
+
+    /** Origin at the ground under the bag; open 0..1 unties it and widens the mouth. */
+    private void santaBag(Canvas c, float open) {
+        float neck = 3.2f + 7.4f * open;
+        shade(new RadialGradient(-3, -14, 24, new int[]{0xffb98350, 0xff8d5c33, 0xff5f3d20}, new float[]{0, .65f, 1}, Shader.TileMode.CLAMP));
+        path.reset(); path.moveTo(-neck, -26);
+        path.cubicTo(-neck - 1, -21, -15, -19, -15.5f, -10); path.cubicTo(-16, -2, -10, 0, 0, 0);
+        path.cubicTo(10, 0, 16, -2, 15.5f, -10); path.cubicTo(15, -19, neck + 1, -21, neck, -26); path.close();
+        c.drawPath(path, paint);
+        stroke(0x803c220e, .5f);
+        path.reset(); path.moveTo(-neck * .55f, -24); path.quadTo(-9, -15, -10, -6); c.drawPath(path, paint);
+        path.reset(); path.moveTo(neck * .5f, -24); path.quadTo(7, -14, 9, -5); c.drawPath(path, paint);
+        // A stitched patch.
+        fill(0xffc8283b); c.drawRoundRect(3.5f, -11, 10.5f, -4.6f, .8f, .8f, paint);
+        stroke(0xfff2c552, .3f); paint.setPathEffect(new DashPathEffect(new float[]{.8f, .6f}, 0));
+        path.reset(); path.addRoundRect(4.2f, -10.3f, 9.8f, -5.3f, .6f, .6f, Path.Direction.CW); c.drawPath(path, paint);
+        paint.setPathEffect(null);
+        if (open < 1) {
+            int alpha = Math.round(255 * (1 - open));
+            fill(0xff8d5c33); paint.setAlpha(alpha);
+            ellipse(c, -2.6f, -29, 2, 3.8f, -.5f); ellipse(c, 0, -29, 2, 3.8f, 0); ellipse(c, 2.6f, -29, 2, 3.8f, .5f);
+            fill(0xffe3b54a); paint.setAlpha(alpha); c.drawRoundRect(-4.2f, -27, 4.2f, -25, 1, 1, paint);
+        }
+        if (open > 0) {
+            float ry = .8f + 2.8f * open;
+            fill(0xff2a1608); ellipse(c, 0, -26, neck, ry, 0);
+            shade(new RadialGradient(0, -26, neck, Color.argb(Math.round(255 * open), 255, 236, 160), 0x00ffbe46, Shader.TileMode.CLAMP));
+            ellipse(c, 0, -26, neck, ry, 0);
+            stroke(0xffc99a63, .9f); ellipse(c, 0, -26, neck, ry, 0);
+        }
+    }
+
+    // Slow turning beams of light from the bag; only on the day itself.
+    private void lightRays(Canvas c, float x, float y, float length, float t, float open) {
+        float strength = ease(clamp01((t - 4.4f) / .6f)) * open;
+        if (strength <= 0) return;
+        shade(new RadialGradient(x, y, length, Color.argb(Math.round(127 * strength), 255, 226, 140), 0x00ffbe50, Shader.TileMode.CLAMP));
+        paint.setXfermode(ADD);
+        oval.set(x - length, y - length, x + length, y + length);
+        for (int i = 0; i < 14; i++) {
+            float a = i / 14f * 360 + degrees(t * .22f);
+            c.drawArc(oval, a - 6.3f, 12.6f, true, paint);
+        }
+        paint.setXfermode(null);
+    }
+
+    /** One frame of the scene. Camera, sky, snow and scene follow the same order as the HTML preview. */
+    void drawSanta(Canvas c, Bitmap sky, Bitmap scene, float t, int days, double snowTime, float W, float H) {
+        ChristmasSanta.Steps T = ChristmasSanta.steps(days);
+        float k = H / 100 * 1.12f, floor = H * .95f;
+        float arrive = clamp01(t / T.arrive), leave = clamp01((t - T.stay - .4f) / (T.leave - T.stay - .4f));
+        float x = t < T.stay ? mix(W * 1.14f, W * .34f, 1 - (1 - arrive) * (1 - arrive)) : mix(W * .34f, -W * .4f, leave * leave);
+        float step = arrive < 1 || leave > 0 ? sin(t * 9) : 0;
+        float open = ease(clamp01((t - T.arrive) / (T.open - T.arrive))) * (1 - ease(clamp01((t - T.close) / .8f)));
+        // The hand unties the bag and goes back before the camera arrives, so nothing covers the mouth.
+        float reach = ease(clamp01((t - T.arrive + .2f) / .6f)) * (1 - ease(clamp01((t - T.open + .2f) / .5f)));
+        float wave = ease(clamp01((t - T.back + .1f) / .4f)) * (1 - ease(clamp01((t - T.stay - .7f) / .4f)));
+        float bagX = x + 36 * k, mouthY = floor - 26 * k;
+        float zoom = ease(clamp01((t - T.open) / (T.zoom - T.open))) * (1 - ease(clamp01((t - T.hold) / (T.back - T.hold))));
+        // The camera moves to the mouth of the bag: it ends low in the middle, leaving the sky for the count.
+        float scale = mix(1, 2.7f, zoom);
+        c.save();
+        c.translate(mix(bagX, W / 2, zoom), mix(mouthY, H * .84f, zoom));
+        c.scale(scale, scale); c.translate(-bagX, -mouthY);
+        c.drawBitmap(sky, 0, 0, smooth);
+        snowBehind(c, snowTime, W, H);
+        if (days == 0) lightRays(c, bagX, mouthY, 150 * k, t, open);   // in the sky, behind everything on the snow
+        c.drawBitmap(scene, 0, 0, smooth);
+        fill(Color.argb(Math.round(173 * zoom), 7, 12, 28)); c.drawRect(-W, -H, W * 2, H * 2, paint);   // the bag and the count take over
+        fill(0x735c78b0); ellipse(c, x, floor, 19 * k, 3 * k, 0); ellipse(c, bagX, floor, 17 * k, 2.6f * k, 0);
+        // The light stays behind him and the bag, so it never washes out their colours.
+        if (open > 0) {
+            shade(new RadialGradient(bagX, mouthY, 40 * k, Color.argb(Math.round(178 * open), 255, 214, 120), 0x00ffaa3c, Shader.TileMode.CLAMP));
+            paint.setXfermode(ADD); c.drawCircle(bagX, mouthY, 40 * k, paint); paint.setXfermode(null);
+        }
+        float bagOpen = open;
+        place(c, bagX, floor, k, canvas -> santaBag(canvas, bagOpen));
+        c.save(); c.translate(x, floor - Math.abs(step) * 1.2f * k); c.rotate(degrees(step * .04f)); c.scale(k, k);
+        santaFigure(c, step, reach, wave, t);
+        c.restore();
+        if (open > 0) {
+            fill(0xffffe9a6); paint.setXfermode(ADD);
+            for (int i = 0; i < 46; i++) {
+                float phase = (t * .32f + (float)hash(i + .31)) % 1;
+                paint.setAlpha(Math.round(255 * sin(phase * Math.PI) * open));
+                c.drawCircle(bagX + ((float)hash(i + .73) - .5f) * 19 * k * (1 + phase), mouthY - phase * 30 * k, (.22f + .3f * (float)hash(i + .91)) * k, paint);
+            }
+            paint.setXfermode(null);
+        }
+        c.restore();
+        snowInFront(c, snowTime, W, H);
+        if (days == 0) drawToday(c, t, zoom, W, H); else drawCount(c, T, t, days, W, H);
+    }
+
+    private void bigText(Canvas c, String text, float x, float y, float size, int alpha, float H) {
+        paint.setTypeface(BOLD); paint.setTextAlign(Paint.Align.CENTER); paint.setTextSize(size);
+        float middle = y - (paint.descent() + paint.ascent()) / 2;
+        shade(new LinearGradient(0, y - size / 2, 0, y + size / 2, 0xfffff6c8, 0xffffc23a, Shader.TileMode.CLAMP));
+        paint.setAlpha(alpha); paint.setShadowLayer(H * .05f, 0, 0, 0xe6ffbe46);
+        c.drawText(text, x, middle, paint);
+        paint.clearShadowLayer();
+    }
+
+    private void drawCount(Canvas c, ChristmasSanta.Steps T, float t, int days, float W, float H) {
+        float rise = ease(clamp01((t - T.zoom + .5f) / 1.1f)), fade = 1 - clamp01((t - T.hold) / .5f);
+        if (rise <= 0 || fade <= 0) return;
+        int shown = Math.round(days * ease(clamp01((t - T.zoom) / (T.count - T.zoom))));
+        float y = mix(H * .84f, H * .39f, rise), size = H * .42f * (.3f + .7f * rise);
+        bigText(c, String.valueOf(shown), W / 2, y, size, Math.round(255 * fade), H);
+        fill(Color.WHITE); paint.setAlpha(Math.round(255 * fade * clamp01((rise - .6f) / .4f)));
+        paint.setTextSize(H * .07f); paint.setShadowLayer(H * .02f, 0, 0, 0xe6281004);
+        float middle = -(paint.descent() + paint.ascent()) / 2;
+        c.drawText(days == 1 ? "Falta" : "Faltan", W / 2, y - H * .27f + middle, paint);
+        c.drawText(days == 1 ? "día para Navidad" : "días para Navidad", W / 2, y + H * .26f + middle, paint);
+        paint.clearShadowLayer();
+    }
+
+    private void giftRain(Canvas c, float t, float W, float H) {
+        float u = H / 100, gravity = H * .62f, fade = 1 - clamp01((t - 16.4f) / .9f);
+        if (fade <= 0) return;
+        // A transparent layer fades the pile as one; without it each gift would show through the others.
+        int layer = fade < 1 ? c.saveLayerAlpha(0, 0, W, H, Math.round(255 * fade)) : -1;
+        for (Gift g : RAIN) {
+            float fall = t - g.at;
+            if (fall < 0) continue;
+            float rest = g.rest * H, landed = (float)Math.sqrt(2 * (rest + H * .12f) / gravity);
+            float y = -H * .12f + gravity * fall * fall / 2, angle = g.spin * fall;
+            if (fall >= landed) {
+                float since = fall - landed;
+                y = rest - Math.abs(sin(since * 7)) * (float)Math.exp(-since * 5) * u * 5; angle = g.tilt;
+            }
+            c.save(); c.translate(g.x * W, y); c.rotate(degrees(angle)); c.scale(u, u);
+            gift(c, 0, g.size * g.tall / 2, g.size, g.size * g.tall, g.color, g.dark, g.ribbon, true);
+            c.restore();
+        }
+        if (layer >= 0) c.restoreToCount(layer);
+    }
+
+    // "¡Es hoy!": a flash from the bag, the words jump out and it starts raining gifts.
+    private void drawToday(Canvas c, float t, float zoom, float W, float H) {
+        float flash = clamp01((t - 4.5f) / .35f) * (1 - clamp01((t - 4.9f) / 1.3f));
+        giftRain(c, t, W, H);
+        float pop = clamp01((t - 4.9f) / .55f), fade = 1 - clamp01((t - 15) / .7f);
+        if (pop > 0 && fade > 0) {
+            // Grows past its size, then settles; afterwards it breathes softly.
+            float grow = (1 - (1 - pop) * (1 - pop) * (1 - pop)) * (1 + .22f * sin(pop * Math.PI)) * (1 + .025f * sin(t * 3));
+            // Once the camera backs out it moves to the free sky, so Santa's face stays in view.
+            float x = mix(W * .655f, W / 2, zoom), y = mix(H * .23f, H * .32f, zoom), size = H * mix(.25f, .3f, zoom) * grow;
+            paint.setTypeface(BOLD); paint.setTextAlign(Paint.Align.CENTER); paint.setTextSize(size);
+            stroke(0xd9781e14, H * .012f); paint.setAlpha(Math.round(255 * fade));
+            c.drawText("¡Es hoy!", x, y - (paint.descent() + paint.ascent()) / 2, paint);
+            bigText(c, "¡Es hoy!", x, y, size, Math.round(255 * fade), H);
+        }
+        if (flash > 0) { fill(Color.argb(Math.round(235 * flash), 255, 246, 214)); c.drawRect(0, 0, W, H, paint); }
     }
 
     /** The clock screen is on all day: full speed only while something visibly moves. */

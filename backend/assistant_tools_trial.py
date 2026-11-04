@@ -207,6 +207,9 @@ class AssistantToolsTrial:
             self.cancel()
             self.inflight = None
             return {'text': CANCEL_TEXT, 'offered_more': False, 'close_reason': 'explicit_close'}
+        if result['kind'] == 'santa':
+            # Android plays the scene if navidad is on; otherwise this is an ordinary spoken answer.
+            return {'text': result['text'], 'face_scene': 'SANTA', 'offered_more': False}
         if result['kind'] == 'self_destruct':
             # The model chose the tool; its scene is shown by Android while this line is spoken.
             # No timer_control: the app's TimerActionChannel rejects unknown values as

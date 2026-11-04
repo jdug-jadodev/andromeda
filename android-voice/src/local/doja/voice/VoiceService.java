@@ -1118,10 +1118,12 @@ public class VoiceService extends Service {
         final FaceReaction scene = FaceReaction.parseScene(event.optString("face_scene", ""));
         noteReaction(scene);
         noteReaction(FaceReactionPolicy.forAssistant(message));
-        if (conversationOnly && scene.speechDelayMs() > 0) {
+        // Without the Christmas scene her answer is an ordinary one and must not wait for it.
+        final long sceneDelay = scene == FaceReaction.SANTA && !ChristmasMode.playsSanta(this) ? 0 : scene.speechDelayMs();
+        if (conversationOnly && sceneDelay > 0) {
             // The countdown runs in silence; her line comes once it reaches 1.
             final String line = message; final int turnGeneration = speechGeneration;
-            main.postDelayed(() -> { if (running && !cancelling && turnGeneration == speechGeneration) startSpeech(event, line); }, scene.speechDelayMs());
+            main.postDelayed(() -> { if (running && !cancelling && turnGeneration == speechGeneration) startSpeech(event, line); }, sceneDelay);
             return;
         }
         startSpeech(event, message);

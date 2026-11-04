@@ -12,7 +12,9 @@ final class ChristmasBackdropView extends View implements Choreographer.FrameCal
     private final ChristmasArt art = new ChristmasArt();
     private Bitmap sky, scene;
     private boolean attached, foreground, scheduled, reducedMotion;
-    private long lastFrame;
+    private long lastFrame, santaStart, drawnFrames;
+    private int santaDays;
+    private Runnable santaDone;
 
     ChristmasBackdropView(Context context) {
         super(context); setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); setVisibility(GONE);
@@ -32,6 +34,12 @@ final class ChristmasBackdropView extends View implements Choreographer.FrameCal
     }
 
     boolean isShowing() { return getVisibility() == VISIBLE; }
+    long getDrawnFrames() { return drawnFrames; }
+
+    void playSanta(int days, Runnable done) {
+        santaDays = days; santaDone = done; santaStart = SystemClock.uptimeMillis(); invalidate();
+    }
+    void stopSanta() { santaStart = 0; santaDone = null; invalidate(); }
 
     void setForeground(boolean value) {
         foreground = value;
@@ -71,11 +79,20 @@ final class ChristmasBackdropView extends View implements Choreographer.FrameCal
     }
 
     protected void onDraw(Canvas canvas) {
-        super.onDraw(canvas);
+        super.onDraw(canvas); drawnFrames++;
         int width = getWidth(), height = getHeight();
         if (width <= 0 || height <= 0) return;
         if (sky == null) paintLayers(width, height);
         double t = reducedMotion ? 8 : SystemClock.uptimeMillis() / 1000.0;
+        if (santaStart > 0) {
+            float seconds = (SystemClock.uptimeMillis() - santaStart) / 1000f;
+            art.drawSanta(canvas, sky, scene, seconds, santaDays, t, width, height);
+            if (seconds * 1000 >= ChristmasSanta.durationMs(santaDays)) {
+                Runnable done = santaDone; santaStart = 0; santaDone = null;
+                if (done != null) post(done);
+            }
+            return;
+        }
         canvas.drawBitmap(sky, 0, 0, null);
         art.snowBehind(canvas, t, width, height);
         canvas.drawBitmap(scene, 0, 0, null);

@@ -15,6 +15,11 @@ final class ChristmasMode {
 
     private ChristmasMode() {}
 
+    /** Santa only plays with the parameter on and the system animations running. */
+    static boolean playsSanta(Context context) {
+        return enabled(context) && Settings.Global.getFloat(context.getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0;
+    }
+
     static boolean enabled(Context context) {
         try { return Settings.Global.getInt(context.getContentResolver(), KEY, 0) == 1; }
         catch (RuntimeException unavailable) { return false; }
