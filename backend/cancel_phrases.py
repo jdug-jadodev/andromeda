@@ -13,6 +13,7 @@ from doja_intents import normalized
 # ("no, ponlo a las ocho").
 PHRASES = frozenset({
     'cancela',
+    'cancelar',
     'cancelalo',
     'cancelala',
     'cancelame',
@@ -42,6 +43,7 @@ PHRASES = frozenset({
 })
 
 _PREFIX = re.compile(r'^(?:andromeda[ ,]+)?(?:por favor[ ,]+)?')
+_SUFFIX = re.compile(r'\s+(?:ya|por favor)$')
 _EDGES = ' .,!¡¿?'
 
 
@@ -51,4 +53,9 @@ def is_cancel(text):
         return False
     plain = normalized(text)
     plain = _PREFIX.sub('', plain).strip(_EDGES)
+    if plain in PHRASES:
+        return True
+    # "cancélalo ya" / "cancelar por favor": quita el énfasis final. Se hace
+    # después de comprobar la lista para no romper "para ya".
+    plain = _SUFFIX.sub('', plain)
     return plain in PHRASES

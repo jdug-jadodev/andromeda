@@ -21,6 +21,7 @@ def model():
 CANCELS = ('cancelalo', 'cancelala', 'cancelame', 'cancela', 'cancela eso', 'cancela esto',
            'cancela lo', 'dejalo', 'dejala', 'olvidalo', 'olvidala', 'olvidalo ya',
            'detente', 'deten', 'detente ya', 'parate', 'para ya', 'no sigas', 'aborta',
+           'cancelalo ya', 'cancela ya', 'cancelar', 'cancelar por favor',
            'andromeda cancelalo', 'andromeda, cancelalo', 'por favor cancelalo')
 
 

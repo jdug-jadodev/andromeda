@@ -7,7 +7,7 @@ import java.util.Set;
 /** Frase de cancelación compartida por todos los diálogos (espejo de backend/cancel_phrases.py). */
 final class CancelPhrases {
     private static final Set<String> PHRASES = new HashSet<>(Arrays.asList(
-        "cancela", "cancelalo", "cancelala", "cancelame",
+        "cancela", "cancelar", "cancelalo", "cancelala", "cancelame",
         "cancela eso", "cancela esto", "cancela lo",
         "cancela el aviso", "cancela el recordatorio", "cancela la alarma",
         "cancela el temporizador", "cancela el ajuste", "cancela el volumen",
@@ -22,6 +22,9 @@ final class CancelPhrases {
         String plain = TimerRequestGuard.normalize(text)
             .replaceAll("^(?:andromeda[ ,]+)?(?:por favor[ ,]+)?", "")
             .replaceAll("^[ .,!\\u00a1\\u00bf?]+|[ .,!\\u00a1\\u00bf?]+$", "");
-        return PHRASES.contains(plain);
+        if (PHRASES.contains(plain)) return true;
+        // "cancélalo ya" / "cancelar por favor"; se comprueba la lista antes
+        // para no romper "para ya".
+        return PHRASES.contains(plain.replaceAll("\\s+(?:ya|por favor)$", ""));
     }
 }
