@@ -33,7 +33,8 @@ Con `1`:
 - los ojos blancos;
 - la corona con campanas y el reno en la pantalla del reloj;
 - Papá Noel con la bolsa, el contador de días y el jingle cuando preguntan "¿cuántos días faltan para Navidad?";
-- el 24 de diciembre: el resplandor, "¡Es hoy!" y la lluvia de regalos.
+- el 24 de diciembre: el resplandor, "¡Es hoy!" y la lluvia de regalos;
+- el aviso diario a las 13:00 y 22:00 (Bogotá): Papá Noel dice los días que faltan como si se lo preguntaran, sin "¿Necesitas algo más?", y vuelve al reloj. Si a esa hora está ocupada espera hasta 10 minutos; si el teléfono estuvo apagado y llega más de 10 minutos tarde, se salta.
 
 Con `0` no se muestra nada de eso. Si con la Navidad apagada preguntan cuántos días faltan, Andrómeda responde solo con la voz.
 
