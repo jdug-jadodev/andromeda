@@ -41,6 +41,8 @@ def calendar_day(text, anchor_ms):
     """A literal local date, with no inferred hour/year or fuzzy month repair."""
     if type(anchor_ms) is not int or anchor_ms <= 0: raise AgendaValidationError('invalid_clock')
     date = re.sub(r'^(?:para )?(?:el )?', '', normalized(clean(text)))
+    # El ASR suele incluir el día de la semana ("jueves cinco de noviembre"); se descarta.
+    date = re.sub(r'^(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo) ', '', date)
     today = datetime.fromtimestamp(anchor_ms / 1000, BOGOTA).date()
     try:
         relative = re.fullmatch(r'(?:en|dentro de) (.+?) dias?', date)
@@ -87,17 +89,27 @@ def calendar_clock(text):
     else:
         suffix = re.search(r'\s*(a\.?\s*m\.?|p\.?\s*m\.?|a eme|pe eme)$', clock)
         meridiem = bool(suffix)
-        if not suffix: suffix = re.search(r' (de la manana|de la tarde|de la noche|del mediodia)$', clock)
+        if not suffix: suffix = re.search(r' (de la manana|de la tarde|de la noche|del mediodia|la manana|la tarde|la noche|mediodia)$', clock)
         period = suffix[1] if suffix else ''
+        if period in {'la manana', 'la tarde', 'la noche'}: period = 'de ' + period
+        if period == 'mediodia': period = 'del mediodia'
         clock = clock[:suffix.start()].strip() if suffix else clock
         digital = re.fullmatch(r'([0-9]{1,2}):([0-9]{2})', clock)
         try:
             if digital: hour, minute = int(digital[1]), int(digital[2])
             else:
                 parts = clock.split(' y ', 1)
-                hour = number(parts[0]); minute = 0
-                if len(parts) == 2: minute = {'media': 30, 'cuarto': 15}.get(parts[1], -1)
-                if minute == -1: minute = number(parts[1])
+                if len(parts) == 2:
+                    hour = number(parts[0]); minute = 0
+                    minute = {'media': 30, 'cuarto': 15}.get(parts[1], -1)
+                    if minute == -1: minute = number(parts[1])
+                else:
+                    # El ASR transcribe "11:20" como "once veinte" (hora + minuto, sin "y").
+                    tokens = parts[0].split()
+                    if len(tokens) == 2 and (tokens[0] in ONES or tokens[0] in TENS) and (tokens[1] in ONES or tokens[1] in TENS):
+                        hour = number(tokens[0]); minute = number(tokens[1])
+                    else:
+                        hour = number(parts[0]); minute = 0
             if period:
                 if not 1 <= hour <= 12: raise ValueError()
                 if meridiem: hour = hour % 12 + (0 if period.startswith('a') else 12)
@@ -106,7 +118,7 @@ def calendar_clock(text):
                     if period == 'del mediodia' and hour != 12: raise ValueError()
                     if period == 'de la noche' and hour == 12: hour = 0
                     elif period in {'de la tarde', 'de la noche'} and hour < 12: hour += 12
-            elif not digital and hour < 13: raise AgendaValidationError('ambiguous_time')
+            elif not digital and hour < 12: raise AgendaValidationError('ambiguous_time')
             if not 0 <= hour <= 23 or not 0 <= minute <= 59: raise ValueError()
         except (ValueError, OverflowError) as error:
             if isinstance(error, AgendaValidationError): raise

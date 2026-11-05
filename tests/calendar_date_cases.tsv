@@ -33,3 +33,7 @@ fractional_days	en 1.5 días a las 5pm	1792610130000	INVALID	0
 multi_day_request	en tres días a las 5pm y mañana a las 6pm	1792610130000	INVALID	0
 mixed_duration	en tres días y ocho horas	1792610130000	INVALID	0
 clock_only	5pm	1792610130000	INVALID	0
+two_word_clock	hoy a las cinco veinte la tarde	1792610130000	1792621200000	0
+la_noche_period	hoy a las once y media la noche	1792610130000	1792643400000	0
+weekday_prefix	jueves cinco de noviembre del dos mil veintiseis a las doce y treinta	1792610130000	1793899800000	0
+spoken_midday	el cinco de noviembre de dos mil veintiseis a las doce y treinta del mediodia	1792610130000	1793899800000	0
