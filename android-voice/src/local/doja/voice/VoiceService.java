@@ -45,7 +45,7 @@ public class VoiceService extends Service {
     final VoiceHealthPolicy health=new VoiceHealthPolicy();
     volatile boolean dialogueListening;
     volatile boolean running, speaking, ttsReady;
-    private volatile boolean cancelling, interruptionPrewarmed, cancelPhraseDone;
+    private volatile boolean cancelling, interruptionPrewarmed, cancelPhraseDone, reconnect;
     private SilenceListener.Handle thinkingInterruption;
     volatile String activeSpeechId = "";
     volatile String activeSpeechText = "";
@@ -407,7 +407,7 @@ public class VoiceService extends Service {
             AudioTimestamp timestamp = new AudioTimestamp();
             boolean recording = false, clockReady = false;
             long readFrames = 0, clockDeadline = 0, lastHeartbeat = 0, localHealth=0;
-            while (running) {
+            while (running && !reconnect) {
                 long healthNow=SystemClock.elapsedRealtime();
                 if(healthNow-localHealth>=500) {
                     localHealth=healthNow; AudioManager audio=getSystemService(AudioManager.class);
@@ -487,7 +487,7 @@ public class VoiceService extends Service {
         } catch (Exception error) {
             if (running) { VoiceHealthStore.finish(this,health,VoiceHealthStore.kind(error),error); lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
-            running = active = wakeListening = microphoneRecording = false;
+            boolean retry = reconnect && continuousVoice;
             if (timerChannel != null) timerChannel.close();
             if (agendaChannel != null) agendaChannel.close();
             if(alarmChannel!=null) alarmChannel.close();
@@ -500,7 +500,14 @@ public class VoiceService extends Service {
             if (recorder != null) { try { recorder.stop(); } catch (Exception ignored) {} recorder.release(); recorder = null; }
             AudioInputGate.release(micOwner);
             try { if (socket != null) socket.close(); } catch (IOException ignored) {}
-            main.post(() -> stopSelf());
+            socket = null; output = null;
+            if (retry) {
+                reconnect = false;
+                main.post(() -> { if (running && continuousVoice) new Thread(this::captureConversation, "doja-pcm").start(); });
+            } else {
+                running = active = wakeListening = microphoneRecording = false;
+                main.post(() -> stopSelf());
+            }
         }
     }
     void checkPublicOutput() throws Exception {
@@ -1059,7 +1066,7 @@ public class VoiceService extends Service {
                 }
             }
         } catch (Exception error) {
-            if (running) { health.phase(VoiceHealthPolicy.RESPONSES); VoiceHealthStore.finish(this,health,VoiceHealthStore.kind(error),error); lastError = "Canal local cerrado: " + error.getClass().getSimpleName(); main.post(() -> stopSelf()); }
+            if (running) { health.phase(VoiceHealthPolicy.RESPONSES); VoiceHealthStore.finish(this,health,VoiceHealthStore.kind(error),error); lastError = "Canal local cerrado: " + error.getClass().getSimpleName(); if (continuousVoice) { reconnect = true; try { if (socket != null) socket.close(); } catch (IOException ignored) {} } else { main.post(() -> stopSelf()); } }
         }
     }
     void apply(JSONObject event) {
