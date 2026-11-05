@@ -175,6 +175,9 @@ public class MainActivity extends Activity {
         try { RestModeScheduler.schedule(this); }
         catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
         try { ChristmasNotice.schedule(this); } catch (Exception ignored) { /* The boot receiver repairs it. */ }
+        // Re-register due agenda alarms on every app start, not only on boot, so a
+        // force-stop/relaunch never leaves saved reminders stuck in SCHEDULED.
+        new Thread(() -> { try { AgendaStore.restore(this); } catch (Exception ignored) { } }, "agenda-restore").start();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         for (SimpleDateFormat format : new SimpleDateFormat[]{clockFormat, dateFormat, weatherTimeFormat})
             format.setTimeZone(TimeZone.getTimeZone("America/Bogota"));
