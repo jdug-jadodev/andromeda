@@ -1127,9 +1127,18 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                     except (OSError,ValueError): pass
                                 resident.monitor.reason = fault.reason; resident.shutdown(); return
                             if continuous_voice:
+                                # A dropped peer (no explicit stop) must not end the
+                                # resident: keep the listener alive so the phone app can
+                                # reconnect without the motor dying and going silent.
+                                if end_reason == 'voice_peer_closed' and resident.monitor.reason == 'running':
+                                    resident.release(model); model = None; entry = None
+                                    detector.reset()
+                                    if not resident.check(): resident.shutdown(); return
+                                    model = make_model()
+                                    continue
                                 if resident.monitor.reason == 'running':
                                     resident.monitor.reason = end_reason if type(end_reason) is str and end_reason in END_REASONS else 'voice_session_failed'
-                                resident.shutdown(); return  # Stop/disconnect revokes both voice and owned model, never reconnect automatically.
+                                resident.shutdown(); return
                             if resident is None: return
                             # Session.cancel revokes only this lease. Drop all
                             # process-side human state before accepting another.
@@ -1143,9 +1152,16 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             if isinstance(error,ValueError):
                                 try: record_protocol_technical(inference_key,protocol_technical(error))
                                 except (OSError,ValueError): pass
-                            if resident.monitor.reason == 'running':
-                                resident.monitor.reason = 'voice_protocol_error' if isinstance(error,ValueError) else 'voice_peer_closed'
-                            resident.shutdown(); return
+                                if resident.monitor.reason == 'running':
+                                    resident.monitor.reason = 'voice_protocol_error'
+                                resident.shutdown(); return
+                            # Peer dropped mid-session (OSError/EOFError): keep the
+                            # resident up and reconnect instead of going silent.
+                            resident.release(model); model = None; entry = None
+                            detector.reset()
+                            if not resident.check(): resident.shutdown(); return
+                            model = make_model()
+                            continue
                         if model is None or not model.owned.alive(): return
                         if resident is not None:
                             resident.release(model); model = None; entry = None

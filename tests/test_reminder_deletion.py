@@ -190,6 +190,7 @@ class ReminderDeletionTests(unittest.TestCase):
                 hello=dict(token=key.read_text(),protocol=13,mode='assistant_tools',source='synthetic_pcm',
                     web_response_mode='worker_first_v3_spanish',phone_volume_policy='confirmed_media_v3',
                     agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
+                    light_control_policy='voice_light_command_v1',
                     voice_lifetime_policy='continuous_voice_v1',dialogue_reset_policy='client_fresh_v1',
                     reminder_read_policy='android_reminder_read_v1',reminder_creation_policy='confirmed_reminder_intent_v1',
                     alarm_lifecycle_policy='weekly_alarm_lifecycle_v1',context=dict(version=1,id='a'*32,last_human_ms=0,turns=[]))
@@ -203,12 +204,14 @@ class ReminderDeletionTests(unittest.TestCase):
                         assistant_tools=True,guided_agenda=True,continuous_voice=True,resident=runtime,alarm_lifecycle=True,
                         confirmed_volume=True,reminder_read=True,reminder_clarification=True,reminder_deletion=True)
                     if policy==deletion.POLICY:
-                        serve();session.assert_called_once();self.assertTrue(session.call_args.kwargs['reminder_deletion'])
+                        # Peer drop now re-accepts; the fixture's second accept raises to end serve().
+                        with self.assertRaisesRegex(RuntimeError,'end public fixture'):serve()
+                        session.assert_called_once();self.assertTrue(session.call_args.kwargs['reminder_deletion'])
                         model.memory.restore.assert_called_once()
                     else:
                         with self.assertRaisesRegex(RuntimeError,'end public fixture'):serve()
                         session.assert_not_called();model.memory.restore.assert_not_called()
-                model.enable_reminder_deletion.assert_called_once()
+                model.enable_reminder_deletion.assert_called()
 
 
 if __name__=='__main__':unittest.main()

@@ -219,7 +219,7 @@ class ContinuousVoiceTests(unittest.TestCase):
         event=dict(reset.request(),session_id='a'*32,context_id='b'*32)
         with self.assertRaises(ValueError): reset.claim(self.reset_packet(event))
 
-    def test_authenticated_continuous_session_disconnect_shuts_owned_model_no_reaccept(self):
+    def test_authenticated_continuous_session_disconnect_reaccepts_then_stop_ends(self):
         clock=lambda:100000; owner=Mock(); owner.alive.return_value=True
         monitor=Monitor(clock,lambda:Sample(100000,1600000,740000,160000,1000,500,240,80,'charging'),None,continuous_model=True)
         runtime=ContinuousResidentRuntime(owner,clock,monitor,enabled=True,cache_purger=lambda model:0)
@@ -228,17 +228,18 @@ class ContinuousVoiceTests(unittest.TestCase):
         conn=Mock(); conn.__enter__=Mock(return_value=conn); conn.__exit__=Mock(return_value=False)
         context=Mock(); context.wrap_socket.return_value=conn
         hello=dict(token='public-key-'*4,protocol=12,mode='assistant_tools',source='synthetic_pcm',web_response_mode='worker_first_v3_spanish',
-            phone_volume_policy='absolute_media_v2_turn60',agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
+            phone_volume_policy='absolute_media_v2_turn60',light_control_policy='voice_light_command_v1',agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
             voice_lifetime_policy='continuous_voice_v1',dialogue_reset_policy='client_fresh_v1',context=dict(version=1,id='a'*32,last_human_ms=0,turns=[]))
         with tempfile.TemporaryDirectory() as directory:
             key=Path(directory)/'key'; key.write_text(hello['token'])
             with patch.object(voice.ssl,'SSLContext',return_value=context),patch.object(voice.socket,'socket',return_value=server), \
-                    patch.object(voice,'read_hello',return_value=hello),patch.object(voice,'session',return_value='voice_peer_closed') as session,patch.object(voice,'print'), \
+                    patch.object(voice,'read_hello',return_value=hello),patch.object(voice,'session',side_effect=['voice_peer_closed','voice_manual_stop']) as session,patch.object(voice,'print'), \
                     patch.object(voice,'now_ms',side_effect=clock),patch.object(voice.time,'CLOCK_BOOTTIME',7,create=True), \
                     patch.object(voice.time,'clock_gettime',return_value=100,create=True):
                 voice.serve(key,key,Mock(),0,'public-cert','public-key','synthetic_pcm',runtime.check,assistant_tools=True,guided_agenda=True,continuous_voice=True,resident=runtime)
-        session.assert_called_once(); owner.stop.assert_called_once(); self.assertTrue(runtime.closed); self.assertEqual(server.accept.call_count,1)
-        self.assertEqual(monitor.reason,'voice_peer_closed')
+        # Peer drop must not end the resident: it re-accepts, then an explicit stop shuts it down.
+        self.assertEqual(session.call_count,2); owner.stop.assert_called_once(); self.assertTrue(runtime.closed)
+        self.assertEqual(server.accept.call_count,2); self.assertEqual(monitor.reason,'voice_manual_stop')
 
 
 if __name__=='__main__': unittest.main()
