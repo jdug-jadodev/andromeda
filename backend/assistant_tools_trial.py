@@ -156,8 +156,8 @@ class AssistantToolsTrial:
                     data = tv_control.power_on()
                 except tv_control.TVError:
                     # El WoL ya se envió; la TV termina de encender sola.
-                    return {'text': 'La tele se está encendiendo, dale unos segundos.'}
-                return {'text': 'Encendí la TV.' if data.get('ok') else 'La tele se está encendiendo, dale unos segundos.'}
+                    return {'text': 'Envié la señal de encendido. Dale unos segundos y, si no prende, revisa el encendido por red de la TV.'}
+                return {'text': 'Envié la señal de encendido. Dale unos segundos y, si no prende, revisa el encendido por red de la TV.'}
             if kind == 'tv_power_off':
                 tv_control.power_off()
                 return {'text': 'Listo, la TV quedó apagada.'}
