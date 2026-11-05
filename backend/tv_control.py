@@ -60,7 +60,10 @@ def power_on():
 
 
 def power_off():
-    return _call('POST', '/power/off', {})
+    # Igual que power_on: timeout corto. Si la TV tarda en responder, bloquear el
+    # loop del backend más de 5 s dispara 'stale_monitor' y mata al residente. La
+    # orden sale igual; si la TV no responde contestamos error sin caernos.
+    return _call('POST', '/power/off', {}, timeout=3)
 
 
 def set_volume(level):
