@@ -9,6 +9,7 @@ import re
 import uuid
 
 from doja_intents import DURATION, normalized, number
+from affirmation import is_negative
 
 
 TIMER_TOOL = {'type': 'function', 'function': {
@@ -198,7 +199,7 @@ class TimerProposals:
             raise ValueError('Confirmation belongs to another turn/session/chat')
         if not isinstance(text, str) or not 0 < len(text) <= 250: raise ValueError('Invalid confirmation text')
         plain = normalized(text).strip(' .,!¡?¿')
-        if plain in {'no', 'no gracias', 'no, gracias', 'gracias', 'cierra la conversacion'}:
+        if is_negative(text) or plain in {'gracias', 'cierra la conversacion'}:
             self.cancel(); return {'kind': 'cancelled'}
         if plain in {'si', 'confirmo', 'adelante'}: return {'kind': 'explicit_confirmation_required'}
         if plain not in CONFIRMATIONS:

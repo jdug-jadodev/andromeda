@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 from cancel_phrases import is_cancel
 from doja_intents import normalized, number, ONES, TENS
+from affirmation import is_negative, is_affirmative
 
 ASK = '¿A qué porcentaje, de cero a cien, quieres dejar el volumen multimedia del teléfono?'
 CANCELLED = 'He descartado el ajuste pendiente. No he cambiado el volumen.'
@@ -113,13 +114,13 @@ class VolumeDialogue:
         if is_cancel(human.text): return self.cancelled()
         try: text = re.sub(r'\s*,\s*', ' ', plain(human.text))
         except ValueError: return self.cancelled()
-        if text in NO: return self.cancelled()
-        if self.percent is not None and text in YES:
+        if is_negative(text): return self.cancelled()
+        if self.percent is not None and is_affirmative(text):
             self.prepared = dict(kind='confirmed_volume_proposal', percent=self.percent,
                 volume_origin_turn_id=self.origin, volume_question_turn_id=self.question_turn,
                 request_turn_id=human.id, request_sequence=human.seq)
             return dict(self.prepared)
-        if text in YES: return self.question(human)  # A yes cannot invent a missing number.
+        if is_affirmative(text): return self.question(human)  # A yes cannot invent a missing number.
         # A new tool request revokes this form and goes to native selection; it
         # cannot become a number, confirmation or a synthetic volume command.
         if re.search(r'\b(?:busca|consulta|investiga|recordatorio|recuerdame|alarma|temporizador|enciende|apaga|elimina|borra)\b', text):

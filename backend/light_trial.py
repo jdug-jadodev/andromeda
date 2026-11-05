@@ -8,6 +8,7 @@ import uuid
 
 from doja_intents import normalized
 from cancel_phrases import is_cancel
+from affirmation import is_negative, is_affirmative
 
 
 ASK = '¿Quieres que ejecute esa orden de luces?'
@@ -75,11 +76,11 @@ class LightTrial:
             answer = _text(turn['text'])
         except (TypeError, ValueError):
             answer = ''
-        if answer in NO or is_cancel(turn['text']):
+        if is_negative(turn['text']) or is_cancel(turn['text']):
             self.clear()
             return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
                     'close_reason': 'explicit_close'}
-        if answer not in YES:
+        if not is_affirmative(turn['text']):
             self.clear()
             return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
                     'close_reason': 'explicit_close'}

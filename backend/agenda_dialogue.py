@@ -10,6 +10,7 @@ import time as _time
 from agenda_requests import AgendaValidationError, calendar_day, calendar_due, day_due, clean, parts
 from cancel_phrases import is_cancel
 from doja_intents import normalized
+from affirmation import is_negative, is_affirmative
 
 
 def _debug_dialogue(text, result):
@@ -180,9 +181,9 @@ class AgendaDialogue:
             self.clear(); return {'kind': 'agenda_cancelled', 'text': CANCELLED}
         if self.needs_intent:
             confirmation = re.sub(r'\s*,\s*',' ',plain).strip(' .,!¡?¿')
-            if confirmation in {'no gracias', 'no quiero', 'no quiero un recordatorio'}:
+            if is_negative(confirmation):
                 self.clear(); return {'kind':'agenda_cancelled','text':CANCELLED}
-            if confirmation not in REMINDER_YES: return self.question(human)
+            if not is_affirmative(confirmation): return self.question(human)
             self.needs_intent = False; self.origin = human.id
             return self.question(human)  # Affirmation supplies intent ONLY, never content/time.
         if re.search(r'\b(?:busca|consulta|investiga|pon|ponme|crea|programa|recuerdame|enciende|apaga|elimina|volumen)\b', plain):

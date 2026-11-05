@@ -13,6 +13,7 @@ import uuid
 
 from assistant_config import SETTINGS
 from doja_intents import normalized
+from affirmation import is_negative
 from local_ai import LocalPlanner
 
 
@@ -246,7 +247,7 @@ class ConversationAgent:
                     return self.reply('La propuesta venció. No cambié nada.')
                 tool = validate_call(pending['call'], self.tools)
                 return self.dispatch_android(pending['call'], tool)
-            if answer in {'no', 'no gracias', 'olvidalo'}:
+            if is_negative(answer) or answer == 'olvidalo':
                 return self.reply('De acuerdo, no ejecuté la propuesta.')
         if state['waiting']:
             return self.reply('Hay una operación esperando resultado. No la daré por hecha.')

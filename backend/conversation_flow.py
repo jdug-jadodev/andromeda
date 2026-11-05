@@ -4,6 +4,7 @@ Only whole, explicit closing utterances end a chat. An isolated 'no' applies
 only to a follow-up offer actually spoken in the immediately preceding turn.
 """
 from doja_intents import normalized
+from affirmation import is_negative
 
 
 class ConversationFlow:
@@ -25,7 +26,7 @@ class ConversationFlow:
     def closing_reason(self, text):
         plain = self.control_text(text)
         if plain in self.CLOSE: return 'explicit_close'
-        if self.offered_more and plain in {'no', 'no gracias', 'no, gracias'}: return 'declined_more'
+        if self.offered_more and is_negative(text): return 'declined_more'
         return None
 
     @classmethod

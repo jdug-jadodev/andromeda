@@ -6,6 +6,7 @@ topic proves a textual candidate exists, not that the model remembers it.
 import re
 from doja_intents import normalized
 from conversation_flow import ConversationFlow
+from affirmation import is_negative, is_affirmative
 
 
 class ConversationEntry:
@@ -36,9 +37,9 @@ class ConversationEntry:
         if self.stage == 'search_topic':
             plain = 'recuerdas ' + plain; self.stage = 'entry'
         if self.stage in {'confirm_resume', 'confirm_new'}:
-            if plain in {'no', 'no gracias', 'no, gracias'}:
+            if is_negative(text):
                 return {'kind': 'close'}
-            if plain == 'si':
+            if is_affirmative(text):
                 if self.stage == 'confirm_new': return self.new()
                 if self.candidate not in self.catalog:
                     self.stage = 'confirm_new'

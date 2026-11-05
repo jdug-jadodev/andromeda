@@ -11,6 +11,7 @@ import urllib.request
 
 from assistant_config import SETTINGS
 from doja_intents import normalized
+from affirmation import is_negative
 
 SCHEMA = {
     "type": "object", "additionalProperties": False,
@@ -114,7 +115,7 @@ class AITurns:
                 if self.clock() <= expires:
                     return pending
                 return {"type": "say", "text": "La propuesta venció. No cambié nada; pide la acción de nuevo."}
-            if answer in {"no", "no gracias", "cancelar", "olvidalo"}:
+            if is_negative(answer) or answer in {"cancelar", "olvidalo"}:
                 return {"type": "say", "text": "Propuesta descartada. No cambié nada."}
         elif answer in {"si", "confirmo", "confirmar"}:
             return {"type": "say", "text": "No hay una acción pendiente de confirmar."}
