@@ -11,8 +11,15 @@ final class SilenceWindowPolicy {
     static final long CALLBACK_MS = 500;
     /** Local Vosk grammar: only the interruption/cancel/name vocabulary plus unknown. */
     static final String COMMAND_GRAMMAR =
-        "[\"silencio\",\"andromeda\",\"andromeda silencio\",\"cancelalo\",\"cancela\","
-        + "\"cancela eso\",\"cancela lo\",\"olvidalo\",\"andromeda cancelalo\",\"[unk]\"]";
+        "[\"silencio\",\"andromeda\",\"andromeda silencio\","
+        + "\"cancelalo\",\"cancela\",\"cancelar\",\"cancelala\",\"cancelame\","
+        + "\"cancela eso\",\"cancela esto\",\"cancela lo\","
+        + "\"cancela el aviso\",\"cancela el recordatorio\",\"cancela la alarma\","
+        + "\"cancela el temporizador\",\"cancela el ajuste\",\"cancela el volumen\",\"cancela la orden\","
+        + "\"dejalo\",\"dejala\",\"dejalo asi\","
+        + "\"olvidalo\",\"olvidala\",\"olvidalo ya\","
+        + "\"detente\",\"deten\",\"detente ya\",\"parate\",\"para ya\",\"no sigas\",\"aborta\","
+        + "\"andromeda cancelalo\",\"[unk]\"]";
     private static final int ARMING=0, READY=1, PLAYING=2, DETECTED=3, CLAIMED=4, FAILED=5, ENDED=6;
     static final class Ticket {
         final String id;
