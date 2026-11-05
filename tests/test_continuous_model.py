@@ -55,7 +55,7 @@ class ContinuousModelTests(unittest.TestCase):
             self.assertFalse(runtime.check()); runtime.shutdown(); owner.stop.assert_called_once()
         runtime,owner=self.runtime(); runtime.monitor.stop_requested=lambda:True
         self.assertFalse(runtime.check()); self.assertEqual(runtime.monitor.reason,'manual_stop'); runtime.shutdown()
-        runtime,owner=self.runtime(); self.assertTrue(runtime.check()); self.now[0]+=5001
+        runtime,owner=self.runtime(); self.assertTrue(runtime.check()); self.now[0]+=30001
         self.assertFalse(runtime.check()); self.assertEqual(runtime.monitor.reason,'stale_monitor'); runtime.shutdown()
         runtime,owner=self.runtime(); owner.alive.return_value=False
         self.assertFalse(runtime.check()); self.assertEqual(runtime.monitor.reason,'model_exit'); runtime.shutdown()

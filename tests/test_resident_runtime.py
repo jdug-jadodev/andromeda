@@ -94,7 +94,7 @@ class ResidentRuntimeTests(unittest.TestCase):
             monitor=self.monitor(); self.latest=self.sample(**values)
             self.assertFalse(monitor.check()); self.assertEqual(monitor.reason,reason)
             self.latest=self.sample(); self.assertFalse(monitor.check())
-        monitor=self.monitor(); self.assertTrue(monitor.check()); self.clock[0]+=5001
+        monitor=self.monitor(); self.assertTrue(monitor.check()); self.clock[0]+=30001
         self.assertFalse(monitor.check()); self.assertEqual(monitor.reason,'stale_monitor')
         monitor=self.monitor(); monitor.sampler=Mock(side_effect=OSError('public synthetic'))
         self.assertFalse(monitor.check()); self.assertEqual(monitor.reason,'sensor_or_report_error')

@@ -70,7 +70,10 @@ class Monitor:
         now=self.clock()
         if self.stop_requested(): self.reason='manual_stop'
         elif self.deadline is not None and now>=self.deadline: self.reason='time_limit'
-        elif self.previous is not None and now-self.previous.at_ms>5000: self.reason='stale_monitor'
+        # 30s (antes 5s): el fallback de nube (DeepSeek) bloquea el loop hasta 20s y
+        # la búsqueda web hasta el deadline del turno (30s). El guard de 5s estaba
+        # calibrado para un modelo local que ya no existe y tumbaba el residente.
+        elif self.previous is not None and now-self.previous.at_ms>30000: self.reason='stale_monitor'
         if self.reason!='running': return False
         if self.previous is not None and 0<=now-self.previous.at_ms<1000: return True
         try:
