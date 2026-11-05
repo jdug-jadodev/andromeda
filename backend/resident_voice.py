@@ -12,6 +12,16 @@ from spanish_wake import SpanishWakeDetector
 from web_search_env import configure
 
 
+def _crash(tag, message):
+    """Appends a crash diagnostic to the chroot /tmp (robust: direct file write)."""
+    import time
+    try:
+        with open('/tmp/resident-crash.log', 'a', encoding='utf-8') as stream:
+            stream.write(f'{time.monotonic():.0f}|{tag}|{message}\n')
+    except Exception:
+        pass
+
+
 class _NoModelOwner:
     """Fase 1 determinista: sin llama-server.
 
@@ -76,9 +86,15 @@ def main():
                 '/var/lib/andromeda-conversation/server-cert.pem','/var/lib/andromeda-conversation/server-key.pem',
                 'synthetic_pcm' if args.synthetic_input else 'microphone',runtime.check,assistant_tools=True,resident=runtime,guided_agenda=args.guided_agenda,
                 continuous_voice=args.continuous_voice,alarm_lifecycle=args.alarm_lifecycle,confirmed_volume=args.guided_agenda,reminder_read=args.guided_agenda,reminder_clarification=args.guided_agenda,reminder_deletion=args.alarm_lifecycle,tv_enabled=args.tv)
-        except RuntimeError:
+        except RuntimeError as error:
+            _crash('RESIDENT_RUNTIME_ERROR', f'reason={monitor.reason} error={error!r}')
             if monitor.reason not in {'manual_stop','time_limit','low_memory','battery_warm','stale_monitor','sensor_or_report_error','model_exit'}: raise
+        except Exception as error:
+            import traceback
+            _crash('RESIDENT_FATAL', f'type={type(error).__name__} error={error!r}\n{traceback.format_exc()}')
+            raise
     finally:
+        _crash('RESIDENT_EXIT', f'reason={monitor.reason if monitor is not None else "none"}')
         if runtime is not None: runtime.shutdown()
         else: owner.stop()
         if monitor is not None: monitor.finish()
