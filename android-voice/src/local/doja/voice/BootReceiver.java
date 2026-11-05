@@ -8,6 +8,7 @@ public class BootReceiver extends BroadcastReceiver {
             LightStateStore.clear(context);
             LightScheduleScheduler.schedule(context);
             RestModeScheduler.schedule(context);
+            ChristmasNotice.schedule(context);
             PendingResult pending = goAsync();
             new Thread(() -> { try { AgendaStore.restore(context); } finally { pending.finish(); } }, "agenda-restore").start();
         }

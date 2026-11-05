@@ -28,6 +28,15 @@ def sentence(days, already):
     return 'Todavía no. ' + count if already else count
 
 
+QUESTION = '¿Cuántos días faltan para Navidad?'
+
+
+def notice(today=None):
+    """What the 13:00 and 22:00 notice says: the same answer the question gets."""
+    today = today if today is not None else datetime.now(BOGOTA).date()
+    return sentence(days_to_christmas(today), False)
+
+
 def answer(human, today=None):
     """A question about the days left gives the scene result; anything else gives None."""
     if not isinstance(human, str) or not 0 < len(human) <= 250: return None

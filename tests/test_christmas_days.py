@@ -9,7 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 if not hasattr(time, 'clock_gettime'):   # Windows; the phone has it.
     time.clock_gettime = lambda clock: time.monotonic(); time.CLOCK_BOOTTIME = 7
 
-from christmas_days import answer, days_to_christmas
+from christmas_days import answer, days_to_christmas, notice
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import test_conversation_voice as fixture
 
 
 class ChristmasDays(unittest.TestCase):
@@ -73,3 +76,34 @@ class ChristmasTurn(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ChristmasNotice(unittest.TestCase):
+    """The 13:00 and 22:00 notice: Santa answers by himself, no offer, back to the clock."""
+    def run_voice(self, steps):
+        return fixture.ConversationVoiceTests().run_session(
+            steps, assistant_tools=True, guided_agenda=True, continuous_voice=True, transcripts=[])
+
+    def test_says_the_days_and_goes_back_to_the_clock(self):
+        h = fixture.ConversationVoiceTests()
+        events, model = self.run_voice([(100000, [h.control('christmas_notice')]), (101200, h.ack_last)])
+        thinking = next(e for e in events if e['type'] == 'thinking')
+        said = next(e for e in events if e['type'] == 'say')
+        self.assertTrue(thinking['administrative'])
+        self.assertEqual(said['face_scene'], 'SANTA')
+        self.assertIs(said['offered_more'], False)
+        self.assertEqual(said['close_reason'], '')
+        self.assertEqual(said['text'], notice())
+        self.assertNotIn('algo más', said['text'])
+        after = events[events.index(said) + 1:]
+        self.assertEqual([e['state'] for e in after if e['type'] == 'state'], ['wake'])
+        model.start.assert_not_called()
+
+    def test_ignored_while_she_is_listening(self):
+        h = fixture.ConversationVoiceTests()
+        events, _ = self.run_voice([(100000, [h.control('activate')]), (100010, [h.control('christmas_notice')])])
+        self.assertFalse(any(e['type'] == 'say' for e in events))
+
+    def test_notice_counts_like_the_question(self):
+        self.assertEqual(notice(date(2026, 11, 5)), 'Faltan 49 días para Navidad.')
+        self.assertEqual(notice(date(2026, 12, 24)), '¡Es hoy! ¡Feliz Navidad!')

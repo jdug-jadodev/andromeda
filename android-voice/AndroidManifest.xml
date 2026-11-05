@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="96" android:versionName="0.13.68-navidad-sin-simulacion">
+    android:versionCode="97" android:versionName="0.13.69-navidad-aviso-diario">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -36,6 +36,7 @@
         <service android:name=".CancelSpeakerService" android:exported="false" />
         <receiver android:name=".LightScheduleReceiver" android:exported="false" />
         <receiver android:name=".RestModeReceiver" android:exported="false" />
+        <receiver android:name=".ChristmasNotice" android:exported="false" />
         <receiver android:name=".AgendaReceiver" android:exported="false" />
         <receiver android:name=".TimerReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">

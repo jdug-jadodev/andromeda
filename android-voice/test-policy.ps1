@@ -161,3 +161,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Christmas face policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Christmas Santa compilation failed' }
 & java -cp $output local.doja.voice.ChristmasSantaTest
 if ($LASTEXITCODE -ne 0) { throw 'Christmas Santa tests failed' }
+& javac -encoding UTF-8 -d $output "$source\ChristmasNoticeTimes.java" "$PSScriptRoot\tests\ChristmasNoticeTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Christmas notice compilation failed' }
+& java -cp $output local.doja.voice.ChristmasNoticeTest
+if ($LASTEXITCODE -ne 0) { throw 'Christmas notice tests failed' }

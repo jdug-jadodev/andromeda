@@ -677,6 +677,23 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         turn['actions_executed'] = response.get('actions_executed', 0)
         say(response['text'], close_reason=response.get('close_reason', ''), offered_more=response.get('offered_more', False))
 
+    def christmas_notice():
+        # Android sends this at 13:00 and 22:00 while Christmas mode is on. Santa answers the
+        # days-left question by himself; no offer follows and she goes back to the clock.
+        nonlocal turn, sequence, session_end
+        if turn is not None or sequence >= MAX_EPOCH_TURNS: return
+        from christmas_days import QUESTION, notice
+        current = now_ms(); sequence += 1; session_end = current + ACTION_WINDOW_MS
+        turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': current, 'deadline_ms': current + response_start_ms,
+                'text': QUESTION, 'administrative': True, 'automatic': True, 'face_scene': 'SANTA',
+                'calendar_anchor_ms': int(time.time() * 1000), 'calendar_boot_ms': current}
+        emit({'type': 'thinking', 'text': QUESTION, 'turn_id': turn['id'], 'turn_seq': sequence,
+              'speech_end_ms': current, 'deadline_ms': turn['deadline_ms'],
+              'calendar_anchor_ms': turn['calendar_anchor_ms'], 'calendar_boot_ms': current,
+              'action_window_end_ms': session_end, 'administrative': True})
+        preroll.clear(); detector.reset()
+        say(notice(), offered_more=False)
+
     def closed():
         emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
             'speech_end_ms': turn['speech_end'], 'deadline_ms': turn['deadline_ms'],
@@ -816,7 +833,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if action == 'pause': return 'voice_suspended'
                             if action == 'audio_yield': audio_yielded = True; checkpoint_followup = False; continue
                             if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
-                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate'}:
+                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate','christmas_notice'}:
                                 raise ValueError('Control during context handoff')
                         elif kind != 4: raise ValueError('Invalid continuous context frame')
                         continue  # Discard queued microphone/TTS tail, never transcribe during handoff.
@@ -838,6 +855,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = False
                         request_context('audio_resume'); continue
                     if action == 'activate' and state == 'wake': activate('button')
+                    if action == 'christmas_notice' and state == 'wake' and continuous_voice and assistant_tools:
+                        christmas_notice(); continue
                     if action in {'timer_result', 'agenda_result', 'volume_result', 'light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
                         if action in {'reminder_delete_selection','reminder_delete_result'} and not reminder_deletion: raise ValueError('Reminder deletion not negotiated')
                         if action=='reminder_read_result' and not reminder_read: raise ValueError('Reminder reading not negotiated')
@@ -880,7 +899,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 closed()
                                 if not continuous_voice: return
                                 request_context('dialogue_closed'); continue
-                            completed_turn(True)
+                            completed_turn(not turn.get('automatic'))
                         elif action in {'tts_failed', 'tts_interrupted'}:
                             if guided_agenda: timers.spoken(turn['id'], False)
                             if not turn.get('administrative'): model.memory.unanswered(turn['text'])

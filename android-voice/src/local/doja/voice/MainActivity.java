@@ -174,6 +174,7 @@ public class MainActivity extends Activity {
         catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
         try { RestModeScheduler.schedule(this); }
         catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
+        try { ChristmasNotice.schedule(this); } catch (Exception ignored) { /* The boot receiver repairs it. */ }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         for (SimpleDateFormat format : new SimpleDateFormat[]{clockFormat, dateFormat, weatherTimeFormat})
             format.setTimeZone(TimeZone.getTimeZone("America/Bogota"));

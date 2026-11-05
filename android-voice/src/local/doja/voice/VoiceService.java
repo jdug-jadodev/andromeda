@@ -158,6 +158,7 @@ public class VoiceService extends Service {
             return START_NOT_STICKY;
         }
         if ("PUSH".equals(action)) { if (running) control("activate"); else stopSelf(); return START_NOT_STICKY; }
+        if (ChristmasNotice.ACTION.equals(action)) { if (running) christmasNotice(SystemClock.elapsedRealtime() + ChristmasNotice.RETRY_FOR_MS); else stopSelf(); return START_NOT_STICKY; }
         if (running) return START_NOT_STICKY;
         if (AgendaDeliveryService.active) { lastError = "Termina primero el aviso de agenda"; stopSelf(); return START_NOT_STICKY; }
         if (CaptureProbeService.active) { lastError = "Termina primero el diagnóstico de captura"; stopSelf(); return START_NOT_STICKY; }
@@ -228,6 +229,15 @@ public class VoiceService extends Service {
         if (!continuousVoice) main.postDelayed(() -> { pilotExpired = true; stopSelf(); }, seconds * 1000L);
         new Thread(decoderCheck ? this::checkPublicDecoder : conversationOnly ? this::captureConversation : this::capture, "doja-pcm").start();
         return START_NOT_STICKY;
+    }
+    /** Waits, up to the given time, until she is idle on the clock, then asks the backend for Santa's notice. */
+    private void christmasNotice(long until) {
+        if (!running || !continuousVoice || !ChristmasMode.enabled(this)) return;
+        if (speaking || dialogueListening || audioYielded || awaitingContext || cancelling || conversationTurn.hasActiveTurn()) {
+            if (SystemClock.elapsedRealtime() < until) main.postDelayed(() -> christmasNotice(until), 15000);
+            return;
+        }
+        control("christmas_notice");
     }
     /** Reopens the continuous wake service after the local cancellation phrase. */
     static Intent restartIntent(Context context) {
