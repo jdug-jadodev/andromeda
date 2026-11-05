@@ -41,6 +41,13 @@ if ($lockPid -match '^\d+$') {
     adb -s $SERIAL shell "su -c 'rm -rf /data/local/tmp/andromeda-resident.lock'" 2>&1 | Out-Null
 }
 
+# 1b) Detener la app antes de arrancar el motor. El supervisor se niega a arrancar
+#     (salida silenciosa) si local.doja.voice tiene un servicio activo, así que la
+#     paramos para no volver a topar con el "no levanta" sin diagnóstico.
+Write-Host "Deteniendo la app (VoiceService) para arrancar limpio..." -ForegroundColor Cyan
+adb -s $SERIAL shell "am force-stop local.doja.voice" 2>&1 | Out-Null
+Start-Sleep -Seconds 2
+
 # 2) Arrancar el motor en un job de fondo. El `adb -s $SERIAL shell` se queda "colgado"
 #    porque el proceso de fondo retiene su stdout, pero el job corre aparte y
 #    no nos bloquea; el motor arranca igual (setsid nohup lo desacopla).
@@ -65,6 +72,11 @@ Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
 if ($ok) {
     Write-Host "OK: motor arriba (puerto 11436). Toca 'Activar Andromeda' en la app." -ForegroundColor Green
 } else {
-    Write-Host "No levanto a tiempo. Revisa el log:" -ForegroundColor Red
-    Write-Host "  adb -s $SERIAL shell su -c 'cat /data/local/tmp/andromeda-start.log'" -ForegroundColor Gray
+    Write-Host "No levanto a tiempo. Posibles causas (guardas del supervisor):" -ForegroundColor Red
+    Write-Host "  - App con servicio activo (ya se force-stopeo arriba)" -ForegroundColor Gray
+    Write-Host "  - Puerto 11436/11435 ocupado, o memoria/termica fuera de rango" -ForegroundColor Gray
+    Write-Host "Log de arranque:" -ForegroundColor Gray
+    adb -s $SERIAL shell "su -c 'cat /data/local/tmp/andromeda-start.log 2>/dev/null'" 2>&1
+    Write-Host "Memoria disponible (kB) y temp (decigrados):" -ForegroundColor Gray
+    adb -s $SERIAL shell "su -c 'awk \"/^MemAvailable:/ {print \$2}\" /proc/meminfo; cat /sys/class/power_supply/battery/temp'" 2>&1
 }
