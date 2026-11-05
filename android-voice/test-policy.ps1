@@ -153,3 +153,11 @@ if ($LASTEXITCODE -ne 0) { throw 'Listening sleep policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Face exit motion compilation failed' }
 & java -cp $output local.doja.voice.FaceExitMotionTest
 if ($LASTEXITCODE -ne 0) { throw 'Face exit motion tests failed' }
+& javac -encoding UTF-8 -d $output "$source\FaceState.java" "$source\ChristmasFacePolicy.java" "$PSScriptRoot\tests\ChristmasFacePolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Christmas face policy compilation failed' }
+& java -cp $output local.doja.voice.ChristmasFacePolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Christmas face policy tests failed' }
+& javac -encoding UTF-8 -d $output "$source\FaceReaction.java" "$source\ChristmasSanta.java" "$PSScriptRoot\tests\ChristmasSantaTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Christmas Santa compilation failed' }
+& java -cp $output local.doja.voice.ChristmasSantaTest
+if ($LASTEXITCODE -ne 0) { throw 'Christmas Santa tests failed' }

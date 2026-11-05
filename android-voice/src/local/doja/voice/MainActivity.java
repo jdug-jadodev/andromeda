@@ -32,6 +32,24 @@ public class MainActivity extends Activity {
     final UiPolicy policy = new UiPolicy();
     private final ListeningSleepPolicy sleep = new ListeningSleepPolicy();
     private boolean sleepWatching, closingFace;
+    // Navidad: nothing below exists while ChristmasMode is off, and every use is guarded by christmas.
+    ChristmasBackdropView backdrop;
+    private ChristmasClockDrawable clockDecor;
+    private boolean christmas, faceHeld, santaPlaying, santaSpoke;
+    ChristmasJingle jingle;
+    private final Runnable christmasFaceEntry = () -> showHeldFace(true);
+    // The time grows with the free height when the button below it hides. In navidad its size is capped so that
+    // any time fits between the wreath and the reindeer; a single line ignores the width when it auto-sizes.
+    private int clockMostPx;
+    private final View.OnLayoutChangeListener christmasClockFit = (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+        android.graphics.Paint probe = new android.graphics.Paint(clock.getPaint()); probe.setTextSize(100);
+        int most = (int)((right - left) * (1 - 2 * ChristmasMode.CLOCK_SIDE) / probe.measureText("00:00") * 100);
+        if (!christmas || most == clockMostPx || most < 4) return;
+        clockMostPx = most;
+        clock.post(() -> {
+            if (christmas) clock.setAutoSizeTextTypeUniformWithConfiguration(most / 2, most, 2, android.util.TypedValue.COMPLEX_UNIT_PX);
+        });
+    };
     private android.animation.ValueAnimator clockDrop;
     private final Runnable closingDone = new Runnable() { public void run() { finishClosing(); } };
     /** While listening, re-evaluates the face a few times per second so drowsy/asleep start on time. */
@@ -77,6 +95,7 @@ public class MainActivity extends Activity {
     };
     final Runnable tick = new Runnable() {
         public void run() {
+            applyChristmas();
             Date now = new Date(); clock.setText(clockFormat.format(now)); date.setText(dateFormat.format(now));
             long voiceAt = VoiceService.brightnessActivityAt;
             long elapsed = SystemClock.elapsedRealtime();
@@ -92,8 +111,11 @@ public class MainActivity extends Activity {
                 lastFaceReactionAt = faceAt;
                 if (face != null && VoiceService.faceReaction != FaceReaction.NONE) {
                     FaceReaction reaction = VoiceService.faceReaction;
-                    if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
-                    face.setReaction(reaction, reaction.durationMs());
+                    if (reaction == FaceReaction.SANTA) playSanta(ChristmasSanta.daysUntilChristmas(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
+                    else {
+                        if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
+                        face.setReaction(reaction, reaction.durationMs());
+                    }
                 }
             }
             if (CaptureProbeService.active) {
@@ -187,6 +209,7 @@ public class MainActivity extends Activity {
                 return super.performAccessibilityAction(host, action, arguments);
             }
         });
+        applyChristmas();
         setContentView(root); refreshServiceState(); immersive();
     }
     private void buildIdle() {
@@ -939,6 +962,7 @@ public class MainActivity extends Activity {
         closingFace = false;
         handler.removeCallbacks(closingDone);
         if (!showingFace) faceLayer.setVisibility(View.GONE);
+        if (christmas && !showingFace) backdrop.hide(ChristmasMode.BACKDROP_FADE_MS);
         faceLayer.setAlpha(1); transcript.setAlpha(1); idleLayer.setTranslationY(0); face.endJump();
     }
     /** Someone woke her while she was leaving: stop the exit and let the normal face path take over. */
@@ -970,9 +994,67 @@ public class MainActivity extends Activity {
     // When the scene ends the clock falls in with the same goodbye exit as "no necesito nada más".
     private final Runnable releaseHeldFace = new Runnable() { public void run() {
         faceHoldUntil = 0; face.setState(FaceState.SPEAKING); present(FaceState.READY, heldText); } };
+    /** Follows the parameter: turning it off takes everything Christmas off the screen. */
+    private void applyChristmas() {
+        boolean wanted = ChristmasMode.enabled(this);
+        if (wanted == christmas) return;
+        christmas = wanted;
+        face.setChristmas(wanted);
+        transcript.setTextColor(wanted ? Color.rgb(34, 50, 88) : Color.rgb(154, 180, 202));
+        if (wanted) {
+            clockDecor = new ChristmasClockDrawable(); idleLayer.setBackground(clockDecor);
+            idleLayer.addOnLayoutChangeListener(christmasClockFit); idleLayer.requestLayout();
+            clockDecor.setRunning(resumed && !reducedMotion());
+            backdrop = new ChristmasBackdropView(this);
+            root.addView(backdrop, 0, new FrameLayout.LayoutParams(-1, -1));
+            backdrop.setForeground(resumed);
+            if (showingFace) backdrop.show(0);
+        } else {
+            if (faceHeld) showHeldFace(true);
+            if (santaPlaying) stopSanta();
+            clockDecor.setRunning(false); idleLayer.setBackground(null); clockDecor = null;
+            idleLayer.removeOnLayoutChangeListener(christmasClockFit); clockMostPx = 0;
+            clock.setAutoSizeTextTypeUniformWithConfiguration(60, 180, 2, android.util.TypedValue.COMPLEX_UNIT_SP);
+            backdrop.setForeground(false); root.removeView(backdrop); backdrop = null;
+        }
+    }
+    /** Santa answers on the backdrop while her face steps aside; without navidad the answer is only her voice. */
+    void playSanta(int days) {
+        if (!christmas || !showingFace || !resumed || reducedMotion() || santaPlaying) return;
+        if (faceHeld) showHeldFace(false);
+        santaPlaying = true; santaSpoke = false;
+        // A session closing during the scene waits for it, the same as a self-destruct scene.
+        faceHoldUntil = SystemClock.uptimeMillis() + ChristmasSanta.durationMs(days);
+        faceLayer.setVisibility(View.INVISIBLE); border.setProcessing(false);
+        backdrop.show(0); backdrop.playSanta(days, this::endSanta);
+        if (jingle == null) jingle = new ChristmasJingle(this);
+        jingle.play(FaceReaction.SANTA.speechDelayMs());
+    }
+    private void endSanta() {
+        santaPlaying = false;
+        if (!showingFace) return;
+        faceLayer.setVisibility(View.VISIBLE);
+        if (!handler.hasCallbacks(releaseHeldFace)) face.enterRunning();   // she is about to leave otherwise
+    }
+    /** Someone is talking to her again, or navidad was turned off: she comes back now. */
+    private void stopSanta() {
+        if (jingle != null) jingle.stop();
+        backdrop.stopSanta(); faceHoldUntil = 0; endSanta();
+    }
+    boolean isSantaPlaying() { return santaPlaying; }
+    /** The backdrop had its moment, or something more important arrived: she comes out now. */
+    private void showHeldFace(boolean enter) {
+        handler.removeCallbacks(christmasFaceEntry); faceHeld = false;
+        if (enter) { faceLayer.setVisibility(View.VISIBLE); face.enterRunning(); }
+    }
     void present(FaceState value, String text) {
         boolean nextFace = UiPolicy.showsFace(value);
         long now = SystemClock.uptimeMillis();
+        if (faceHeld && (!nextFace || ChristmasFacePolicy.releasesHeldFace(value))) showHeldFace(nextFace);
+        if (santaPlaying) {
+            if (value == FaceState.SPEAKING) santaSpoke = true;
+            else if (value == FaceState.THINKING && santaSpoke) stopSanta();
+        }
         if (!nextFace && showingFace && now < faceHoldUntil) {
             heldText = text;
             state.setText(text); border.setProcessing(false);
@@ -1000,6 +1082,7 @@ public class MainActivity extends Activity {
             faceLayer.animate().cancel(); faceLayer.setAlpha(1); idleLayer.setTranslationY(0);
             if (sleepExit) {
                 // The face fades out with its eyes still closed while the clock fades in.
+                if (christmas) backdrop.hide(1200);
                 closingFace = true;
                 idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(0); idleLayer.animate().alpha(1).setDuration(1200).start();
                 faceLayer.animate().alpha(0).setDuration(1200).withEndAction(this::finishClosing).start();
@@ -1007,16 +1090,21 @@ public class MainActivity extends Activity {
                 closingFace = true; startJumpExit(selfDestructed);
             } else if (nextFace) {
                 face.setBlank(false); sceneEnd = 0;
-                faceLayer.setVisibility(View.VISIBLE); face.enterRunning();
+                boolean animated = resumed && !reducedMotion();
+                if (christmas) backdrop.show(animated ? ChristmasMode.BACKDROP_FADE_MS : 0);
+                if (ChristmasFacePolicy.holdsFace(christmas, animated, value) && faceLayer.getVisibility() != View.VISIBLE) {
+                    faceHeld = true; handler.postDelayed(christmasFaceEntry, ChristmasMode.BACKDROP_HOLD_MS);
+                } else { faceLayer.setVisibility(View.VISIBLE); face.enterRunning(); }
                 if (resumed && !reducedMotion()) idleLayer.animate().alpha(0).setDuration(180).withEndAction(() -> {
                     if (showingFace) idleLayer.setVisibility(View.GONE);
                 }).start();
                 else idleLayer.setVisibility(View.GONE);
             } else {
+                if (christmas) backdrop.hide(resumed ? ChristmasMode.BACKDROP_FADE_MS : 0);
                 faceLayer.setVisibility(View.GONE); idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(1);
             }
         }
-        border.setProcessing(value == FaceState.THINKING);
+        border.setProcessing(value == FaceState.THINKING && !santaPlaying);
     }
     void showReaction(FaceReaction reaction) {
         if (face == null || reaction == null || reaction == FaceReaction.NONE) return;
@@ -1234,6 +1322,7 @@ public class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter(VoiceService.STATE);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(receiver, filter);
         refreshServiceState(); face.setForeground(true); border.setForeground(true); handler.post(tick); handler.post(weatherRefresh);
+        if (christmas) { backdrop.setForeground(true); clockDecor.setRunning(!reducedMotion()); }
         screenIdleDelay = ScreenBrightnessPolicy.IDLE_MS;
         handler.removeCallbacks(screenIdle);
         handler.postDelayed(screenIdle, screenIdleDelay);
@@ -1244,6 +1333,8 @@ public class MainActivity extends Activity {
         // One bounded in-flight public request may finish; its generation is now
         // invalid. Do not block the UI thread on HttpURLConnection.disconnect().
         closeOptions(); stopPreview(); refreshServiceState(); face.setForeground(false); border.setForeground(false);
+        if (christmas) { backdrop.setForeground(false); clockDecor.setRunning(false); }
+        if (jingle != null) jingle.stop();
         handler.removeCallbacks(tick); handler.removeCallbacks(weatherRefresh); unregisterReceiver(receiver); super.onPause();
     }
     public void onStop() {

@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="91" android:versionName="0.13.63-lights-fuzzy">
+    android:versionCode="96" android:versionName="0.13.68-navidad-sin-simulacion">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -53,6 +53,8 @@
         android:label="Autorización de timer en preferencias aisladas, sin sonido" android:functionalTest="true" />
     <instrumentation android:name=".PrepareCancelTimerInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Preparar timer real solo con consentimiento" android:functionalTest="true" />
+    <instrumentation android:name=".ChristmasInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Navidad en pantalla sin micrófono ni acciones" android:functionalTest="true" />
     <instrumentation android:name=".FaceInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Interfaz sin micrófono ni acciones" android:functionalTest="true" />
     <instrumentation android:name=".ConversationInstrumentation" android:targetPackage="local.doja.voice"

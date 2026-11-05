@@ -17,6 +17,7 @@ from phone_volume import current_volume
 from reminder_read import current_read
 from local_arithmetic import answer as arithmetic_answer
 from local_knowledge import answer as knowledge_answer
+from christmas_days import answer as christmas_answer
 from tv_intents import parse_volume, parse_input, parse_scene, parse_audio, parse_app
 
 
@@ -233,8 +234,10 @@ class AssistantToolsModel(ConversationModel):
         if self.thread is not None and self.thread.is_alive(): raise ValueError('Concurrent turn')
         self.work_deadline = self.turn_deadline(speech_end, session_end)
         if self.basic_assistant:
-            local = arithmetic_answer(text)
-            validation = 'local_arithmetic'
+            # Before the date and arithmetic answers: "qué día es navidad" is not a date question.
+            christmas = christmas_answer(text)
+            local = christmas['text'] if christmas else arithmetic_answer(text)
+            validation = 'local_christmas' if christmas else 'local_arithmetic'
             if local is None:
                 local = knowledge_answer(text)
                 validation = 'local_knowledge'
@@ -245,7 +248,7 @@ class AssistantToolsModel(ConversationModel):
                 self.context_metrics = {'tools_model_choice':'local','tools_selected_tool':'none','tools_model_kind':'reply',
                     'tools_validation':validation,'tools_web_attempted':False,'input_tokens':0,'input_token_budget':1536,
                     'history_turns_available':len(self.memory.pairs)}
-                if self.clock()<self.work_deadline: self.result={'kind':'reply','text':local}
+                if self.clock()<self.work_deadline: self.result=christmas or {'kind':'reply','text':local}
                 else: self.error='TimeoutError'
                 self.done.set(); return self.work_deadline
         # Fase 1: router determinista. Sin llama-server ni búsqueda web local.

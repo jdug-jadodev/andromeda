@@ -5,7 +5,9 @@ public enum FaceReaction {
     NONE, SAD, CRY, COLD, HOT, FOG, CELEBRATE, LOVE, SILLY, DISGUST, COOL,
     // Self-destruct scenes: timed drawings (bomb, countdown) that replace the eyes while they play.
     // COUNTDOWN is silent for its first 8.6 s (1.6 s of eyes + ten digits at .7 s, see FaceView); her line follows.
-    EVIL_BOMB(true, 7000, 0), COUNTDOWN(true, 15000, 8600), WINK_BOMB(true, 4200, 0);
+    EVIL_BOMB(true, 7000, 0), COUNTDOWN(true, 15000, 8600), WINK_BOMB(true, 4200, 0),
+    // Santa's answer about the days to Christmas; she speaks as the count comes out. See ChristmasSanta for its length.
+    SANTA(true, 0, 5500);
 
     private final boolean scene;
     private final long durationMs, speechDelayMs;
