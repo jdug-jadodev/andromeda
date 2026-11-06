@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import signal
 import stat
+import threading
 
 from assistant_config import SETTINGS
 from conversation_voice import now_ms, serve
@@ -68,6 +69,7 @@ def main():
         deadline=int((work/'deadline_ms').read_text())
         if not 0<deadline-now_ms()<=1800000 or (work/'mode').exists() or (work/'mode').is_symlink(): raise ValueError('Invalid resident lifetime')
     owner=_NoModelOwner(); runtime=None; monitor=None
+    heartbeat_stop=None; heartbeat_thread=None
     stopping={'requested':False}
     def stop(*_): stopping['requested']=True
     signal.signal(signal.SIGTERM,stop); signal.signal(signal.SIGINT,stop)
@@ -81,6 +83,18 @@ def main():
             report=lambda value:write_report(work/'metrics.json',value),stop_requested=lambda:stopping['requested'] or (work/'STOP').exists(),continuous_model=args.continuous_model)
         runtime=ContinuousResidentRuntime(owner,now_ms,monitor,enabled=True,cache_purger=lambda model:0) if args.continuous_model else ResidentRuntime(owner,now_ms,deadline,monitor)
         if not runtime.check(): raise RuntimeError('Resident resource guard')
+        # Heartbeat: keep the monitor sampling on its own cadence so a slow turn
+        # (cloud fallback, web search, a long light confirmation) cannot starve the
+        # guard and trip 'stale_monitor'. The monitor's RLock keeps this coherent
+        # with the resource_check() calls inside serve()/session().
+        heartbeat_stop = threading.Event()
+        def heartbeat():
+            while not heartbeat_stop.is_set():
+                if not monitor.check():
+                    break
+                heartbeat_stop.wait(1.0)
+        heartbeat_thread = threading.Thread(target=heartbeat, name='andromeda-monitor', daemon=True)
+        heartbeat_thread.start()
         try:
             serve('/var/lib/andromeda-conversation/token',work/'key',detector,0 if args.continuous_voice else 300,
                 '/var/lib/andromeda-conversation/server-cert.pem','/var/lib/andromeda-conversation/server-key.pem',
@@ -97,6 +111,8 @@ def main():
         _crash('RESIDENT_EXIT', f'reason={monitor.reason if monitor is not None else "none"}')
         if runtime is not None: runtime.shutdown()
         else: owner.stop()
+        if heartbeat_stop is not None: heartbeat_stop.set()
+        if heartbeat_thread is not None: heartbeat_thread.join(timeout=2)
         if monitor is not None: monitor.finish()
 
 

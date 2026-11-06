@@ -64,8 +64,17 @@ class Monitor:
         self.samples=deque(maxlen=120)
         self.previous=None; self.last_report=0; self.reason='running'; self.count=0
         self.minimum_available=None; self.peak_model_rss=self.peak_backend_rss=self.max_temp=0
+        self._lock=threading.RLock()
 
     def check(self):
+        # A slow turn (cloud fallback, web search, a long light confirmation) blocks
+        # the accept/session loop, so this guard can be starved for >30s even while the
+        # resident is healthy. A heartbeat thread (resident_voice) calls check() on its
+        # own cadence so `previous` stays fresh; the RLock keeps both callers coherent.
+        with self._lock:
+            return self._check_locked()
+
+    def _check_locked(self):
         if self.reason!='running': return False
         now=self.clock()
         if self.stop_requested(): self.reason='manual_stop'
@@ -99,11 +108,12 @@ class Monitor:
         return self.reason=='running'
 
     def snapshot(self):
-        value = dict(version=2 if self.continuous_model else 1,state=self.reason,samples_observed=self.count,minimum_available_kib=self.minimum_available,
-            peak_model_rss_kib=self.peak_model_rss,peak_backend_rss_kib=self.peak_backend_rss,max_battery_deci_c=self.max_temp,
-            remaining_ms=None if self.continuous_model else max(0,self.deadline-self.clock()),samples=list(self.samples),human_content_recorded=False)
-        if self.continuous_model: value['lifetime']='continuous_model_v1'
-        return value
+        with self._lock:
+            value = dict(version=2 if self.continuous_model else 1,state=self.reason,samples_observed=self.count,minimum_available_kib=self.minimum_available,
+                peak_model_rss_kib=self.peak_model_rss,peak_backend_rss_kib=self.peak_backend_rss,max_battery_deci_c=self.max_temp,
+                remaining_ms=None if self.continuous_model else max(0,self.deadline-self.clock()),samples=list(self.samples),human_content_recorded=False)
+            if self.continuous_model: value['lifetime']='continuous_model_v1'
+            return value
 
     def finish(self):
         if self.reason=='running': self.reason='stopped'
