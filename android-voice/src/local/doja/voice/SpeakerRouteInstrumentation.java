@@ -53,7 +53,14 @@ public final class SpeakerRouteInstrumentation extends Instrumentation {
             int routed = output.routedOutputType();
             result.putInt("routed_device_type", routed);
             result.putBoolean("builtin_speaker", routed == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
-            result.putBoolean("passed", true);
+            ListeningCue.play(context);
+            android.os.SystemClock.sleep(700);
+            int cue = ListeningCue.routedOutputType();
+            result.putInt("cue_device_type", cue);
+            result.putInt("cue_step", ListeningCue.step());
+            result.putBoolean("cue_builtin_speaker", cue == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+            result.putBoolean("passed", routed == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                && cue == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
         } catch (Exception failure) {
             result.putBoolean("passed", false);
             result.putString("error", failure.getClass().getSimpleName() + ": " + failure.getMessage());

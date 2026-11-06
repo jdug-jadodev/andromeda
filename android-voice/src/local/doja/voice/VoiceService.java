@@ -470,6 +470,7 @@ public class VoiceService extends Service {
                 if (end > now + 100 || now - end > 1000) throw new IOException("El audio llegó atrasado o con otro reloj");
                 if (!clockReady) {
                     clockReady = true; wakeListening = true;
+                    if (!captureCheck) ListeningCue.play(this); // Audible "you can speak now", never on the idle main screen.
                     if (!conversationTurn.hasActiveTurn()) state(dialogueListening
                         ? "MICRÓFONO ACTIVO · sigue hablando · sin repetir Andrómeda"
                          : "MICRÓFONO ACTIVO · " + (assistantTools ? "agenda/web experimental" : timerTrial ? "timer experimental" : "LFM sin acciones") + " · di " + AssistantConfig.NAME,
