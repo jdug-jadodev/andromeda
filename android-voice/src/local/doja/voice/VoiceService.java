@@ -89,7 +89,7 @@ public class VoiceService extends Service {
     volatile SilenceListener.Handle activeInterruption;
     volatile boolean speechInterrupted;
     volatile boolean mutationRequested;
-    TextToSpeech tts;
+    SpeakerSpeech tts;
     final Handler main = new Handler(Looper.getMainLooper());
     public IBinder onBind(Intent intent) { return null; }
     public void onCreate() {
@@ -97,7 +97,7 @@ public class VoiceService extends Service {
         lightDispatcher = new LightCommandDispatcher(this);
     }
     void initializeTts() {
-        tts = new TextToSpeech(this, status -> {
+        tts = new SpeakerSpeech(this, status -> {
             if (!running) { if (tts != null) tts.shutdown(); return; }
             if (status == TextToSpeech.SUCCESS) {
                 if (conversationOnly) {

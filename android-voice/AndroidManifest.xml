@@ -66,6 +66,8 @@
         android:label="Contexto en RAM sin audio ni modelo" android:functionalTest="true" />
     <instrumentation android:name=".SilenceInstrumentation" android:targetPackage="local.doja.voice"
         android:label="ASR Android con WAV públicos, sin micrófono ni altavoz" android:functionalTest="true" />
+    <instrumentation android:name=".SpeakerRouteInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Ruta de voz al altavoz con audífonos, sin micrófono" android:functionalTest="true" />
     <instrumentation android:name=".CaptureProbeInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Control de captura con WAV públicos/UI, sin AudioRecord" android:functionalTest="true" />
     <instrumentation android:name=".AgendaInstrumentation" android:targetPackage="local.doja.voice"
