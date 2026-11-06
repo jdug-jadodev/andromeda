@@ -95,9 +95,11 @@ TOOL_INTENT = {
 # Orden independiente: "¿qué entradas tiene la tele?" y "está encendida la tele"
 # ponen "tele" al final, no al principio, así que ambos términos se exigen por
 # lookahead y no por orden literal.
+# Además rechaza frases que mencionan "luz/luces": "enciende la luz del televisor"
+# es una orden de luces (control_lights), no de TV, aunque contenga "televisor".
 TV = r'\b(?:tele|tele ?visor|television|te ?ve|teve|tv|pantalla)\b'
 def _tv(keyword):
-    return r'(?=.*' + TV + r')(?=.*' + keyword + r')'
+    return r'(?=.*' + TV + r')(?=.*' + keyword + r')(?!.*\b(?:luz|luces)\b)'
 # Las dos lecturas (estado y entradas) comparten un gate unificado: el modelo
 # LFM 1.2B a veces confunde tv_status con tv_inputs, y rechazar la orden por un
 # desvío entre lecturas inofensivas confunde al humano. El gate solo exige que la
