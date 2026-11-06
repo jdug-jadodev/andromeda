@@ -12,9 +12,9 @@ public final class LightCommandRouting {
         if (command == null) throw new IllegalArgumentException("Orden de luz incompleta");
         List<LightCommand> result = new ArrayList<>();
         if (command.target == LightTarget.BOTH) {
-            // La Mr Star es la más inestable: se escribe primero, con la pila BLE
-            // aún sin usar en esta orden. La Lotus (confiable) va al final, porque
-            // conecta bien incluso después de otro dispositivo.
+            // La Mr Star solo conecta de forma fiable como primera conexión de
+            // la orden; la Lotus conecta bien después. El presupuesto fijo
+            // reserva tiempo para que la Lotus siempre alcance su turno.
             result.add(copyFor(command, LightTarget.MR_STAR));
             result.add(copyFor(command, LightTarget.LOTUS));
         } else result.add(command);

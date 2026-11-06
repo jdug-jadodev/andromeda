@@ -27,7 +27,9 @@ public final class LotusLampBleAdapter {
     public static final UUID SERVICE_UUID = UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
     public static final UUID WRITE_UUID = UUID.fromString("0000fff3-0000-1000-8000-00805f9b34fb");
     public static final UUID NOTIFY_UUID = UUID.fromString("0000fff4-0000-1000-8000-00805f9b34fb");
-    private static final long TIMEOUT_MS = 20000L;
+    private static final long TIMEOUT_MS = LightBleRetryPolicy.ATTEMPT_TIMEOUT_MS;
+    /** Let the controller finish the disconnect before unregistering the client. */
+    private static final long CLOSE_DELAY_MS = 1200L;
 
     public enum Status {
         COMPLETE_UNCONFIRMED,
@@ -218,10 +220,16 @@ public final class LotusLampBleAdapter {
         if (finished) return;
         finished = true;
         handler.removeCallbacksAndMessages(null);
-        if (gatt != null) {
-            try { gatt.disconnect(); } catch (RuntimeException ignored) {}
-            try { gatt.close(); } catch (RuntimeException ignored) {}
-            gatt = null;
+        final BluetoothGatt current = gatt;
+        gatt = null;
+        writeCharacteristic = null;
+        notifyCharacteristic = null;
+        if (current != null) {
+            // close() right after disconnect() unregisters the client before the
+            // controller tears the link down. The next lamp would then inherit a
+            // stale client and never receive onServicesDiscovered (GATT 133).
+            try { current.disconnect(); } catch (RuntimeException ignored) {}
+            handler.postDelayed(() -> { try { current.close(); } catch (RuntimeException ignored) {} }, CLOSE_DELAY_MS);
         }
         if (callback != null) callback.onComplete(result);
     }

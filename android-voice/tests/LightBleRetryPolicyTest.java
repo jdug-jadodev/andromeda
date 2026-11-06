@@ -9,6 +9,7 @@ public final class LightBleRetryPolicyTest {
         check(LightBleRetryPolicy.mayRetry("CONNECTION_FAILED", 0, 1));
         check(LightBleRetryPolicy.mayRetry("SERVICE_DISCOVERY_FAILED", 0, 2));
         check(LightBleRetryPolicy.mayRetry("TIMEOUT", 0, 1));
+        check(!LightBleRetryPolicy.mayRetry("TIMEOUT", 0, 2));
         check(LightBleRetryPolicy.mayRetry("WRITE_REJECTED", 0, 1));
         check(LightBleRetryPolicy.mayRetry("CHARACTERISTIC_UNAVAILABLE", 0, 1));
         check(!LightBleRetryPolicy.mayRetry("CONNECTION_FAILED", 1, 1));

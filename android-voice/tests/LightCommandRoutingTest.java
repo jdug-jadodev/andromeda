@@ -11,8 +11,8 @@ public final class LightCommandRoutingTest {
         List<LightCommand> color = LightCommandRouting.independent(
             LightCommand.color(LightTarget.BOTH, LightColor.parseHex("#FF0000"), 25));
         check(color.size() == 2);
-        check(color.get(0).target == LightTarget.LOTUS);
-        check(color.get(1).target == LightTarget.MR_STAR);
+        check(color.get(0).target == LightTarget.MR_STAR);
+        check(color.get(1).target == LightTarget.LOTUS);
         check(color.get(0).color.equals(color.get(1).color));
         check(color.get(0).brightnessPercent == 25 && color.get(1).brightnessPercent == 25);
 

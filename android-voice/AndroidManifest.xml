@@ -98,6 +98,8 @@
         android:label="Comprobar acciones editables del horario sin BLE ni micrófono" android:functionalTest="true" />
     <instrumentation android:name=".LightAddressPowerInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Una escritura BLE directa por dirección, sin escaneo ni reintento" android:functionalTest="true" />
+    <instrumentation android:name=".LightBothPowerInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="Una orden real a las dos luces en secuencia, sin micrófono" android:functionalTest="true" />
     <instrumentation android:name=".RestModeInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Crear horario 23:00/06:00 sin audio ni BLE" android:functionalTest="true" />
     <instrumentation android:name=".RestModeApplyInstrumentation" android:targetPackage="local.doja.voice"

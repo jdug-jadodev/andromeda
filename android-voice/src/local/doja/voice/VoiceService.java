@@ -71,6 +71,10 @@ public class VoiceService extends Service {
     volatile PhoneVolumeChannel volumeChannel;
     volatile LightVoiceChannel lightChannel;
     LightCommandDispatcher lightDispatcher;
+    /** A slow BLE order must still answer the turn; the verdict then says it is uncertain. */
+    private static final long LIGHT_RECEIPT_WATCHDOG_MS = 30000L;
+    private final java.util.concurrent.atomic.AtomicReference<String> lastLightReceiptNonce =
+        new java.util.concurrent.atomic.AtomicReference<>("");
     volatile ReminderReadChannel reminderReadChannel;
     volatile ReminderDeleteChannel reminderDeleteChannel;
     volatile String activeTimerControl = "";
@@ -724,6 +728,12 @@ public class VoiceService extends Service {
             channel.recordExecution(false, 0); throw rejected;
         }
         channel.recordExecution(true, execution.command == null && execution.schedule == null ? 0 : 1);
+        // The voice turn has a hard deadline. If BLE never answers, answer the
+        // turn with an honest "uncertain" verdict instead of stopping the app.
+        main.postDelayed(() -> {
+            if (!running || channel != lightChannel) return;
+            sendLightReceipt(channel, event, execution, "PARTIAL_OR_UNCERTAIN", 1, 0, 0, "receipt_watchdog");
+        }, LIGHT_RECEIPT_WATCHDOG_MS);
         timerExecutor.execute(() -> {
             if (!running || channel != lightChannel) return;
             if (continuousVoice && audioYielded) {
@@ -743,9 +753,13 @@ public class VoiceService extends Service {
                 sendLightReceipt(channel, event, execution, "UNSUPPORTED_ORDER", 1, 0, 0, execution.rejection);
                 return;
             }
-            lightDispatcher.send(execution.command, LightWriteAuthorization.issueForUser(SystemClock.elapsedRealtime()), result ->
-                sendLightReceipt(channel, event, execution, result.status.name(), result.targetCount,
-                    result.completedTargetCount, result.acceptedFrameCount, result.detail));
+            try {
+                lightDispatcher.send(execution.command, LightWriteAuthorization.issueForUser(SystemClock.elapsedRealtime()), result ->
+                    sendLightReceipt(channel, event, execution, result.status.name(), result.targetCount,
+                        result.completedTargetCount, result.acceptedFrameCount, result.detail));
+            } catch (RuntimeException failure) {
+                sendLightReceipt(channel, event, execution, "TRANSPORT_ERROR", 1, 0, 0, "dispatcher_unavailable");
+            }
         });
     }
 
@@ -787,6 +801,9 @@ public class VoiceService extends Service {
     void sendLightReceipt(LightVoiceChannel channel, JSONObject event, LightVoiceChannel.Execution execution,
             String status, int targetCount, int completed, int accepted, String detail) {
         if (!running || controls.isShutdown() || channel != lightChannel) return;
+        // One verdict per execution: a late adapter callback must not answer the
+        // same turn twice (the channel would reject it and stop the service).
+        if (execution.nonce.equals(lastLightReceiptNonce.getAndSet(execution.nonce))) return;
         int statusCode = 0;
         try { statusCode = LightCommandDispatcher.Status.valueOf(status).ordinal() + 1; }
         catch (IllegalArgumentException ignored) {}
