@@ -45,6 +45,7 @@ final class HomeGatewayServer {
     static final int PORT = 11440;
     private static final int MAX_HEADER = 8192;
     private static final int MAX_BODY = 65536;
+    private static final int MAX_MESSAGE_BODY = VoiceMessagePolicy.MAX_BYTES + 1024;
     private static final int MAX_WORKERS = 4;
     private static final int RATE_MAX = 30;
     private static final long RATE_WINDOW_MS = 60000L;
@@ -111,14 +112,21 @@ final class HomeGatewayServer {
     }
 
     private void handle(SSLSocket socket) {
-        try (SSLSocket peer = socket) {
-            peer.setSoTimeout(10000);
+        SSLSocket peer = socket;
+        try {
+            peer.setSoTimeout(30000);
             peer.startHandshake();
-            peer.setSoTimeout(10000);
+            peer.setSoTimeout(30000);
             Request request = read(peer.getInputStream());
             write(peer.getOutputStream(), route(request));
+        } catch (PayloadTooLarge large) {
+            try {
+                write(peer.getOutputStream(), Response.error(413, "too_large", "El mensaje supera 2 MB."));
+            } catch (IOException ignored) { }
         } catch (Exception error) {
             // Nunca se registran cuerpos, tokens ni códigos de emparejamiento.
+        } finally {
+            close(peer);
         }
     }
 
@@ -135,6 +143,9 @@ final class HomeGatewayServer {
         if ("POST".equals(request.method) && "/v1/command".equals(request.path)) return command(request);
         if ("GET".equals(request.method) && request.path.startsWith("/v1/speech/")
                 && request.path.endsWith(".wav")) return speech(request);
+        if ("PUT".equals(request.method) && request.path.startsWith("/v1/messages/")) return putMessage(request);
+        if ("GET".equals(request.method) && request.path.startsWith("/v1/messages/")) return messageStatus(request);
+        if ("GET".equals(request.method) && "/v1/messages".equals(request.path)) return messages(request);
         return Response.error(404, "not_found", "Ruta desconocida.");
     }
 
@@ -151,7 +162,7 @@ final class HomeGatewayServer {
             if (!pairingManager.verify(body.optString("code", ""))) {
                 return Response.error(403, "forbidden", "Codigo invalido o vencido.");
             }
-            DeviceStore.Device device = devices.create(name, Arrays.asList("voice"));
+            DeviceStore.Device device = devices.create(name, Arrays.asList("voice", "messages", "camera"));
             JSONObject answer = new JSONObject()
                 .put("device_id", device.id)
                 .put("token", device.token)
@@ -173,7 +184,7 @@ final class HomeGatewayServer {
                 .put("resident", VoiceService.active ? "online" : "offline")
                 .put("remote_voice", HomeGatewayConfig.remoteVoiceEnabled(context))
                 .put("camera", "unavailable")
-                .put("messages", 0).put("tailscale", true)
+                .put("messages", VoiceMessageStore.get(context).queuedCount()).put("tailscale", true)
                 .put("server_time_ms", System.currentTimeMillis()));
         } catch (Exception error) {
             return Response.error(500, "internal", "Error interno.");
@@ -187,7 +198,8 @@ final class HomeGatewayServer {
         try {
             boolean voice = HomeGatewayConfig.remoteVoiceEnabled(context);
             return Response.json(200, new JSONObject()
-                .put("contract", 1).put("voice", voice).put("messages", false).put("camera", false)
+                .put("contract", 1).put("voice", voice)
+                .put("messages", HomeGatewayConfig.messagesEnabled(context)).put("camera", false)
                 .put("wav_replies", voice).put("max_command_chars", RemoteVoicePolicy.MAX_TEXT)
                 .put("max_message_bytes", 2097152).put("max_message_ms", 60000)
                 .put("camera_max_minutes", 10).put("camera_max_viewers", 1));
@@ -320,6 +332,65 @@ final class HomeGatewayServer {
         return answer;
     }
 
+    /** PUT /v1/messages/{id}: the phone leaves a voice note for the house. */
+    private Response putMessage(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede dejar mensajes.");
+        }
+        if (!HomeGatewayConfig.messagesEnabled(context)) {
+            return Response.error(403, "forbidden", "Los mensajes estan apagados.");
+        }
+        String type = VoiceMessagePolicy.type(request.header("content-type"));
+        if (type == null) {
+            return Response.error(415, "unsupported_media", "Formato de audio no soportado.");
+        }
+        long duration;
+        try {
+            duration = Long.parseLong(request.header("x-andromeda-duration-ms"));
+        } catch (NumberFormatException missing) {
+            return Response.error(400, "invalid_request", "Falta la duracion del mensaje.");
+        }
+        String id = request.path.substring("/v1/messages/".length());
+        try {
+            JSONObject status = VoiceMessageStore.get(context).put(
+                device.id, device.name, id, type, duration, request.body);
+            return Response.json(201, status);
+        } catch (VoiceMessageStore.Fault fault) {
+            return Response.error(fault.http, fault.code, fault.getMessage(),
+                fault.http == 429, fault.retryAfterMs);
+        }
+    }
+
+    /** GET /v1/messages/{id}: queued, playing, played, expired or failed. */
+    private Response messageStatus(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede dejar mensajes.");
+        }
+        String id = request.path.substring("/v1/messages/".length());
+        JSONObject status = VoiceMessageStore.get(context).status(device.id, id);
+        if (status == null) return Response.error(404, "not_found", "Mensaje desconocido.");
+        return Response.json(200, status);
+    }
+
+    /** GET /v1/messages: recent messages left by this device. */
+    private Response messages(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede dejar mensajes.");
+        }
+        try {
+            return Response.json(200, new JSONObject()
+                .put("messages", VoiceMessageStore.get(context).list(device.id)));
+        } catch (Exception error) {
+            return Response.error(500, "internal", "No pude leer los mensajes.");
+        }
+    }
+
     private DeviceStore.Device authenticate(Request request) {
         String header = request.header("authorization");
         if (header == null || !header.startsWith("Bearer ")) return null;
@@ -381,7 +452,8 @@ final class HomeGatewayServer {
                 throw new IOException("Bad content length");
             }
         }
-        if (length < 0 || length > MAX_BODY) throw new IOException("Body too large");
+        if (length < 0 || length > ("PUT".equals(method) && path.startsWith("/v1/messages/")
+                ? MAX_MESSAGE_BODY : MAX_BODY)) throw new PayloadTooLarge();
         byte[] body = new byte[length];
         int offset = 0;
         while (offset < length) {
@@ -430,6 +502,11 @@ final class HomeGatewayServer {
                 value.close();
             } catch (Exception ignored) { }
         }
+    }
+
+    /** The upload is bigger than this route allows; answered with 413. */
+    private static final class PayloadTooLarge extends IOException {
+        PayloadTooLarge() { super("Body too large"); }
     }
 
     private static final class Request {

@@ -75,8 +75,20 @@ final class DeviceStore {
                     row.put("last_seen_ms", System.currentTimeMillis());
                     write(rows);
                 } catch (Exception ignored) { }
-                return new Device(row.optString("id"), row.optString("name"), null,
-                    strings(row.optJSONArray("capabilities")));
+                // Dispositivos emparejados antes de los mensajes/camara reciben
+                // las tres capacidades. Revocar es borrar el dispositivo entero.
+                List<String> capabilities = strings(row.optJSONArray("capabilities"));
+                if (capabilities.contains("voice")
+                        && (!capabilities.contains("messages") || !capabilities.contains("camera"))) {
+                    capabilities = new ArrayList<>(capabilities);
+                    if (!capabilities.contains("messages")) capabilities.add("messages");
+                    if (!capabilities.contains("camera")) capabilities.add("camera");
+                    try {
+                        row.put("capabilities", new JSONArray(capabilities));
+                        write(rows);
+                    } catch (Exception ignored) { }
+                }
+                return new Device(row.optString("id"), row.optString("name"), null, capabilities);
             }
         }
         return null;

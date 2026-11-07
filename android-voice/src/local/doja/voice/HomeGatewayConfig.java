@@ -27,5 +27,16 @@ final class HomeGatewayConfig {
             .edit().putBoolean("remote_voice_enabled", value).apply();
     }
 
+    /** Mensajes de voz: se encienden al vincular un telefono, nunca solos. */
+    static boolean messagesEnabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("messages_enabled", false);
+    }
+
+    static void setMessagesEnabled(Context context, boolean value) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("messages_enabled", value).apply();
+    }
+
     private HomeGatewayConfig() { }
 }

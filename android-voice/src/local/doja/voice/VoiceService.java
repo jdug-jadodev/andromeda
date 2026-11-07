@@ -95,12 +95,14 @@ public class VoiceService extends Service {
     volatile boolean speechInterrupted;
     volatile boolean mutationRequested;
     SpeakerSpeech tts;
+    MessagePlayback messages;
+    volatile boolean messagePlaying;
     private final RemoteCommandBus.Session remoteSession = new RemoteCommandBus.Session() {
         @Override public boolean ready() {
             return running && output != null && conversationOnly && assistantTools && ttsReady;
         }
         @Override public boolean busy() {
-            return speaking || awaitingContext || cancelling || audioYielded
+            return speaking || messagePlaying || awaitingContext || cancelling || audioYielded
                 || conversationTurn.hasActiveTurn();
         }
         @Override public void send(JSONObject order) {
@@ -124,6 +126,54 @@ public class VoiceService extends Service {
     public void onCreate() {
         super.onCreate();
         lightDispatcher = new LightCommandDispatcher(this);
+        messages = new MessagePlayback(this);
+        // Voice messages never interrupt a turn: they wait for a quiet house.
+        main.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (running) pumpMessages();
+                main.postDelayed(this, 5000L);
+            }
+        }, 4000L);
+    }
+
+    /**
+     * Plays the oldest queued voice message through the phone speaker while the
+     * microphone is held, so the house does not hear itself. It runs on main.
+     */
+    void pumpMessages() {
+        if (!running || !conversationOnly || !assistantTools || !ttsReady) return;
+        if (messagePlaying || messages.playing()) return;
+        if (speaking || dialogueListening || audioYielded || awaitingContext || cancelling) return;
+        if (RingService.ringing || AgendaDeliveryService.active) return;
+        if (conversationTurn.hasActiveTurn()) return;
+        final VoiceMessageStore store = VoiceMessageStore.get(this);
+        final org.json.JSONObject next = store.beginNext();
+        if (next == null) return;
+        final String id = next.optString("id");
+        String name = next.optString("device_name").trim();
+        java.io.File file = store.file(next);
+        if (file == null || !file.isFile()) {
+            store.markFailed(id);
+            return;
+        }
+        messagePlaying = true;
+        state("Mensaje de " + (name.isEmpty() ? "un telefono" : name), FaceState.PREPARING, null);
+        if (!messages.play(file, id, (finished, result) -> {
+            messagePlaying = false;
+            resumeAfter = SystemClock.elapsedRealtime() + 100;
+            if (!running) {
+                VoiceMessageStore.get(this).requeue(finished);
+                return;
+            }
+            if (result == MessagePlayback.Result.COMPLETED) VoiceMessageStore.get(this).markPlayed(finished);
+            else if (result == MessagePlayback.Result.FAILED) VoiceMessageStore.get(this).markFailed(finished);
+            else VoiceMessageStore.get(this).requeue(finished);
+            if (!speaking) state(result == MessagePlayback.Result.COMPLETED
+                ? "Mensaje reproducido" : "Mensaje en espera", FaceState.READY, null);
+        })) {
+            messagePlaying = false;
+            store.markFailed(id);
+        }
     }
     void initializeTts() {
         tts = new SpeakerSpeech(this, status -> {
@@ -262,7 +312,7 @@ public class VoiceService extends Service {
     /** Waits, up to the given time, until she is idle on the clock, then asks the backend for Santa's notice. */
     private void christmasNotice(long until) {
         if (!running || !continuousVoice || !ChristmasMode.enabled(this)) return;
-        if (speaking || dialogueListening || audioYielded || awaitingContext || cancelling || conversationTurn.hasActiveTurn()) {
+        if (speaking || messagePlaying || dialogueListening || audioYielded || awaitingContext || cancelling || conversationTurn.hasActiveTurn()) {
             if (SystemClock.elapsedRealtime() < until) main.postDelayed(() -> christmasNotice(until), 15000);
             return;
         }
@@ -472,7 +522,7 @@ public class VoiceService extends Service {
                 if (continuousVoice && audioYielded && !resumeRequested && !awaitingContext) {
                     resumeRequested = true; awaitingContext = true; speaking = true; control("audio_resume"); awaitContextTimeout();
                 }
-                if (speaking || awaitingContext || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
+                if (speaking || messagePlaying || awaitingContext || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
                     if (recording) {
                         recorder.stop(); AudioInputGate.release(micOwner); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false);
                         if (uiState == FaceState.THINKING) state("LFM pensando · micrófono apagado" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, null);
@@ -1238,6 +1288,11 @@ public class VoiceService extends Service {
 
     private void startSpeech(JSONObject event, String message) {
         speechDiagnostic = SpeechDiagnostics.begin(SystemClock.elapsedRealtime(), message.length());
+        // She answers now: a phone message yields and replays later.
+        if (messagePlaying) {
+            messagePlaying = false;
+            main.post(() -> { if (messages.playing()) messages.stop(); });
+        }
         if (!ttsReady) { state(message + " (voz no disponible)", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.NOT_READY); return; }
         long now = System.currentTimeMillis();
         String greeting = GreetingStore.peek(this, now);
@@ -1472,6 +1527,7 @@ public class VoiceService extends Service {
         if (lightDispatcher != null) lightDispatcher.close();
         closeConnectionAsync();
         if (recorder != null) try { recorder.stop(); } catch (Exception ignored) {}
+        if (messages != null) { messagePlaying = false; messages.stop(); }
         if (tts != null) { stopSpeechOutput(); try { tts.shutdown(); } catch(RuntimeException ignored) { /* Stop failure is not a successful playback receipt. */ } }
         if (continuousWakeLock != null && continuousWakeLock.isHeld()) continuousWakeLock.release();
         continuousWakeLock=null;
