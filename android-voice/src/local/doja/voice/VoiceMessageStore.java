@@ -281,11 +281,21 @@ final class VoiceMessageStore {
         try {
             if (!index.isFile()) return;
             JSONArray rows = new JSONArray(new String(Files.readAllBytes(index.toPath()), StandardCharsets.UTF_8));
+            boolean interrupted = false;
             for (int position = 0; position < rows.length(); position++) {
                 JSONObject row = rows.optJSONObject(position);
                 if (row == null || !VoiceMessagePolicy.id(row.optString("id"))) continue;
+                // A message marked playing when the service died was interrupted;
+                // it must be offered again instead of being lost.
+                if (VoiceMessagePolicy.PLAYING.equals(row.optString("status"))) {
+                    try {
+                        row.put("status", VoiceMessagePolicy.QUEUED);
+                        interrupted = true;
+                    } catch (Exception ignored) { }
+                }
                 entries.put(row.optString("id"), row);
             }
+            if (interrupted) save();
         } catch (Exception failure) {
             Log.w("AndromedaMessages", "indice ilegible; se descarta");
             entries.clear();

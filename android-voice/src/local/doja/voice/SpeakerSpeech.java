@@ -52,6 +52,7 @@ final class SpeakerSpeech {
     private final Map<String, String> publicIds = new ConcurrentHashMap<>();
     private final Map<String, File> files = new ConcurrentHashMap<>();
     private final Map<String, File> copies = new ConcurrentHashMap<>();
+    private final Map<String, Runnable> completions = new ConcurrentHashMap<>();
     private final Object trackLock = new Object();
     private volatile UtteranceProgressListener listener;
     private volatile AudioTrack playing;
@@ -80,7 +81,7 @@ final class SpeakerSpeech {
     int routedOutputType() { return lastRoutedType; }
 
     int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
-        return speak(text, queueMode, params, utteranceId, null);
+        return speak(text, queueMode, params, utteranceId, null, null);
     }
 
     /**
@@ -88,6 +89,12 @@ final class SpeakerSpeech {
      * given. Used only for remote replies the companion app may download.
      */
     int speak(CharSequence text, int queueMode, Bundle params, String utteranceId, File copyTo) {
+        return speak(text, queueMode, params, utteranceId, copyTo, null);
+    }
+
+    /** `after` runs once the line ends, fails or is stopped. */
+    int speak(CharSequence text, int queueMode, Bundle params, String utteranceId, File copyTo,
+            Runnable after) {
         if (released || text == null || utteranceId == null) return TextToSpeech.ERROR;
         flushPlayback();
         try { engine.stop(); } catch (RuntimeException ignored) { }
@@ -96,12 +103,14 @@ final class SpeakerSpeech {
         publicIds.put(synthId, utteranceId);
         files.put(synthId, file);
         if (copyTo != null) copies.put(synthId, copyTo);
+        if (after != null) completions.put(utteranceId, after);
         audibleId = utteranceId;
         try {
             if (engine.synthesizeToFile(text, params, file, synthId) == TextToSpeech.ERROR) {
                 publicIds.remove(synthId);
                 files.remove(synthId);
                 copies.remove(synthId);
+                completions.remove(utteranceId);
                 deleteQuietly(file);
                 return TextToSpeech.ERROR;
             }
@@ -110,6 +119,7 @@ final class SpeakerSpeech {
             publicIds.remove(synthId);
             files.remove(synthId);
             copies.remove(synthId);
+            completions.remove(utteranceId);
             deleteQuietly(file);
             return TextToSpeech.ERROR;
         }
@@ -254,9 +264,15 @@ final class SpeakerSpeech {
     }
 
     private void notifyStart(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onStart(id); } catch (RuntimeException ignored) { } }
-    private void notifyDone(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onDone(id); } catch (RuntimeException ignored) { } }
-    private void notifyError(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onError(id); } catch (RuntimeException ignored) { } }
-    private void notifyStop(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onStop(id, true); } catch (RuntimeException ignored) { } }
+    private void notifyDone(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onDone(id); } catch (RuntimeException ignored) { } finished(id); }
+    private void notifyError(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onError(id); } catch (RuntimeException ignored) { } finished(id); }
+    private void notifyStop(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onStop(id, true); } catch (RuntimeException ignored) { } finished(id); }
+
+    /** Runs the queued continuation once, whatever ended the line. */
+    private void finished(String id) {
+        Runnable after = completions.remove(id);
+        if (after != null) try { after.run(); } catch (RuntimeException ignored) { }
+    }
 
     private static void deleteQuietly(File file) {
         if (file != null) try { file.delete(); } catch (RuntimeException ignored) { }

@@ -158,6 +158,50 @@ public class VoiceService extends Service {
         }
         messagePlaying = true;
         state("Mensaje de " + (name.isEmpty() ? "un telefono" : name), FaceState.PREPARING, null);
+        alertThenAnnounce(id, next, file);
+    }
+
+    /**
+     * A new message rings first: a loud alarm on the alarm stream, then her
+     * voice announcing it, and only then the message itself.
+     */
+    private void alertThenAnnounce(final String id, final org.json.JSONObject entry, final java.io.File file) {
+        main.post(() -> {
+            ToneGenerator tone = null;
+            try {
+                tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+                tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 1600);
+            } catch (RuntimeException ignored) { }
+            final ToneGenerator playing = tone;
+            main.postDelayed(() -> {
+                if (playing != null) try { playing.release(); } catch (RuntimeException ignored) { }
+                announceMessage(id, entry, file);
+            }, 1700L);
+        });
+    }
+
+    private void announceMessage(final String id, final org.json.JSONObject entry, final java.io.File file) {
+        if (!running) {
+            VoiceMessageStore.get(this).requeue(id);
+            messagePlaying = false;
+            return;
+        }
+        Bundle params = new Bundle();
+        params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
+        Runnable then = () -> main.post(() -> playMessage(id, entry, file));
+        if (tts == null || tts.speak("Ha llegado un mensaje nuevo.", TextToSpeech.QUEUE_FLUSH,
+                params, "mensaje-" + id, null, then) == TextToSpeech.ERROR) {
+            then.run();
+        }
+    }
+
+    private void playMessage(final String id, final org.json.JSONObject entry, final java.io.File file) {
+        final VoiceMessageStore store = VoiceMessageStore.get(this);
+        if (!running || speaking || audioYielded) {
+            store.requeue(id);
+            messagePlaying = false;
+            return;
+        }
         if (!messages.play(file, id, (finished, result) -> {
             messagePlaying = false;
             resumeAfter = SystemClock.elapsedRealtime() + 100;
