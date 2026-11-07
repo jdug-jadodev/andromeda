@@ -182,7 +182,7 @@ final class CameraStream {
         java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
         android.graphics.YuvImage frame = new android.graphics.YuvImage(
             nv21, ImageFormat.NV21, width, height, null);
-        if (!frame.compressToJpeg(new android.graphics.Rect(0, 0, width, height), 70, output)) return null;
+        if (!frame.compressToJpeg(new android.graphics.Rect(0, 0, width, height), 60, output)) return null;
         return output.toByteArray();
     }
 

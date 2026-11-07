@@ -469,6 +469,9 @@ final class HomeGatewayServer {
             // The client sends nothing after the handshake: waiting forever for
             // its close must not be mistaken for an idle failure.
             peer.setSoTimeout(0);
+            // Live video: never let the OS queue seconds of stale frames.
+            peer.setTcpNoDelay(true);
+            peer.setSendBufferSize(64 * 1024);
             String accept = WebSocketHandshake.accept(request.header("sec-websocket-key"));
             stream.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                 + "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
