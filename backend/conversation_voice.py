@@ -1075,6 +1075,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 'administrative': True, **remote_audio_fields()}
                         emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
                               'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
+                              **remote_fields(turn),
                               'administrative': True})
                         say('Esa propuesta vino del telefono. Confirmala desde el telefono, por favor.',
                             offered_more=False)
@@ -1101,6 +1102,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                            'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
                             **({key: turn[key] for key in ('calendar_anchor_ms', 'calendar_boot_ms')} if assistant_tools else {}),
                             **({'action_window_end_ms': session_end} if continuous_voice else {}),
+                           **remote_fields(turn),
                            'administrative': turn['administrative']})
                     recognizer = timeline = None; preroll.clear()
                     if route['kind'] == 'notice':

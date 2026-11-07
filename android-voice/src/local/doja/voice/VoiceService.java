@@ -98,6 +98,9 @@ public class VoiceService extends Service {
     MessagePlayback messages;
     volatile boolean messagePlaying;
     volatile boolean remoteVoiceActive;
+    volatile boolean remoteUiMuted;
+    volatile long remoteUiMutedUntil;
+    volatile String remoteHeard = "";
     private final RemoteCommandBus.Session remoteSession = new RemoteCommandBus.Session() {
         @Override public boolean ready() {
             return running && output != null && conversationOnly && assistantTools && ttsReady;
@@ -108,6 +111,7 @@ public class VoiceService extends Service {
         }
         @Override public void send(JSONObject order) {
             final String id = order.optString("id");
+            muteHouse(25000L);
             try {
                 controls.execute(() -> {
                     try {
@@ -134,6 +138,8 @@ public class VoiceService extends Service {
         @Override public boolean play(String id, byte[] pcm, long durationMs) {
             if (!ready() || busy() || remoteVoiceActive) return false;
             remoteVoiceActive = true;
+            remoteHeard = "";
+            muteHouse(Math.max(20000L, durationMs + 20000L));
             try {
                 new Thread(() -> injectVoice(id, pcm, durationMs), "andromeda-remote-voice").start();
                 return true;
@@ -1166,6 +1172,7 @@ public class VoiceService extends Service {
                         if(reminderDeleteChannel!=null) reminderDeleteChannel.human(event,SystemClock.elapsedRealtime());
                         ConversationContexts.scheduleExpiry();
                         if (continuousVoice && audioYielded) { conversationTurn.clear(); continue; }
+                        if ("remote".equals(event.optString("origin"))) remoteHeard = event.optString("text");
                         speaking = true;
                         state(event.optBoolean("administrative") ? "Consultando charlas guardadas · micrófono en pausa"
                              : "LFM pensando · pausando micrófono" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, "Escuché: " + event.optString("text"));
@@ -1375,6 +1382,7 @@ public class VoiceService extends Service {
             JSONObject reply = new JSONObject()
                 .put("id", id)
                 .put("say", message)
+                .put("heard", remoteHeard)
                 .put("receipts", remoteReceipts(event))
                 .put("origin", "remote")
                 .put("server_time_ms", System.currentTimeMillis());
@@ -1603,7 +1611,23 @@ public class VoiceService extends Service {
         faceReaction = value;
         faceReactionAt = SystemClock.elapsedRealtime();
     }
+    /** A remote order must never light up or animate the house display. */
+    void muteHouse(long ms) {
+        remoteUiMuted = true;
+        remoteUiMutedUntil = SystemClock.elapsedRealtime() + Math.max(1000L, ms);
+    }
+
     void state(String text, FaceState presentation, String words) {
+        if (remoteUiMuted) {
+            if (SystemClock.elapsedRealtime() < remoteUiMutedUntil) {
+                if (presentation == FaceState.SPEAKING || presentation == FaceState.THINKING
+                        || presentation == FaceState.LISTENING) {
+                    android.util.Log.i("AndromedaVoice", "remote order: house display stays idle");
+                }
+                return;
+            }
+            remoteUiMuted = false;
+        }
         if (words != null) {
             lastTranscript = words;
             noteReaction(FaceReactionPolicy.forHuman(words));

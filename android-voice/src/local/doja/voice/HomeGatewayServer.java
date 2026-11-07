@@ -341,6 +341,7 @@ final class HomeGatewayServer {
                 ? new JSONArray() : payload.getJSONArray("receipts"))
             .put("origin", "remote")
             .put("server_time_ms", payload.optLong("server_time_ms", System.currentTimeMillis()));
+        if (payload.has("heard")) answer.put("heard", payload.optString("heard"));
         if (wantWav && awaitSpeech(id, 5000L)) {
             answer.put("say_wav", "/v1/speech/" + id + ".wav");
         }

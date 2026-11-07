@@ -20,7 +20,8 @@
       "say_wav": "/v1/speech/cmd-0001.wav",
       "receipts": [],
       "origin": "remote",
-      "server_time_ms": 1760000000000
+      "server_time_ms": 1760000000000,
+      "heard": "pon un temporizador de dos minutos"
     }
   }
 }
