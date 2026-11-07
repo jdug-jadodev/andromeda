@@ -277,6 +277,9 @@ public class VoiceService extends Service {
                 frame(4, packet, packet.length);
                 SystemClock.sleep(20L);
             }
+            // If the audio produced no turn, close the listening window so the
+            // house microphone never keeps interpreting the room.
+            control("remote_audio_end");
         } catch (Exception error) {
             // The waiting gateway answers 504; the resident keeps its own state.
         } finally {

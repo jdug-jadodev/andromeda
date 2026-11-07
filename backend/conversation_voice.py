@@ -22,6 +22,7 @@ import uuid
 from assistant_config import SETTINGS
 from spanish_wake import words
 from doja_intents import normalized
+from affirmation import is_negative
 import remote_voice
 from conversation_flow import ConversationFlow
 from conversation_entry import ConversationEntry
@@ -653,11 +654,18 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         remote_reply(command_id, error='busy', message='Hay una conversacion en casa; reintenta.',
                      retryable=True, retry_after_ms=3000)
 
+    def remote_decline(text):
+        """A plain "no" from a phone closes the chat unless a form is pending."""
+        if timers is not None and timers.pending_dialogue:
+            return None
+        return 'declined_more' if is_negative(text) else None
+
     def reset(continue_chat=False, audio_resync=False):
         nonlocal state, recognizer, timeline, turn, pending_remote_audio
         recognizer = timeline = turn = None
         pending_remote_audio = None
         preroll.clear(); detector.reset(); state = 'wake'
+        print(json.dumps({'event': 'conversation_state', 'source': source, 'state': state}), flush=True)
         if continue_chat:
             activate('followup', delay_ms=600)
         else:
@@ -671,6 +679,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         if not continuous_voice and session_end - now_ms() < 10000:
             emit({'type': 'state', 'state': 'wake'}); return
         state, activation = 'listen', now_ms() + delay_ms
+        print(json.dumps({'event': 'conversation_state', 'source': source, 'state': state}), flush=True)
         recognizer = KaldiRecognizer(detector.model, 16000); recognizer.SetWords(True)
         timeline = AudioTimeline()
         for stamp, pcm in preroll:
@@ -750,6 +759,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit(pending_reset.request())
 
     def completed_turn(continue_chat):
+        # A remote order never opens a follow-up window in the house: after the
+        # answer the resident goes back to wake and stops listening to the room.
+        if turn is not None and turn.get('remote'):
+            continue_chat = False
         if (continuous_voice and sequence >= CHECKPOINT_TURNS and not timers.pending_dialogue
                 and (entry is None or entry.stage == 'active')):
             request_context('turn_checkpoint', followup=continue_chat)
@@ -796,6 +809,12 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
               'calendar_anchor_ms': turn['calendar_anchor_ms'], 'calendar_boot_ms': current,
               'action_window_end_ms': session_end, 'administrative': True})
         recognizer = timeline = None; preroll.clear()
+        closing = flow.closing_reason(command['text']) or remote_decline(command['text'])
+        if closing:
+            if timers is not None: timers.cancel()
+            model.memory.last_human = current
+            say(ConversationFlow.FAREWELL, closing)
+            return
         if guided_agenda:
             try:
                 response = timers.human(turn, session_id, context_id, session_end)
@@ -965,6 +984,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         if isinstance(command_id, str) and remote_voice.ID_RE.fullmatch(command_id):
                             pending_remote_audio = (command_id, now_ms() + 60000)
                         continue
+                    if action == 'remote_audio_end':
+                        if state == 'listen' and turn is None:
+                            pending_remote_audio = None
+                            reset(continue_chat=False)
+                        continue
                     if action == 'christmas_notice' and state == 'wake' and continuous_voice and assistant_tools:
                         christmas_notice(); continue
                     if action in {'timer_result', 'agenda_result', 'volume_result', 'light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
@@ -1114,6 +1138,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         continue
                     closing = flow.closing_reason(text)
                     if route['kind'] == 'close': closing = route.get('reason', 'declined_more')
+                    if closing is None and turn.get('remote'):
+                        closing = remote_decline(text)
                     if closing:
                         if timers is not None: timers.cancel()
                         model.memory.last_human = speech_end
