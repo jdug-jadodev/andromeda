@@ -18,6 +18,7 @@ public final class HomeGatewayService extends Service {
     static final String ACTION_START = "START";
     static final String ACTION_STOP = "STOP";
     static final String ACTION_PAIR = "PAIR";
+    static final String ACTION_STOP_CAMERA = "STOP_CAMERA";
     static final String EXTRA_ENABLED = "enabled";
 
     private static final String CHANNEL = "home_gateway";
@@ -39,6 +40,11 @@ public final class HomeGatewayService extends Service {
         String action = intent == null ? "" : intent.getAction();
         if (ACTION_STOP.equals(action)) {
             stopSelf();
+            return START_NOT_STICKY;
+        }
+        if (ACTION_STOP_CAMERA.equals(action)) {
+            if (server != null) server.stopCamera();
+            else stopSelf();
             return START_NOT_STICKY;
         }
         boolean enabled = intent != null && intent.getBooleanExtra(EXTRA_ENABLED, false);

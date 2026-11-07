@@ -3,6 +3,12 @@ package local.doja.voice;
 import android.content.Context;
 import android.util.Log;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Intent;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -24,8 +30,10 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
@@ -55,6 +63,11 @@ final class HomeGatewayServer {
     private final DeviceStore devices;
     private final PairingManager pairingManager;
     private final Map<String, long[]> rateLimits = new ConcurrentHashMap<>();
+    private final AtomicBoolean cameraViewer = new AtomicBoolean();
+    private final AtomicBoolean cameraTearingDown = new AtomicBoolean();
+    private volatile SSLSocket cameraSocket;
+    private volatile boolean cameraCancelled;
+    private static final long CAMERA_MAX_MS = 10 * 60 * 1000L;
     private final ExecutorService workers = Executors.newFixedThreadPool(MAX_WORKERS);
     private volatile boolean running;
     private SSLServerSocket server;
@@ -118,6 +131,10 @@ final class HomeGatewayServer {
             peer.startHandshake();
             peer.setSoTimeout(30000);
             Request request = read(peer.getInputStream());
+            if ("GET".equals(request.method) && "/v1/camera/stream".equals(request.path)) {
+                streamCamera(peer, request);
+                return;
+            }
             write(peer.getOutputStream(), route(request));
         } catch (PayloadTooLarge large) {
             try {
@@ -181,9 +198,9 @@ final class HomeGatewayServer {
         try {
             return Response.json(200, new JSONObject()
                 .put("status", "ok").put("contract", 1).put("gateway", "0.1.0")
-                .put("resident", VoiceService.active ? "online" : "offline")
+                .put("resident", VoiceService.active ? "running" : "offline")
                 .put("remote_voice", HomeGatewayConfig.remoteVoiceEnabled(context))
-                .put("camera", "unavailable")
+                .put("camera", cameraStatus())
                 .put("messages", VoiceMessageStore.get(context).queuedCount()).put("tailscale", true)
                 .put("server_time_ms", System.currentTimeMillis()));
         } catch (Exception error) {
@@ -199,7 +216,8 @@ final class HomeGatewayServer {
             boolean voice = HomeGatewayConfig.remoteVoiceEnabled(context);
             return Response.json(200, new JSONObject()
                 .put("contract", 1).put("voice", voice)
-                .put("messages", HomeGatewayConfig.messagesEnabled(context)).put("camera", false)
+                .put("messages", HomeGatewayConfig.messagesEnabled(context))
+                .put("camera", HomeGatewayConfig.cameraEnabled(context))
                 .put("wav_replies", voice).put("max_command_chars", RemoteVoicePolicy.MAX_TEXT)
                 .put("max_message_bytes", 2097152).put("max_message_ms", 60000)
                 .put("camera_max_minutes", 10).put("camera_max_viewers", 1));
@@ -389,6 +407,199 @@ final class HomeGatewayServer {
         } catch (Exception error) {
             return Response.error(500, "internal", "No pude leer los mensajes.");
         }
+    }
+
+    /**
+     * GET /v1/camera/stream: handshake WebSocket y fotogramas JPEG en vivo.
+     * Un solo espectador, maximo 10 minutos y nada se guarda en disco.
+     */
+    private void streamCamera(SSLSocket peer, Request request) {
+        OutputStream out;
+        DeviceStore.Device device;
+        try {
+            out = peer.getOutputStream();
+            String contract = request.header("x-andromeda-contract");
+            if (contract != null && !"1".equals(contract)) {
+                write(out, Response.error(426, "unsupported_version", "La app es mas nueva que la casa."));
+                return;
+            }
+            device = authenticate(request);
+            if (device == null) {
+                write(out, Response.error(401, "unauthenticated", "Token invalido."));
+                return;
+            }
+            if (!device.capabilities.contains("camera")) {
+                write(out, Response.error(403, "forbidden", "Este dispositivo no puede ver la camara."));
+                return;
+            }
+            if (!HomeGatewayConfig.cameraEnabled(context)) {
+                write(out, Response.error(403, "forbidden", "La camara esta apagada."));
+                return;
+            }
+            if (!CameraStream.permitted(context)) {
+                write(out, Response.error(403, "forbidden", "Falta el permiso de camara en el Moto."));
+                return;
+            }
+            if (!"13".equals(request.header("sec-websocket-version"))
+                    || request.header("sec-websocket-key") == null) {
+                write(out, Response.error(400, "invalid_request", "Falta el saludo WebSocket."));
+                return;
+            }
+            if (!cameraViewer.compareAndSet(false, true)) {
+                write(out, Response.error(409, "camera_busy", "La camara ya tiene un espectador.", true, 5000));
+                return;
+            }
+            // A previous stream may still be releasing the camera.
+            for (int wait = 0; wait < 30 && cameraTearingDown.get(); wait++) Thread.sleep(100L);
+        } catch (IOException error) {
+            return;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            cameraViewer.set(false);
+            return;
+        }
+
+        final OutputStream stream = out;
+        CameraStream camera = new CameraStream();
+        CountDownLatch ended = new CountDownLatch(1);
+        cameraSocket = peer;
+        cameraCancelled = false;
+        try {
+            String accept = WebSocketHandshake.accept(request.header("sec-websocket-key"));
+            stream.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                + "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+            stream.flush();
+            notifyCamera(device.name);
+
+            long deadline = System.currentTimeMillis() + CAMERA_MAX_MS;
+            Thread expiry = new Thread(() -> {
+                try {
+                    while (System.currentTimeMillis() < deadline && !cameraCancelled) Thread.sleep(500L);
+                } catch (InterruptedException ignored) { }
+                ended.countDown();
+                close(peer);
+            }, "andromeda-camera-expiry");
+            expiry.setDaemon(true);
+            expiry.start();
+
+            // The client sends nothing after the handshake, so this read blocks
+            // until it closes the socket. That is how the house frees the camera
+            // immediately instead of waiting for a failed write.
+            Thread reader = new Thread(() -> {
+                try {
+                    InputStream input = peer.getInputStream();
+                    byte[] discard = new byte[256];
+                    while (input.read(discard) >= 0) { }
+                } catch (Exception ignored) { }
+                ended.countDown();
+                close(peer);
+            }, "andromeda-camera-reader");
+            reader.setDaemon(true);
+            reader.start();
+
+            boolean started = camera.start(context, jpeg -> {
+                try {
+                    webSocketBinary(stream, jpeg);
+                } catch (IOException closed) {
+                    close(peer);
+                    ended.countDown();
+                    throw closed;
+                }
+            }, () -> {
+                close(peer);
+                ended.countDown();
+            });
+            if (!started) {
+                webSocketClose(stream);
+                ended.countDown();
+            }
+            ended.await();
+        } catch (Exception error) {
+            // Cierre del cliente o fallo de la camara: se limpia abajo.
+        } finally {
+            cameraSocket = null;
+            cameraCancelled = false;
+            // Free the viewer immediately; stopping the camera may wait on a
+            // blocked write, so it is done off the worker thread.
+            cameraViewer.set(false);
+            cancelCameraNotice();
+            cameraTearingDown.set(true);
+            Thread cleanup = new Thread(() -> {
+                try {
+                    camera.stop();
+                } finally {
+                    cameraTearingDown.set(false);
+                }
+            }, "andromeda-camera-close");
+            cleanup.setDaemon(true);
+            cleanup.start();
+        }
+    }
+
+    /** The notification action on the Moto stops the live view immediately. */
+    void stopCamera() {
+        cameraCancelled = true;
+        close(cameraSocket);
+    }
+
+    boolean cameraBusy() {
+        return cameraViewer.get();
+    }
+
+    private static void webSocketBinary(OutputStream out, byte[] payload) throws IOException {
+        out.write(0x82);
+        int length = payload.length;
+        if (length < 126) {
+            out.write(length);
+        } else if (length < 65536) {
+            out.write(126);
+            out.write(length >> 8);
+            out.write(length & 0xff);
+        } else {
+            out.write(127);
+            long size = length;
+            for (int shift = 56; shift >= 0; shift -= 8) out.write((int) (size >> shift) & 0xff);
+        }
+        out.write(payload);
+        out.flush();
+    }
+
+    private static void webSocketClose(OutputStream out) {
+        try {
+            out.write(new byte[]{(byte) 0x88, 0x00});
+            out.flush();
+        } catch (IOException ignored) { }
+    }
+
+    private void notifyCamera(String deviceName) {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager == null) return;
+        manager.createNotificationChannel(new NotificationChannel(
+            "camera_live", "Camara en vivo", NotificationManager.IMPORTANCE_LOW));
+        PendingIntent stop = PendingIntent.getService(context, 2,
+            new Intent(context, HomeGatewayService.class).setAction(HomeGatewayService.ACTION_STOP_CAMERA),
+            PendingIntent.FLAG_IMMUTABLE);
+        Notification notice = new Notification.Builder(context, "camera_live")
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setContentTitle("Camara en vivo")
+            .setContentText((deviceName.isEmpty() ? "Un telefono" : deviceName)
+                + " esta viendo. Maximo 10 minutos.")
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "DETENER", stop)
+            .build();
+        manager.notify(21, notice);
+    }
+
+    private void cancelCameraNotice() {
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        if (manager != null) manager.cancel(21);
+    }
+
+    private String cameraStatus() {
+        if (cameraViewer.get()) return "busy";
+        return HomeGatewayConfig.cameraEnabled(context) && CameraStream.permitted(context)
+            ? "idle" : "unavailable";
     }
 
     private DeviceStore.Device authenticate(Request request) {

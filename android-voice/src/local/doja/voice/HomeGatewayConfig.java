@@ -38,5 +38,16 @@ final class HomeGatewayConfig {
             .edit().putBoolean("messages_enabled", value).apply();
     }
 
+    /** Camara en vivo: se enciende al vincular un telefono, nunca sola. */
+    static boolean cameraEnabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("camera_enabled", false);
+    }
+
+    static void setCameraEnabled(Context context, boolean value) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("camera_enabled", value).apply();
+    }
+
     private HomeGatewayConfig() { }
 }

@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <!-- Special user grant for the daily screen-brightness schedule. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <!-- Android 10 BLE discovery only; no location/network service is used. -->
@@ -28,7 +29,7 @@
             </intent-filter>
         </activity>
         <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone" />
-        <service android:name=".HomeGatewayService" android:exported="false" android:foregroundServiceType="connectedDevice" />
+        <service android:name=".HomeGatewayService" android:exported="false" android:foregroundServiceType="connectedDevice|camera" />
         <service android:name=".RingService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".AgendaDeliveryService" android:exported="false" android:foregroundServiceType="microphone" />

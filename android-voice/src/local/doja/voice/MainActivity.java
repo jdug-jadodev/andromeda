@@ -169,6 +169,11 @@ public class MainActivity extends Activity {
 
     public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        // La camara de vigilancia solo necesita este permiso una vez; la casa
+        // nunca la abre sin una peticion autenticada de un telefono vinculado.
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA}, 9);
+        }
         lightDispatcher = new LightCommandDispatcher(this);
         try { LightScheduleScheduler.schedule(this); }
         catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
@@ -1236,6 +1241,7 @@ public class MainActivity extends Activity {
         // Vincular un telefono habilita sus ordenes; el gateway sigue apagado sin esta accion.
         HomeGatewayConfig.setRemoteVoiceEnabled(this, true);
         HomeGatewayConfig.setMessagesEnabled(this, true);
+        HomeGatewayConfig.setCameraEnabled(this, true);
         Intent intent = new Intent(this, HomeGatewayService.class)
             .setAction(HomeGatewayService.ACTION_PAIR)
             .putExtra(HomeGatewayService.EXTRA_ENABLED, true);
