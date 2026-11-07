@@ -1,0 +1,28 @@
+{
+  "name": "command_busy",
+  "description": "La casa esta atendiendo una conversacion local; la orden remota espera o recibe busy.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/command",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "Content-Type": "application/json",
+      "X-Andromeda-Contract": "1"
+    },
+    "body": {
+      "id": "cmd-0002",
+      "text": "pon un temporizador de diez minutos",
+      "client_ts_ms": 1760000000000,
+      "want_wav": true
+    }
+  },
+  "response": {
+    "status": 409,
+    "body": {
+      "error": "busy",
+      "message": "Hay una conversacion en casa; reintenta.",
+      "retryable": true,
+      "retry_after_ms": 3000
+    }
+  }
+}

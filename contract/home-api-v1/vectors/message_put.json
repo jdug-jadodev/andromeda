@@ -1,0 +1,23 @@
+{
+  "name": "message_put",
+  "description": "Subida de un mensaje de voz AAC/M4A de 12 segundos.",
+  "request": {
+    "method": "PUT",
+    "path": "/v1/messages/msg-0001",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "Content-Type": "audio/mp4",
+      "X-Andromeda-Contract": "1",
+      "X-Andromeda-Duration-Ms": "12000"
+    },
+    "body": "<bytes AAC/M4A, max 2 MB>"
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "id": "msg-0001",
+      "status": "queued",
+      "expires_at_ms": 1760086400000
+    }
+  }
+}

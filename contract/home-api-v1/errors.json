@@ -1,0 +1,19 @@
+{
+  "contract": 1,
+  "http": {
+    "unauthenticated": 401,
+    "revoked": 403,
+    "forbidden": 403,
+    "not_found": 404,
+    "busy": 409,
+    "conflict": 409,
+    "camera_busy": 409,
+    "too_large": 413,
+    "unsupported_media": 415,
+    "unsupported_version": 426,
+    "rate_limited": 429,
+    "internal": 500,
+    "offline": 503,
+    "timeout": 504
+  }
+}

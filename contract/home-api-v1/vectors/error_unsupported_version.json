@@ -1,0 +1,22 @@
+{
+  "name": "error_unsupported_version",
+  "description": "La app habla un contrato que la casa no entiende.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/command",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "Content-Type": "application/json",
+      "X-Andromeda-Contract": "999"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 426,
+    "body": {
+      "error": "unsupported_version",
+      "message": "La app es mas nueva que la casa.",
+      "retryable": false
+    }
+  }
+}

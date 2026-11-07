@@ -1,0 +1,22 @@
+{
+  "contract": 1,
+  "command_chars": 500,
+  "command_queue": 2,
+  "command_wait_ms": 15000,
+  "command_reply_cache_ms": 300000,
+  "message_bytes": 2097152,
+  "message_ms": 60000,
+  "messages_pending": 20,
+  "message_ttl_ms": 86400000,
+  "message_min_interval_ms": 30000,
+  "camera_minutes": 10,
+  "camera_viewers": 1,
+  "camera_fps": 5,
+  "camera_width": 640,
+  "camera_height": 480,
+  "requests_per_minute": 30,
+  "pairing_window_ms": 120000,
+  "pairing_attempts": 5,
+  "wav_max_ms": 30000,
+  "audit_entries": 500
+}

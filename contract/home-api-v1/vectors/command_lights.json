@@ -1,0 +1,37 @@
+{
+  "name": "command_lights",
+  "description": "Orden de luces desde el movil. La casa conserva su recibo.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/command",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "Content-Type": "application/json",
+      "X-Andromeda-Contract": "1"
+    },
+    "body": {
+      "id": "cmd-0001",
+      "text": "apaga las luces",
+      "client_ts_ms": 1760000000000,
+      "want_wav": true
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "cmd-0001",
+      "say": "Listo, apague las dos luces.",
+      "say_wav": "/v1/speech/say-0001.wav",
+      "receipts": [
+        {
+          "tool": "control_lights",
+          "status": "COMPLETE_UNCONFIRMED",
+          "completed": 2,
+          "targets": 2
+        }
+      ],
+      "origin": "remote",
+      "server_time_ms": 1760000001234
+    }
+  }
+}

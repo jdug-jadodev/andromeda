@@ -1,0 +1,20 @@
+{
+  "name": "message_status_played",
+  "description": "El mensaje ya sono en el altavoz de casa y se borro.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/messages/msg-0001",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "X-Andromeda-Contract": "1"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "msg-0001",
+      "status": "played",
+      "played_at_ms": 1760000009000
+    }
+  }
+}

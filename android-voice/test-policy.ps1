@@ -2,6 +2,10 @@ $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot 'src\local\doja\voice'
 $output = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\android-voice\policy-tests'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+& javac -encoding UTF-8 -d $output "$source\RemoteVoicePolicy.java" "$PSScriptRoot\tests\RemoteVoicePolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Remote voice policy compilation failed' }
+& java -cp $output local.doja.voice.RemoteVoicePolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'contract\home-api-v1')
+if ($LASTEXITCODE -ne 0) { throw 'Remote voice policy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\LightColor.java" "$source\LightTarget.java" "$source\LightCommand.java" "$source\TimerRequestGuard.java" "$source\LightCommandParser.java" "$source\LotusLampProtocol.java" "$source\MrStarProtocol.java" "$source\LightCommandRouting.java" "$source\LightCommandExecutionPolicy.java" "$PSScriptRoot\tests\LightCommandTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'Light command parser compilation failed' }
 & java -cp $output local.doja.voice.LightCommandTest

@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "remote_voice_enabled": false,
+  "messages_enabled": false,
+  "camera_enabled": false,
+  "host": "0.0.0.0",
+  "port": 11440,
+  "allow_loopback": false,
+  "pairing_window_ms": 120000,
+  "max_devices": 8
+}

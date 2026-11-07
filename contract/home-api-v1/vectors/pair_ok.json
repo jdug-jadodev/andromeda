@@ -1,0 +1,30 @@
+{
+  "name": "pair_ok",
+  "description": "Emparejamiento con PIN mostrado en el Moto.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/pair",
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Andromeda-Contract": "1"
+    },
+    "body": {
+      "code": "482913",
+      "device_name": "Ana",
+      "contract": 1
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "device_id": "dev-ana-01",
+      "token": "<32-byte-token>",
+      "capabilities": [
+        "voice",
+        "messages",
+        "camera"
+      ],
+      "server_time_ms": 1760000001234
+    }
+  }
+}

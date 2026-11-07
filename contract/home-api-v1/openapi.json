@@ -1,0 +1,707 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Andromeda Home API",
+    "version": "1.0.0",
+    "description": "Contrato entre la app acompanante (repo B) y la casa (repo A). Transporte: Tailscale + TLS con certificado fijado. Autenticacion: token por dispositivo."
+  },
+  "servers": [
+    {
+      "url": "https://andromeda:11440/v1",
+      "description": "Nombre MagicDNS o IP 100.x del Moto"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Estado de la casa",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "summary": "Capacidades y limites de esta casa",
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pair": {
+      "post": {
+        "summary": "Emparejar un telefono con PIN",
+        "operationId": "pair",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Emparejado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/command": {
+      "post": {
+        "summary": "Orden de voz ya transcrita en el telefono",
+        "operationId": "command",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Respuesta de Andromeda",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "426": {
+            "$ref": "#/components/responses/UnsupportedVersion"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/speech/{say_id}.wav": {
+      "get": {
+        "summary": "WAV de la respuesta con la voz de Andromeda",
+        "operationId": "speech",
+        "parameters": [
+          {
+            "name": "say_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audio WAV",
+            "content": {
+              "audio/wav": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "put": {
+        "summary": "Subir un mensaje de voz",
+        "operationId": "putMessage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 64
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "audio/mp4": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/aac": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "audio/wav": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Encolado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageStatus"
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
+          }
+        }
+      },
+      "get": {
+        "summary": "Estado de un mensaje",
+        "operationId": "getMessage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/messages": {
+      "get": {
+        "summary": "Mensajes recientes de este dispositivo",
+        "operationId": "listMessages",
+        "responses": {
+          "200": {
+            "description": "Lista",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/camera/stream": {
+      "get": {
+        "summary": "Video en vivo por WebSocket (JPEG)",
+        "operationId": "cameraStream",
+        "description": "Handshake WebSocket. Frames binarios JPEG. Un espectador, maximo 10 minutos, sin grabacion. Si la camara esta ocupada devuelve 409.",
+        "responses": {
+          "101": {
+            "description": "WebSocket establecido"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "Recibos y estado por WebSocket",
+        "operationId": "events",
+        "description": "Opcional. La app puede consultar el estado de mensajes por HTTP si no mantiene el WebSocket.",
+        "responses": {
+          "101": {
+            "description": "WebSocket establecido"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Token de 32 bytes emitido al emparejar"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Token invalido o ausente",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Dispositivo revocado o sin permiso",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No encontrado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Ocupado o en conflicto",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "Demasiado grande",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UnsupportedMedia": {
+        "description": "Formato no soportado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UnsupportedVersion": {
+        "description": "Version de contrato no soportada",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Demasiadas peticiones",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Timeout": {
+        "description": "Tiempo agotado",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Health": {
+        "type": "object",
+        "required": [
+          "status",
+          "contract",
+          "gateway",
+          "resident",
+          "camera",
+          "messages",
+          "server_time_ms"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "contract": {
+            "type": "integer",
+            "const": 1
+          },
+          "gateway": {
+            "type": "string"
+          },
+          "resident": {
+            "type": "string",
+            "enum": [
+              "running",
+              "starting",
+              "offline"
+            ]
+          },
+          "camera": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "busy",
+              "unavailable"
+            ]
+          },
+          "messages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tailscale": {
+            "type": "boolean"
+          },
+          "server_time_ms": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "contract",
+          "voice",
+          "messages",
+          "camera",
+          "wav_replies"
+        ],
+        "properties": {
+          "contract": {
+            "type": "integer",
+            "const": 1
+          },
+          "voice": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "boolean"
+          },
+          "camera": {
+            "type": "boolean"
+          },
+          "wav_replies": {
+            "type": "boolean"
+          },
+          "max_command_chars": {
+            "type": "integer"
+          },
+          "max_message_bytes": {
+            "type": "integer"
+          },
+          "max_message_ms": {
+            "type": "integer"
+          },
+          "camera_max_minutes": {
+            "type": "integer"
+          },
+          "camera_max_viewers": {
+            "type": "integer"
+          }
+        }
+      },
+      "PairRequest": {
+        "type": "object",
+        "required": [
+          "code",
+          "device_name",
+          "contract"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$"
+          },
+          "device_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "contract": {
+            "type": "integer",
+            "const": 1
+          }
+        }
+      },
+      "PairResponse": {
+        "type": "object",
+        "required": [
+          "device_id",
+          "token",
+          "capabilities"
+        ],
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string",
+            "minLength": 32
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "voice",
+                "messages",
+                "camera"
+              ]
+            }
+          },
+          "server_time_ms": {
+            "type": "integer"
+          }
+        }
+      },
+      "CommandRequest": {
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "client_ts_ms"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "client_ts_ms": {
+            "type": "integer"
+          },
+          "want_wav": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "CommandResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "say",
+          "receipts",
+          "origin",
+          "server_time_ms"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "say": {
+            "type": "string"
+          },
+          "say_wav": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receipts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Receipt"
+            }
+          },
+          "origin": {
+            "type": "string",
+            "const": "remote"
+          },
+          "server_time_ms": {
+            "type": "integer"
+          }
+        }
+      },
+      "Receipt": {
+        "type": "object",
+        "required": [
+          "tool",
+          "status"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "targets": {
+            "type": "integer"
+          }
+        }
+      },
+      "MessageStatus": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "playing",
+              "played",
+              "expired",
+              "failed"
+            ]
+          },
+          "expires_at_ms": {
+            "type": "integer"
+          },
+          "played_at_ms": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "MessageList": {
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageStatus"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error",
+          "message",
+          "retryable"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "retry_after_ms": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

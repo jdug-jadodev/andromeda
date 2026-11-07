@@ -1,0 +1,21 @@
+{
+  "name": "camera_busy",
+  "description": "Ya hay un espectador viendo la camara.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/camera/stream",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "X-Andromeda-Contract": "1"
+    }
+  },
+  "response": {
+    "status": 409,
+    "body": {
+      "error": "camera_busy",
+      "message": "La camara ya tiene un espectador.",
+      "retryable": true,
+      "retry_after_ms": 5000
+    }
+  }
+}

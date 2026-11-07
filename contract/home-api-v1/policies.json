@@ -1,0 +1,10 @@
+{
+  "contract": 1,
+  "gateway": "home_gateway_v1",
+  "remote_voice": "remote_voice_v1",
+  "voice_message": "voice_message_v1",
+  "camera_stream": "camera_stream_v1",
+  "pairing": "pairing_pin_v1",
+  "auth": "device_token_v1",
+  "transport": "tailscale_tls_pin_v1"
+}
