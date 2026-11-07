@@ -53,6 +53,7 @@ final class SpeakerSpeech {
     private final Map<String, File> files = new ConcurrentHashMap<>();
     private final Map<String, File> copies = new ConcurrentHashMap<>();
     private final Map<String, Runnable> completions = new ConcurrentHashMap<>();
+    private final Set<String> silentIds = ConcurrentHashMap.newKeySet();
     private final Object trackLock = new Object();
     private volatile UtteranceProgressListener listener;
     private volatile AudioTrack playing;
@@ -95,6 +96,15 @@ final class SpeakerSpeech {
     /** `after` runs once the line ends, fails or is stopped. */
     int speak(CharSequence text, int queueMode, Bundle params, String utteranceId, File copyTo,
             Runnable after) {
+        return speak(text, queueMode, params, utteranceId, copyTo, after, false);
+    }
+
+    /**
+     * A silent line is synthesized (and copied) but never heard in the house:
+     * remote answers go only to the phone that asked.
+     */
+    int speak(CharSequence text, int queueMode, Bundle params, String utteranceId, File copyTo,
+            Runnable after, boolean silent) {
         if (released || text == null || utteranceId == null) return TextToSpeech.ERROR;
         flushPlayback();
         try { engine.stop(); } catch (RuntimeException ignored) { }
@@ -104,6 +114,7 @@ final class SpeakerSpeech {
         files.put(synthId, file);
         if (copyTo != null) copies.put(synthId, copyTo);
         if (after != null) completions.put(utteranceId, after);
+        if (silent) silentIds.add(utteranceId);
         audibleId = utteranceId;
         try {
             if (engine.synthesizeToFile(text, params, file, synthId) == TextToSpeech.ERROR) {
@@ -111,6 +122,7 @@ final class SpeakerSpeech {
                 files.remove(synthId);
                 copies.remove(synthId);
                 completions.remove(utteranceId);
+                silentIds.remove(utteranceId);
                 deleteQuietly(file);
                 return TextToSpeech.ERROR;
             }
@@ -120,6 +132,7 @@ final class SpeakerSpeech {
             files.remove(synthId);
             copies.remove(synthId);
             completions.remove(utteranceId);
+            silentIds.remove(utteranceId);
             deleteQuietly(file);
             return TextToSpeech.ERROR;
         }
@@ -214,6 +227,10 @@ final class SpeakerSpeech {
             }
             track.play();
             if (track.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) throw new IOException("Playback did not start");
+            if (silentIds.remove(publicId)) {
+                track.setVolume(0f);
+                android.util.Log.i("AndromedaSpeech", "silent reply " + publicId);
+            }
             AudioDeviceInfo routed = track.getRoutedDevice();
             if (routed != null) lastRoutedType = routed.getType();
             notifyStart(publicId);

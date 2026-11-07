@@ -1419,6 +1419,7 @@ public class VoiceService extends Service {
         String greeting = GreetingStore.peek(this, now);
         activeGreetingKey = greeting.isEmpty() ? "" : GreetingPolicy.key(now);
         activeGreetingPending = !greeting.isEmpty();
+        final boolean silentReply = "remote".equals(event.optString("origin"));
         final String spokenMessage = greeting.isEmpty() ? message : greeting + " " + message;
         if (!conversationOnly) control("tts_started"); state("Preparando voz · " + message, FaceState.PREPARING, null);
         Bundle params = new Bundle(); params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
@@ -1443,7 +1444,7 @@ public class VoiceService extends Service {
                 () -> running && speaking && id.equals(activeSpeechId) && generation==speechGeneration && !audioYielded,
                 () -> {
                     if(!running || !id.equals(activeSpeechId) || generation!=speechGeneration || audioYielded) return;
-                    if(SystemClock.elapsedRealtime()>=startBefore || tts.speak(spokenMessage,TextToSpeech.QUEUE_FLUSH,params,id,remoteWav)==TextToSpeech.ERROR) {
+                    if(SystemClock.elapsedRealtime()>=startBefore || tts.speak(spokenMessage,TextToSpeech.QUEUE_FLUSH,params,id,remoteWav,null,silentReply)==TextToSpeech.ERROR) {
                         state("No se pudo iniciar la voz a tiempo",FaceState.ERROR,null); finishSpeech(false,SpeechDiagnostics.End.START_REJECTED);
                     }
                 },() -> interruptUnavailable(id,generation),text -> handleInterruptText(text,id));
