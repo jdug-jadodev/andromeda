@@ -462,9 +462,13 @@ final class HomeGatewayServer {
         final OutputStream stream = out;
         CameraStream camera = new CameraStream();
         CountDownLatch ended = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicReference<byte[]> latest = new java.util.concurrent.atomic.AtomicReference<>();
         cameraSocket = peer;
         cameraCancelled = false;
         try {
+            // The client sends nothing after the handshake: waiting forever for
+            // its close must not be mistaken for an idle failure.
+            peer.setSoTimeout(0);
             String accept = WebSocketHandshake.accept(request.header("sec-websocket-key"));
             stream.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
                 + "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
@@ -497,23 +501,28 @@ final class HomeGatewayServer {
             reader.setDaemon(true);
             reader.start();
 
-            boolean started = camera.start(context, jpeg -> {
-                try {
-                    webSocketBinary(stream, jpeg);
-                } catch (IOException closed) {
-                    close(peer);
-                    ended.countDown();
-                    throw closed;
-                }
-            }, () -> {
-                close(peer);
+            boolean started = camera.start(context, latest::set, () -> {
                 ended.countDown();
+                close(peer);
             });
             if (!started) {
                 webSocketClose(stream);
                 ended.countDown();
             }
-            ended.await();
+            // The camera thread only publishes the newest frame; writing to a
+            // slow or closed phone never blocks the capture pipeline.
+            while (ended.getCount() > 0) {
+                byte[] jpeg = latest.getAndSet(null);
+                if (jpeg == null) {
+                    ended.await(15, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    continue;
+                }
+                try {
+                    webSocketBinary(stream, jpeg);
+                } catch (IOException closed) {
+                    break;
+                }
+            }
         } catch (Exception error) {
             // Cierre del cliente o fallo de la camara: se limpia abajo.
         } finally {

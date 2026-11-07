@@ -103,7 +103,7 @@ final class CameraStream {
 
     private void openSession() {
         try {
-            reader = ImageReader.newInstance(WIDTH, HEIGHT, ImageFormat.JPEG, 2);
+            reader = ImageReader.newInstance(WIDTH, HEIGHT, ImageFormat.YUV_420_888, 2);
             reader.setOnImageAvailableListener(source -> {
                 Image image = null;
                 try {
@@ -112,11 +112,9 @@ final class CameraStream {
                     // 5 fps is enough for a live view; extra frames are dropped.
                     if (now - lastFrame < FRAME_MS) return;
                     lastFrame = now;
-                    ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                    byte[] jpeg = new byte[buffer.remaining()];
-                    buffer.get(jpeg);
+                    byte[] jpeg = jpeg(image);
                     Sink target = sink;
-                    if (target != null && active) target.onJpeg(jpeg);
+                    if (jpeg != null && target != null && active) target.onJpeg(jpeg);
                 } catch (Exception failure) {
                     fail();
                 } finally {
@@ -151,6 +149,41 @@ final class CameraStream {
         } catch (Exception error) {
             fail();
         }
+    }
+
+    /**
+     * YUV_420_888 to JPEG. A repeating JPEG request saturates some HALs after a
+     * few seconds; a YUV stream is a normal preview and stays alive, and the
+     * conversion is cheap at 5 fps and 640x480.
+     */
+    private static byte[] jpeg(Image image) {
+        if (image.getFormat() != ImageFormat.YUV_420_888) return null;
+        Image.Plane[] planes = image.getPlanes();
+        int width = image.getWidth(), height = image.getHeight();
+        int yRow = planes[0].getRowStride(), yStep = planes[0].getPixelStride();
+        int uRow = planes[1].getRowStride(), uStep = planes[1].getPixelStride();
+        int vRow = planes[2].getRowStride(), vStep = planes[2].getPixelStride();
+        java.nio.ByteBuffer y = planes[0].getBuffer();
+        java.nio.ByteBuffer u = planes[1].getBuffer();
+        java.nio.ByteBuffer v = planes[2].getBuffer();
+        byte[] nv21 = new byte[width * height * 3 / 2];
+        int offset = 0;
+        for (int row = 0; row < height; row++) {
+            for (int column = 0; column < width; column++) {
+                nv21[offset++] = y.get(row * yRow + column * yStep);
+            }
+        }
+        for (int row = 0; row < height / 2; row++) {
+            for (int column = 0; column < width / 2; column++) {
+                nv21[offset++] = v.get(row * vRow + column * vStep);
+                nv21[offset++] = u.get(row * uRow + column * uStep);
+            }
+        }
+        java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
+        android.graphics.YuvImage frame = new android.graphics.YuvImage(
+            nv21, ImageFormat.NV21, width, height, null);
+        if (!frame.compressToJpeg(new android.graphics.Rect(0, 0, width, height), 70, output)) return null;
+        return output.toByteArray();
     }
 
     private void fail() {
