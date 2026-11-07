@@ -6,7 +6,7 @@ final class RemoteVoicePolicy {
     static final String POLICY = "remote_voice_v1";
     static final String ORIGIN_LOCAL = "local", ORIGIN_REMOTE = "remote";
     static final int MAX_TEXT = 500, MAX_QUEUE = 2;
-    static final long WAIT_MS = 15000, REPLY_CACHE_MS = 300000, WAV_MAX_MS = 30000;
+    static final long WAIT_MS = 30000, REPLY_CACHE_MS = 300000, WAV_MAX_MS = 30000;
 
     private static final java.util.Set<String> TOOLS =
         java.util.Collections.unmodifiableSet(new java.util.HashSet<>(java.util.Arrays.asList(

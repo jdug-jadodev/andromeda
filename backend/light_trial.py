@@ -68,6 +68,10 @@ class LightTrial:
         if (not self.armed or turn['id'] == self.question or turn['seq'] <= self.question_sequence
                 or turn['seq'] > self.maximum_sequence or turn['speech_end'] < self.heard_at
                 or now - self.created >= 300000):
+            print(json.dumps({'event': 'light_confirm_guard', 'source': 'lights',
+                'armed': self.armed, 'seq': turn.get('seq'), 'question_seq': self.question_sequence,
+                'speech_end': turn.get('speech_end'), 'heard_at': self.heard_at,
+                'maximum': self.maximum_sequence}), flush=True)
             self.clear()
             return {'text': CANCELLED, 'timer_control': 'light_cancelled', 'offered_more': False,
                     'close_reason': 'explicit_close'}

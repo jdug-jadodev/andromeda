@@ -27,7 +27,7 @@ public final class RemoteVoicePolicyTest {
         check(RemoteVoicePolicy.mayConfirm("local", "local"), "local confirm");
         check(!RemoteVoicePolicy.mayConfirm("local", "remote"), "cross confirm");
         check(!RemoteVoicePolicy.mayConfirm("remote", "local"), "cross confirm reverse");
-        check(RemoteVoicePolicy.deadline(1000) == 16000, "deadline");
+        check(RemoteVoicePolicy.deadline(1000) == 31000, "deadline");
 
         Path contract = Path.of(args.length > 0 ? args[0] : "contract/home-api-v1");
         String policies = Files.readString(contract.resolve("policies.json"), StandardCharsets.UTF_8);

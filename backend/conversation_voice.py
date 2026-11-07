@@ -759,10 +759,16 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit(pending_reset.request())
 
     def completed_turn(continue_chat):
+        nonlocal state, recognizer, timeline, turn
         # A remote order never opens a follow-up window in the house: after the
         # answer the resident goes back to wake and stops listening to the room.
+        # A pending confirmation is kept so the same phone can say "si" next.
         if turn is not None and turn.get('remote'):
-            continue_chat = False
+            recognizer = timeline = turn = None
+            preroll.clear(); detector.reset(); state = 'wake'
+            print(json.dumps({'event': 'conversation_state', 'source': source, 'state': state}), flush=True)
+            emit({'type': 'state', 'state': 'wake'})
+            return
         if (continuous_voice and sequence >= CHECKPOINT_TURNS and not timers.pending_dialogue
                 and (entry is None or entry.stage == 'active')):
             request_context('turn_checkpoint', followup=continue_chat)
@@ -816,6 +822,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             say(ConversationFlow.FAREWELL, closing)
             return
         if guided_agenda:
+            print(json.dumps({'event': 'remote_tools_state', 'source': source,
+                'lights_active': bool(getattr(timers, 'lights', None) and timers.lights.active),
+                'pending': bool(timers is not None and timers.pending_dialogue)}), flush=True)
             try:
                 response = timers.human(turn, session_id, context_id, session_end)
             except ValueError:
@@ -1090,7 +1099,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     head = text.split(maxsplit=1)
                     if len(head) == 2 and words(head[0]) == words(SETTINGS['wake_word']): text = head[1]
                     if now_ms() >= speech_end + response_start_ms - 3500: return
-                    if remote_origin_pending and plain_confirmation(text):
+                    if remote_origin_pending and plain_confirmation(text) and not turn.get('remote'):
                         # Only the phone that received the proposal may close it.
                         sequence += 1
                         if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS
