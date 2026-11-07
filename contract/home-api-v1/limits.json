@@ -2,7 +2,7 @@
   "contract": 1,
   "command_chars": 500,
   "command_queue": 2,
-  "command_wait_ms": 30000,
+  "command_wait_ms": 40000,
   "command_reply_cache_ms": 300000,
   "message_bytes": 2097152,
   "message_ms": 60000,

@@ -83,7 +83,7 @@ class RemoteVoiceTests(unittest.TestCase):
         self.assertFalse(remote_voice.may_confirm('unknown', 'unknown'))
 
     def test_deadline(self):
-        self.assertEqual(31000, remote_voice.deadline(1000))
+        self.assertEqual(41000, remote_voice.deadline(1000))
         with self.assertRaises(remote_voice.RemoteCommandFault):
             remote_voice.deadline(0)
 

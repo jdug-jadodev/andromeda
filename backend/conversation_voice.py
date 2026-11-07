@@ -822,9 +822,6 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             say(ConversationFlow.FAREWELL, closing)
             return
         if guided_agenda:
-            print(json.dumps({'event': 'remote_tools_state', 'source': source,
-                'lights_active': bool(getattr(timers, 'lights', None) and timers.lights.active),
-                'pending': bool(timers is not None and timers.pending_dialogue)}), flush=True)
             try:
                 response = timers.human(turn, session_id, context_id, session_end)
             except ValueError:

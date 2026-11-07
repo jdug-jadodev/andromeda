@@ -38,3 +38,25 @@ def is_negative(text):
 
 def is_affirmative(text):
     return plain(text) in AFFIRMATIVE
+
+
+CONFIRM_ACTIONS = {'ejecuta', 'ejecutala', 'ejecutalo', 'hazlo', 'hazla', 'adelante',
+                   'procede', 'orden', 'luces', 'enciende', 'apaga', 'dale', 'confirma', 'confirmo'}
+REQUEST_WORDS = {'temporizador', 'alarma', 'recordatorio', 'pon', 'crea', 'programa', 'otra', 'otro'}
+NEGATION_WORDS = {'no', 'nunca', 'cancela', 'cancelalo', 'dejalo', 'olvidalo', 'espera', 'detente'}
+
+
+def is_affirmative_phrase(text):
+    """A natural yes that repeats the action: 'si, ejecuta esa orden de luces'."""
+    if is_affirmative(text):
+        return True
+    words = plain(text).split()
+    if not words or any(word in NEGATION_WORDS for word in words):
+        return False
+    if any(word in REQUEST_WORDS for word in words):
+        return False
+    if words[0] not in {'si', 'claro', 'dale', 'confirmo', 'vale', 'ok', 'correcto', 'exacto'}:
+        return False
+    if len(words) == 1:
+        return True
+    return any(word in CONFIRM_ACTIONS for word in words[1:])
