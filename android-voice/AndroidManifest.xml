@@ -27,6 +27,7 @@
             </intent-filter>
         </activity>
         <service android:name=".VoiceService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".HomeGatewayService" android:exported="false" android:foregroundServiceType="connectedDevice" />
         <service android:name=".RingService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".CaptureProbeService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".AgendaDeliveryService" android:exported="false" android:foregroundServiceType="microphone" />
