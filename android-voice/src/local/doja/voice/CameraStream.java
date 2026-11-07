@@ -53,7 +53,7 @@ final class CameraStream {
     boolean start(Context context, Sink sink, Failure failure) {
         if (!permitted(context)) return false;
         CameraManager manager = context.getSystemService(CameraManager.class);
-        String id = backCamera(manager);
+        String id = frontCamera(manager);
         if (manager == null || id == null) return false;
         synchronized (lock) {
             if (active) return false;
@@ -194,14 +194,15 @@ final class CameraStream {
         if (currentThread != null) currentThread.quitSafely();
     }
 
-    private static String backCamera(CameraManager manager) {
+    /** The Moto stands facing the room, so the front lens is the security view. */
+    private static String frontCamera(CameraManager manager) {
         if (manager == null) return null;
         try {
             for (String id : manager.getCameraIdList()) {
                 android.hardware.camera2.CameraCharacteristics characteristics =
                     manager.getCameraCharacteristics(id);
                 Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
-                if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) return id;
+                if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) return id;
             }
         } catch (Exception ignored) { }
         return null;
