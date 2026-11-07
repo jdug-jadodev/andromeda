@@ -624,6 +624,21 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     # may never close it. The flag lives until that dialogue stops being pending.
     remote_origin_pending = False
 
+    # (command_id, expires_ms) for an audio order being injected from a phone.
+    pending_remote_audio = None
+
+    def remote_audio_fields():
+        """Marks the next transcribed turn as coming from a phone."""
+        nonlocal pending_remote_audio
+        value = pending_remote_audio
+        pending_remote_audio = None
+        if not value:
+            return {}
+        command_id, expires = value
+        if now_ms() > expires:
+            return {}
+        return {'remote': True, 'command_id': command_id, 'want_wav': True}
+
     def remote_fields(turn):
         """Origin markers only for turns that came from the companion app."""
         if not turn or not turn.get('remote'): return {}
@@ -639,8 +654,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                      retryable=True, retry_after_ms=3000)
 
     def reset(continue_chat=False, audio_resync=False):
-        nonlocal state, recognizer, timeline, turn
+        nonlocal state, recognizer, timeline, turn, pending_remote_audio
         recognizer = timeline = turn = None
+        pending_remote_audio = None
         preroll.clear(); detector.reset(); state = 'wake'
         if continue_chat:
             activate('followup', delay_ms=600)
@@ -944,6 +960,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         audio_yielded = False
                         request_context('audio_resume'); continue
                     if action == 'activate' and state == 'wake': activate('button')
+                    if action == 'remote_audio':
+                        command_id = control.get('command_id', '')
+                        if isinstance(command_id, str) and remote_voice.ID_RE.fullmatch(command_id):
+                            pending_remote_audio = (command_id, now_ms() + 60000)
+                        continue
                     if action == 'christmas_notice' and state == 'wake' and continuous_voice and assistant_tools:
                         christmas_notice(); continue
                     if action in {'timer_result', 'agenda_result', 'volume_result', 'light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
@@ -1051,7 +1072,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS
                         turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
                                 'deadline_ms': speech_end + response_start_ms, 'text': text,
-                                'administrative': True}
+                                'administrative': True, **remote_audio_fields()}
                         emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
                               'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
                               'administrative': True})
@@ -1062,7 +1083,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     if sequence > (MAX_EPOCH_TURNS if continuous_voice else 24): return 'voice_scope_limit' if continuous_voice else None
                     if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS
                     turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
-                             'deadline_ms': speech_end + response_start_ms, 'text': text}
+                             'deadline_ms': speech_end + response_start_ms, 'text': text,
+                             **remote_audio_fields()}
                     if assistant_tools:
                         turn.update(calendar_anchor_ms=int(time.time() * 1000), calendar_boot_ms=now_ms())
                     route = entry.route(text) if entry is not None else {'kind': 'model'}

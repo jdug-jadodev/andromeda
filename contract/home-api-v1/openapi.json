@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Andromeda Home API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Contrato entre la app acompanante (repo B) y la casa (repo A). Transporte: Tailscale + TLS con certificado fijado. Autenticacion: token por dispositivo."
   },
   "servers": [
@@ -292,6 +292,67 @@
         "responses": {
           "101": {
             "description": "WebSocket establecido"
+          }
+        }
+      }
+    },
+    "/command/audio/{id}": {
+      "put": {
+        "summary": "Orden por voz desde el telefono",
+        "operationId": "putCommandAudio",
+        "description": "WAV PCM16 16 kHz mono. La casa lo transcribe con su Vosk y responde con la misma voz de siempre.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "X-Andromeda-Duration-Ms",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "audio/wav": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Respuesta hablada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMedia"
           }
         }
       }

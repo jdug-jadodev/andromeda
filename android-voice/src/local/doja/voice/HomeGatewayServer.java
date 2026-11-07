@@ -161,6 +161,7 @@ final class HomeGatewayServer {
         if ("GET".equals(request.method) && request.path.startsWith("/v1/speech/")
                 && request.path.endsWith(".wav")) return speech(request);
         if ("PUT".equals(request.method) && request.path.startsWith("/v1/messages/")) return putMessage(request);
+        if ("PUT".equals(request.method) && request.path.startsWith("/v1/command/audio/")) return commandAudio(request);
         if ("GET".equals(request.method) && request.path.startsWith("/v1/messages/")) return messageStatus(request);
         if ("GET".equals(request.method) && "/v1/messages".equals(request.path)) return messages(request);
         return Response.error(404, "not_found", "Ruta desconocida.");
@@ -262,21 +263,88 @@ final class HomeGatewayServer {
                 return Response.error(500, "internal", "Respuesta remota invalida.");
             }
             if (reply.status != 200) return Response.json(reply.status, errorPayload(payload));
-            JSONObject answer = new JSONObject()
-                .put("id", payload.optString("id", id))
-                .put("say", payload.optString("say"))
-                .put("say_wav", JSONObject.NULL)
-                .put("receipts", payload.optJSONArray("receipts") == null
-                    ? new JSONArray() : payload.getJSONArray("receipts"))
-                .put("origin", "remote")
-                .put("server_time_ms", payload.optLong("server_time_ms", System.currentTimeMillis()));
-            if (wantWav && awaitSpeech(id, 5000L)) {
-                answer.put("say_wav", "/v1/speech/" + id + ".wav");
-            }
-            return Response.json(200, answer);
+            return commandAnswer(payload, id, wantWav);
         } catch (Exception error) {
             return Response.error(500, "internal", "No se pudo preparar la orden.");
         }
+    }
+
+    /** PUT /v1/command/audio/{id}: a spoken order recorded by an authenticated phone. */
+    private Response commandAudio(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("voice")) {
+            return Response.error(403, "forbidden", "Este dispositivo no tiene voz.");
+        }
+        if (!HomeGatewayConfig.remoteVoiceEnabled(context)) {
+            return Response.error(403, "forbidden", "Las ordenes remotas estan apagadas.");
+        }
+        if (!allow(device.id)) {
+            return Response.error(429, "rate_limited", "Demasiadas ordenes; espera un momento.", true, 1000);
+        }
+        String type = request.header("content-type");
+        if (type == null || !type.toLowerCase(Locale.US).startsWith("audio/wav")) {
+            return Response.error(415, "unsupported_media", "Se esperaba audio/wav.");
+        }
+        String id = request.path.substring("/v1/command/audio/".length());
+        if (!RemoteAudioPolicy.id(id)) {
+            return Response.error(400, "invalid_request", "Orden invalida.");
+        }
+        long duration;
+        try {
+            duration = Long.parseLong(request.header("x-andromeda-duration-ms"));
+        } catch (NumberFormatException missing) {
+            return Response.error(400, "invalid_request", "Falta la duracion del audio.");
+        }
+        if (!RemoteAudioPolicy.duration(duration)) {
+            return Response.error(400, "invalid_request", "Duracion fuera de rango.");
+        }
+        if (request.body.length == 0) return Response.error(400, "invalid_request", "Audio vacio.");
+        if (request.body.length > RemoteAudioPolicy.MAX_BYTES) {
+            return Response.error(413, "too_large", "El audio supera 2 MB.");
+        }
+        byte[] pcm;
+        try {
+            pcm = WavAudio.pcm(request.body);
+        } catch (WavAudio.Fault fault) {
+            return Response.error(400, "invalid_request", fault.getMessage());
+        }
+        RemoteAudioBus.Session session = RemoteAudioBus.session();
+        if (session == null || !session.ready()) {
+            return Response.error(503, "offline", "Andromeda no esta escuchando.", true, 3000);
+        }
+        if (session.busy() || !session.play(id, pcm, duration)) {
+            return Response.error(409, "busy", "Hay una conversacion en casa; reintenta.", true, 3000);
+        }
+        try {
+            RemoteCommandBus.Reply reply = RemoteCommandBus.await(id,
+                Math.min(45000L, duration + 20000L));
+            JSONObject payload;
+            try {
+                payload = new JSONObject(reply.body);
+            } catch (Exception malformed) {
+                return Response.error(500, "internal", "Respuesta remota invalida.");
+            }
+            if (reply.status != 200) return Response.json(reply.status, errorPayload(payload));
+            return commandAnswer(payload, id, true);
+        } catch (Exception error) {
+            return Response.error(500, "internal", "No se pudo preparar la orden.");
+        }
+    }
+
+    private Response commandAnswer(JSONObject payload, String id, boolean wantWav) throws Exception {
+        JSONObject answer = new JSONObject()
+            .put("id", payload.optString("id", id))
+            .put("say", payload.optString("say"))
+            .put("say_wav", JSONObject.NULL)
+            .put("receipts", payload.optJSONArray("receipts") == null
+                ? new JSONArray() : payload.getJSONArray("receipts"))
+            .put("origin", "remote")
+            .put("server_time_ms", payload.optLong("server_time_ms", System.currentTimeMillis()));
+        if (wantWav && awaitSpeech(id, 5000L)) {
+            answer.put("say_wav", "/v1/speech/" + id + ".wav");
+        }
+        return Response.json(200, answer);
     }
 
     /** GET /v1/speech/{command_id}.wav: the same voice the house just heard. */
@@ -675,7 +743,8 @@ final class HomeGatewayServer {
                 throw new IOException("Bad content length");
             }
         }
-        if (length < 0 || length > ("PUT".equals(method) && path.startsWith("/v1/messages/")
+        if (length < 0 || length > ("PUT".equals(method) && (path.startsWith("/v1/messages/")
+                || path.startsWith("/v1/command/audio/"))
                 ? MAX_MESSAGE_BODY : MAX_BODY)) throw new PayloadTooLarge();
         byte[] body = new byte[length];
         int offset = 0;

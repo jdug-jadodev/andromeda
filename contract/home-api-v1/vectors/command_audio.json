@@ -1,0 +1,26 @@
+{
+  "name": "command_audio",
+  "description": "Orden por voz de 6 segundos en WAV PCM16 16 kHz mono.",
+  "request": {
+    "method": "PUT",
+    "path": "/v1/command/audio/cmd-0001",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "Content-Type": "audio/wav",
+      "X-Andromeda-Contract": "1",
+      "X-Andromeda-Duration-Ms": "6000"
+    },
+    "body": "<bytes WAV PCM16 16 kHz mono, max 2 MB>"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "cmd-0001",
+      "say": "Temporizador de 120 segundos activado.",
+      "say_wav": "/v1/speech/cmd-0001.wav",
+      "receipts": [],
+      "origin": "remote",
+      "server_time_ms": 1760000000000
+    }
+  }
+}

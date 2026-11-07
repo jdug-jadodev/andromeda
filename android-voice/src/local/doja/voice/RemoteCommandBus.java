@@ -94,6 +94,32 @@ final class RemoteCommandBus {
                 }
             }
         }
+        return waitFor(entry, waitMs);
+    }
+
+    /**
+     * Waits for a spoken order without sending anything: the audio path already
+     * owns the turn. The id is the same the resident will answer with.
+     */
+    static Reply await(String id, long waitMs) {
+        if (!RemoteVoicePolicy.id(id)) {
+            return new Reply(400, error("invalid_request", "Orden remota invalida.", false, 0));
+        }
+        Entry entry;
+        synchronized (lock) {
+            prune();
+            entry = entries.get(id);
+            if (entry != null && entry.body != null) return reply(entry.body);
+            if (entry == null) {
+                entry = new Entry();
+                entries.put(id, entry);
+            }
+            entry.sent = true;
+        }
+        return waitFor(entry, waitMs);
+    }
+
+    private static Reply waitFor(Entry entry, long waitMs) {
         synchronized (entry.lock) {
             long deadline = System.currentTimeMillis() + Math.max(1000L, waitMs);
             while (entry.body == null) {

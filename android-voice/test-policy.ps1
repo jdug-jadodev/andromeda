@@ -10,6 +10,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Remote voice policy tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Voice message policy compilation failed' }
 & java -cp $output local.doja.voice.VoiceMessagePolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'contract\home-api-v1')
 if ($LASTEXITCODE -ne 0) { throw 'Voice message policy tests failed' }
+& javac -encoding UTF-8 -d $output "$source\RemoteAudioPolicy.java" "$source\WavAudio.java" "$source\RemoteVoicePolicy.java" "$PSScriptRoot\tests\VoiceAudioPolicyTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'Voice audio policy compilation failed' }
+& java -cp $output local.doja.voice.VoiceAudioPolicyTest (Join-Path (Split-Path $PSScriptRoot -Parent) 'contract\home-api-v1')
+if ($LASTEXITCODE -ne 0) { throw 'Voice audio policy tests failed' }
 & javac -encoding UTF-8 -d $output "$source\WebSocketHandshake.java" "$PSScriptRoot\tests\WebSocketHandshakeTest.java"
 if ($LASTEXITCODE -ne 0) { throw 'WebSocket handshake compilation failed' }
 & java -cp $output local.doja.voice.WebSocketHandshakeTest

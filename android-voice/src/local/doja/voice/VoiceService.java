@@ -97,12 +97,13 @@ public class VoiceService extends Service {
     SpeakerSpeech tts;
     MessagePlayback messages;
     volatile boolean messagePlaying;
+    volatile boolean remoteVoiceActive;
     private final RemoteCommandBus.Session remoteSession = new RemoteCommandBus.Session() {
         @Override public boolean ready() {
             return running && output != null && conversationOnly && assistantTools && ttsReady;
         }
         @Override public boolean busy() {
-            return speaking || messagePlaying || awaitingContext || cancelling || audioYielded
+            return speaking || messagePlaying || remoteVoiceActive || awaitingContext || cancelling || audioYielded
                 || conversationTurn.hasActiveTurn();
         }
         @Override public void send(JSONObject order) {
@@ -122,6 +123,26 @@ public class VoiceService extends Service {
         }
     };
     final Handler main = new Handler(Looper.getMainLooper());
+    private final RemoteAudioBus.Session remoteAudioSession = new RemoteAudioBus.Session() {
+        @Override public boolean ready() {
+            return running && output != null && conversationOnly && assistantTools && ttsReady;
+        }
+        @Override public boolean busy() {
+            return speaking || messagePlaying || remoteVoiceActive || awaitingContext || cancelling
+                || audioYielded || dialogueListening || conversationTurn.hasActiveTurn();
+        }
+        @Override public boolean play(String id, byte[] pcm, long durationMs) {
+            if (!ready() || busy() || remoteVoiceActive) return false;
+            remoteVoiceActive = true;
+            try {
+                new Thread(() -> injectVoice(id, pcm, durationMs), "andromeda-remote-voice").start();
+                return true;
+            } catch (RuntimeException failure) {
+                remoteVoiceActive = false;
+                return false;
+            }
+        }
+    };
     public IBinder onBind(Intent intent) { return null; }
     public void onCreate() {
         super.onCreate();
@@ -219,6 +240,60 @@ public class VoiceService extends Service {
             store.markFailed(id);
         }
     }
+    /**
+     * Streams a recorded phone order into the live session as if it were the
+     * house microphone, in real time so the resident's clock stays valid.
+     */
+    private void injectVoice(String id, byte[] pcm, long durationMs) {
+        try {
+            controlRemoteAudio(id);
+            SystemClock.sleep(150);
+            control("activate");
+            SystemClock.sleep(150);
+            byte[] packet = new byte[648];
+            java.nio.ByteBuffer stamp = java.nio.ByteBuffer.allocate(8);
+            int offset = 0;
+            while (running && remoteVoiceActive && offset < pcm.length) {
+                int length = Math.min(640, pcm.length - offset);
+                stamp.putLong(0, SystemClock.elapsedRealtime());
+                System.arraycopy(stamp.array(), 0, packet, 0, 8);
+                System.arraycopy(pcm, offset, packet, 8, length);
+                frame(4, packet, length + 8);
+                offset += length;
+                SystemClock.sleep(20L);
+            }
+            // A second of silence closes the utterance for Vosk.
+            byte[] silence = new byte[640];
+            for (int index = 0; index < 50 && running && remoteVoiceActive; index++) {
+                stamp.putLong(0, SystemClock.elapsedRealtime());
+                System.arraycopy(stamp.array(), 0, packet, 0, 8);
+                System.arraycopy(silence, 0, packet, 8, silence.length);
+                frame(4, packet, packet.length);
+                SystemClock.sleep(20L);
+            }
+        } catch (Exception error) {
+            // The waiting gateway answers 504; the resident keeps its own state.
+        } finally {
+            remoteVoiceActive = false;
+        }
+    }
+
+    /** Tells the resident that the next transcribed turn belongs to this phone. */
+    void controlRemoteAudio(String id) {
+        if (!running || controls.isShutdown() || output == null) return;
+        try {
+            controls.execute(() -> {
+                try {
+                    byte[] data = new JSONObject().put("action", "remote_audio")
+                        .put("command_id", id).toString().getBytes(StandardCharsets.UTF_8);
+                    frame(3, data, data.length);
+                } catch (Exception error) {
+                    if (running) main.post(() -> stopSelf());
+                }
+            });
+        } catch (RejectedExecutionException ignored) { }
+    }
+
     void initializeTts() {
         tts = new SpeakerSpeech(this, status -> {
             if (!running) { if (tts != null) tts.shutdown(); return; }
@@ -481,6 +556,7 @@ public class VoiceService extends Service {
             if (!continuousVoice) expiresAt = Math.min(expiresAt, SystemClock.elapsedRealtime() + seconds * 1000L);
             health.phase(VoiceHealthPolicy.CHANNELS); resetActionChannels();
             RemoteCommandBus.attach(remoteSession);
+            RemoteAudioBus.attach(remoteAudioSession);
             if (!continuousVoice) main.postDelayed(() -> { pilotExpired = true; stopSelf(); }, Math.max(0, expiresAt - SystemClock.elapsedRealtime()));
             health.phase(VoiceHealthPolicy.TTS); main.post(this::initializeTts);
             long ttsDeadline = playbackDeadline(12000);
@@ -566,7 +642,7 @@ public class VoiceService extends Service {
                 if (continuousVoice && audioYielded && !resumeRequested && !awaitingContext) {
                     resumeRequested = true; awaitingContext = true; speaking = true; control("audio_resume"); awaitContextTimeout();
                 }
-                if (speaking || messagePlaying || awaitingContext || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
+                if (speaking || messagePlaying || remoteVoiceActive || awaitingContext || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
                     if (recording) {
                         recorder.stop(); AudioInputGate.release(micOwner); recording = false; microphoneRecording = wakeListening = false; microphoneNotification(false);
                         if (uiState == FaceState.THINKING) state("LFM pensando · micrófono apagado" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, null);
@@ -614,6 +690,7 @@ public class VoiceService extends Service {
         } finally {
             boolean retry = reconnect && continuousVoice;
             RemoteCommandBus.detach(remoteSession);
+            RemoteAudioBus.detach(remoteAudioSession);
             if (timerChannel != null) timerChannel.close();
             if (agendaChannel != null) agendaChannel.close();
             if(alarmChannel!=null) alarmChannel.close();
