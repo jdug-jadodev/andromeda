@@ -22,6 +22,7 @@ import uuid
 from assistant_config import SETTINGS
 from spanish_wake import words
 from doja_intents import normalized
+import remote_voice
 from conversation_flow import ConversationFlow
 from conversation_entry import ConversationEntry
 
@@ -619,6 +620,24 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         from timer_trial import TimerTrial
         timers = TimerTrial(now_ms)
 
+    # A phone proposal may only be confirmed from the phone, and a local "si"
+    # may never close it. The flag lives until that dialogue stops being pending.
+    remote_origin_pending = False
+
+    def remote_fields(turn):
+        """Origin markers only for turns that came from the companion app."""
+        if not turn or not turn.get('remote'): return {}
+        return {'origin': 'remote', 'command_id': turn.get('command_id', '')}
+
+    def remote_reply(command_id, **fields):
+        emit({'type': 'remote_reply', 'id': command_id, 'origin': 'remote',
+              'server_time_ms': now_ms(), **fields})
+
+    def remote_busy(turn_or_command_id):
+        command_id = turn_or_command_id if isinstance(turn_or_command_id, str) else turn_or_command_id.get('command_id', '')
+        remote_reply(command_id, error='busy', message='Hay una conversacion en casa; reintenta.',
+                     retryable=True, retry_after_ms=3000)
+
     def reset(continue_chat=False, audio_resync=False):
         nonlocal state, recognizer, timeline, turn
         recognizer = timeline = turn = None
@@ -644,15 +663,18 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit({'type': 'state', 'state': 'command', 'trigger': trigger})
 
     def say(answer, close_reason='', offered_more=None):
-        nonlocal state
+        nonlocal state, remote_origin_pending
         if audio_freshness is not None: audio_freshness.clear_gap()
         turn['answer'], turn['close_reason'] = answer, close_reason
         state = 'speech'
         turn['offered_more'] = not bool(close_reason) if offered_more is None else offered_more
+        if turn.get('remote'):
+            remote_origin_pending = timers is not None and timers.pending_dialogue
         emit({'type': 'say', 'text': answer, 'id': turn['id'], 'turn_id': turn['id'],
             'turn_seq': turn['seq'], 'speech_end_ms': turn['speech_end'],
              'deadline_ms': turn['deadline_ms'], 'actions_executed': turn.get('actions_executed', 0),
               'timer_control': turn.get('timer_control', ''),
+              **remote_fields(turn),
               **({'face_scene': turn['face_scene']} if turn.get('face_scene') else {}),
                  **({'reminder_read':turn['reminder_read']} if turn.get('timer_control')=='reminder_list' else {}),
                  **({'reminder_delete':turn['reminder_delete']} if turn.get('reminder_delete') is not None else {}),
@@ -717,6 +739,62 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             request_context('turn_checkpoint', followup=continue_chat)
         else: reset(continue_chat=continue_chat)
 
+    def handle_remote(payload):
+        """Frame 6: a validated order from an authenticated phone.
+
+        It becomes a normal text turn, so tools, receipts and the spoken answer
+        stay identical to a local order. The microphone is not opened by it.
+        """
+        nonlocal turn, sequence, session_end, state, remote_origin_pending
+        try:
+            command = remote_voice.frame(payload)
+        except remote_voice.RemoteCommandFault:
+            # A malformed frame is the gateway's bug, not a reason to drop the
+            # live resident session.
+            print(json.dumps({'event': 'conversation_remote_invalid', 'source': source}), flush=True)
+            return
+        if not assistant_tools:
+            remote_reply(command['id'], error='forbidden', retryable=False,
+                         message='La casa no tiene acciones activadas.')
+            return
+        if pending_reset is not None:
+            remote_busy(command['id']); return
+        if (turn is not None or state not in ('wake', 'listen') or audio_yielded
+                or (timers is not None and timers.pending_dialogue and not remote_origin_pending)):
+            remote_busy(command['id']); return
+        if continuous_voice and sequence >= MAX_EPOCH_TURNS:
+            remote_busy(command['id']); return
+        if not continuous_voice and now_ms() + response_start_ms >= session_end:
+            remote_busy(command['id']); return
+        current = now_ms()
+        sequence += 1
+        if continuous_voice: session_end = current + ACTION_WINDOW_MS
+        turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': current,
+                'deadline_ms': current + response_start_ms, 'text': command['text'],
+                'remote': True, 'command_id': command['id'], 'want_wav': command['want_wav'],
+                'administrative': True,
+                'calendar_anchor_ms': int(time.time() * 1000), 'calendar_boot_ms': current}
+        emit({'type': 'thinking', 'text': command['text'], 'turn_id': turn['id'], 'turn_seq': sequence,
+              'speech_end_ms': current, 'deadline_ms': turn['deadline_ms'],
+              'origin': 'remote', 'command_id': command['id'],
+              'calendar_anchor_ms': turn['calendar_anchor_ms'], 'calendar_boot_ms': current,
+              'action_window_end_ms': session_end, 'administrative': True})
+        recognizer = timeline = None; preroll.clear()
+        if guided_agenda:
+            try:
+                response = timers.human(turn, session_id, context_id, session_end)
+            except ValueError:
+                # Nothing was dispatched: the remote order was malformed or
+                # stale. Revoke it, answer the phone, and keep listening.
+                timers.cancel(); flow.reset()
+                remote_reply(command['id'], error='invalid_request', retryable=True,
+                             message='No entendi esa orden; reformulala.')
+                reset(continue_chat=True); return
+            if response is not None:
+                timer_response(response); return
+        turn['compute_end'] = model.start(command['text'], current, session_end)
+        state = 'thinking'
+
     emit({'type': 'ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'conversation_only': not (timer_trial or assistant_tools), 'wake_only': False,
                       'wake_enabled': True, 'ai_enabled': True, 'actions_enabled': timer_trial or assistant_tools,
                       **({'assistant_tools': True} if assistant_tools else {}),
@@ -738,6 +816,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
     try:
         while continuous_voice or now_ms() < session_end:
             current = now_ms()
+            if remote_origin_pending and (timers is None or not timers.pending_dialogue):
+                remote_origin_pending = False
             if current - checked >= 1000:
                 checked = current
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation resource/server guard')
@@ -774,6 +854,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                         'turn_seq': turn['seq'], **model.context_metrics}), flush=True)
                     if model.error or not model.result:
                         model.memory.unanswered(turn['text'])
+                        if turn.get('remote'):
+                            remote_reply(turn['command_id'], error='internal', retryable=True,
+                                         message='No pude completar la orden.')
                         emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id'],
                               **({'recoverable':True,'actions_executed':0} if continuous_voice else {})})
                         flow.reset(); completed_turn(continuous_voice)
@@ -789,6 +872,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             conversational_reply({'content': answer}, 'stop')
                         except ValueError:
                             model.memory.unanswered(turn['text'])
+                            if turn.get('remote'):
+                                remote_reply(turn['command_id'], error='internal', retryable=True,
+                                             message='No pude completar la orden.')
                             emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id'],
                                   **({'recoverable':True,'actions_executed':0} if continuous_voice else {})})
                             flow.reset(); completed_turn(continuous_voice); continue
@@ -835,6 +921,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
                             if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate','christmas_notice'}:
                                 raise ValueError('Control during context handoff')
+                        elif kind == 6:
+                            try: remote_busy(remote_voice.frame(json.loads(data))['id'])
+                            except remote_voice.RemoteCommandFault: pass
                         elif kind != 4: raise ValueError('Invalid continuous context frame')
                         continue  # Discard queued microphone/TTS tail, never transcribe during handoff.
                 if kind == 3:
@@ -916,6 +1005,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 if turn.get('administrative') and entry is not None: entry.cancel_pending()
                             completed_turn(action == 'tts_interrupted')
                     continue
+                if kind == 6:
+                    handle_remote(json.loads(data))
+                    continue
                 if kind != 4 or not 8 < len(data) <= 648 or (len(data) - 8) % 2:
                     raise ValueError('Expected timestamped PCM16')
                 stamp = struct.unpack('!Q', data[:8])[0]; pcm = data[8:]
@@ -953,6 +1045,19 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     head = text.split(maxsplit=1)
                     if len(head) == 2 and words(head[0]) == words(SETTINGS['wake_word']): text = head[1]
                     if now_ms() >= speech_end + response_start_ms - 3500: return
+                    if remote_origin_pending and plain_confirmation(text):
+                        # Only the phone that received the proposal may close it.
+                        sequence += 1
+                        if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS
+                        turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': speech_end,
+                                'deadline_ms': speech_end + response_start_ms, 'text': text,
+                                'administrative': True}
+                        emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
+                              'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
+                              'administrative': True})
+                        say('Esa propuesta vino del telefono. Confirmala desde el telefono, por favor.',
+                            offered_more=False)
+                        recognizer = timeline = None; preroll.clear(); continue
                     sequence += 1
                     if sequence > (MAX_EPOCH_TURNS if continuous_voice else 24): return 'voice_scope_limit' if continuous_voice else None
                     if continuous_voice: session_end = min(now_ms(), speech_end) + ACTION_WINDOW_MS

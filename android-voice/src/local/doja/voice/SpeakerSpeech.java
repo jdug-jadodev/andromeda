@@ -13,8 +13,10 @@ import android.speech.tts.Voice;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +51,7 @@ final class SpeakerSpeech {
     });
     private final Map<String, String> publicIds = new ConcurrentHashMap<>();
     private final Map<String, File> files = new ConcurrentHashMap<>();
+    private final Map<String, File> copies = new ConcurrentHashMap<>();
     private final Object trackLock = new Object();
     private volatile UtteranceProgressListener listener;
     private volatile AudioTrack playing;
@@ -77,6 +80,14 @@ final class SpeakerSpeech {
     int routedOutputType() { return lastRoutedType; }
 
     int speak(CharSequence text, int queueMode, Bundle params, String utteranceId) {
+        return speak(text, queueMode, params, utteranceId, null);
+    }
+
+    /**
+     * Same playback, plus a durable copy of the rendered WAV when `copyTo` is
+     * given. Used only for remote replies the companion app may download.
+     */
+    int speak(CharSequence text, int queueMode, Bundle params, String utteranceId, File copyTo) {
         if (released || text == null || utteranceId == null) return TextToSpeech.ERROR;
         flushPlayback();
         try { engine.stop(); } catch (RuntimeException ignored) { }
@@ -84,11 +95,13 @@ final class SpeakerSpeech {
         String synthId = "synth-" + UUID.randomUUID();
         publicIds.put(synthId, utteranceId);
         files.put(synthId, file);
+        if (copyTo != null) copies.put(synthId, copyTo);
         audibleId = utteranceId;
         try {
             if (engine.synthesizeToFile(text, params, file, synthId) == TextToSpeech.ERROR) {
                 publicIds.remove(synthId);
                 files.remove(synthId);
+                copies.remove(synthId);
                 deleteQuietly(file);
                 return TextToSpeech.ERROR;
             }
@@ -96,6 +109,7 @@ final class SpeakerSpeech {
         } catch (RuntimeException failure) {
             publicIds.remove(synthId);
             files.remove(synthId);
+            copies.remove(synthId);
             deleteQuietly(file);
             return TextToSpeech.ERROR;
         }
@@ -115,6 +129,7 @@ final class SpeakerSpeech {
         player.shutdownNow();
         for (File file : files.values()) deleteQuietly(file);
         files.clear();
+        copies.clear();
         publicIds.clear();
         try { engine.shutdown(); } catch (RuntimeException ignored) { }
     }
@@ -122,8 +137,10 @@ final class SpeakerSpeech {
     private void synthesized(String synthId) {
         String publicId = publicIds.remove(synthId);
         File file = files.remove(synthId);
+        File copy = copies.remove(synthId);
         if (publicId == null || file == null) { deleteQuietly(file); return; }
         if (!publicId.equals(audibleId) || released) { deleteQuietly(file); return; }
+        if (copy != null) copyQuietly(file, copy);
         try {
             player.execute(() -> play(publicId, file));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
@@ -134,6 +151,7 @@ final class SpeakerSpeech {
     private void failed(String synthId) {
         String publicId = publicIds.remove(synthId);
         File file = files.remove(synthId);
+        copies.remove(synthId);
         deleteQuietly(file);
         if (publicId != null && publicId.equals(audibleId) && !released) notifyError(publicId);
     }
@@ -141,6 +159,7 @@ final class SpeakerSpeech {
     private void stopped(String synthId) {
         String publicId = publicIds.remove(synthId);
         File file = files.remove(synthId);
+        copies.remove(synthId);
         deleteQuietly(file);
         if (publicId != null && publicId.equals(audibleId) && !released) notifyStop(publicId);
     }
@@ -241,6 +260,18 @@ final class SpeakerSpeech {
 
     private static void deleteQuietly(File file) {
         if (file != null) try { file.delete(); } catch (RuntimeException ignored) { }
+    }
+
+    /** A failed copy never blocks playback; the phone simply gets no WAV. */
+    private static void copyQuietly(File source, File target) {
+        try (InputStream input = new FileInputStream(source);
+             OutputStream output = new FileOutputStream(target)) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) > 0) output.write(buffer, 0, count);
+        } catch (Exception failure) {
+            deleteQuietly(target);
+        }
     }
 
     private static void skipFully(InputStream input, long count) throws IOException {

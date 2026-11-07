@@ -16,5 +16,16 @@ final class HomeGatewayConfig {
             .edit().putBoolean("enabled", value).apply();
     }
 
+    /** Ordenes remotas: se encienden al vincular un telefono, nunca solas. */
+    static boolean remoteVoiceEnabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("remote_voice_enabled", false);
+    }
+
+    static void setRemoteVoiceEnabled(Context context, boolean value) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("remote_voice_enabled", value).apply();
+    }
+
     private HomeGatewayConfig() { }
 }

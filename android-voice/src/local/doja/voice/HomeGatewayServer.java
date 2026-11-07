@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.EOFException;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -17,10 +18,12 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -43,11 +46,14 @@ final class HomeGatewayServer {
     private static final int MAX_HEADER = 8192;
     private static final int MAX_BODY = 65536;
     private static final int MAX_WORKERS = 4;
+    private static final int RATE_MAX = 30;
+    private static final long RATE_WINDOW_MS = 60000L;
 
     private final Context context;
     private final PairingListener pairing;
     private final DeviceStore devices;
     private final PairingManager pairingManager;
+    private final Map<String, long[]> rateLimits = new ConcurrentHashMap<>();
     private final ExecutorService workers = Executors.newFixedThreadPool(MAX_WORKERS);
     private volatile boolean running;
     private SSLServerSocket server;
@@ -126,6 +132,9 @@ final class HomeGatewayServer {
         if ("POST".equals(request.method) && "/v1/pair".equals(request.path)) return pair(request);
         if ("GET".equals(request.method) && "/v1/health".equals(request.path)) return health(request);
         if ("GET".equals(request.method) && "/v1/capabilities".equals(request.path)) return capabilities(request);
+        if ("POST".equals(request.method) && "/v1/command".equals(request.path)) return command(request);
+        if ("GET".equals(request.method) && request.path.startsWith("/v1/speech/")
+                && request.path.endsWith(".wav")) return speech(request);
         return Response.error(404, "not_found", "Ruta desconocida.");
     }
 
@@ -161,7 +170,9 @@ final class HomeGatewayServer {
         try {
             return Response.json(200, new JSONObject()
                 .put("status", "ok").put("contract", 1).put("gateway", "0.1.0")
-                .put("resident", "starting").put("camera", "unavailable")
+                .put("resident", VoiceService.active ? "online" : "offline")
+                .put("remote_voice", HomeGatewayConfig.remoteVoiceEnabled(context))
+                .put("camera", "unavailable")
                 .put("messages", 0).put("tailscale", true)
                 .put("server_time_ms", System.currentTimeMillis()));
         } catch (Exception error) {
@@ -174,14 +185,139 @@ final class HomeGatewayServer {
             return Response.error(401, "unauthenticated", "Token invalido.");
         }
         try {
+            boolean voice = HomeGatewayConfig.remoteVoiceEnabled(context);
             return Response.json(200, new JSONObject()
-                .put("contract", 1).put("voice", true).put("messages", false).put("camera", false)
-                .put("wav_replies", false).put("max_command_chars", 500)
+                .put("contract", 1).put("voice", voice).put("messages", false).put("camera", false)
+                .put("wav_replies", voice).put("max_command_chars", RemoteVoicePolicy.MAX_TEXT)
                 .put("max_message_bytes", 2097152).put("max_message_ms", 60000)
                 .put("camera_max_minutes", 10).put("camera_max_viewers", 1));
         } catch (Exception error) {
             return Response.error(500, "internal", "Error interno.");
         }
+    }
+
+    /** POST /v1/command: validated, authenticated, idempotent phone order. */
+    private Response command(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("voice")) {
+            return Response.error(403, "forbidden", "Este dispositivo no tiene voz.");
+        }
+        if (!HomeGatewayConfig.remoteVoiceEnabled(context)) {
+            return Response.error(403, "forbidden", "Las ordenes remotas estan apagadas.");
+        }
+        if (!allow(device.id)) {
+            return Response.error(429, "rate_limited", "Demasiadas ordenes; espera un momento.", true, 1000);
+        }
+        JSONObject body;
+        try {
+            body = new JSONObject(new String(request.body, StandardCharsets.UTF_8));
+        } catch (Exception malformed) {
+            return Response.error(400, "invalid_request", "Orden invalida.");
+        }
+        if (!validCommandBody(body)) return Response.error(400, "invalid_request", "Orden invalida.");
+        String id = body.optString("id");
+        String text = body.optString("text").trim();
+        long clientTs = ((Number) body.opt("client_ts_ms")).longValue();
+        boolean wantWav = !body.has("want_wav") || Boolean.TRUE.equals(body.opt("want_wav"));
+        try {
+            JSONObject frame = new JSONObject()
+                .put("action", "remote_command").put("id", id).put("text", text)
+                .put("client_ts_ms", clientTs).put("want_wav", wantWav);
+            RemoteCommandBus.Reply reply = RemoteCommandBus.submit(frame, RemoteVoicePolicy.WAIT_MS);
+            JSONObject payload;
+            try {
+                payload = new JSONObject(reply.body);
+            } catch (Exception malformed) {
+                return Response.error(500, "internal", "Respuesta remota invalida.");
+            }
+            if (reply.status != 200) return Response.json(reply.status, errorPayload(payload));
+            JSONObject answer = new JSONObject()
+                .put("id", payload.optString("id", id))
+                .put("say", payload.optString("say"))
+                .put("say_wav", JSONObject.NULL)
+                .put("receipts", payload.optJSONArray("receipts") == null
+                    ? new JSONArray() : payload.getJSONArray("receipts"))
+                .put("origin", "remote")
+                .put("server_time_ms", payload.optLong("server_time_ms", System.currentTimeMillis()));
+            if (wantWav && awaitSpeech(id, 5000L)) {
+                answer.put("say_wav", "/v1/speech/" + id + ".wav");
+            }
+            return Response.json(200, answer);
+        } catch (Exception error) {
+            return Response.error(500, "internal", "No se pudo preparar la orden.");
+        }
+    }
+
+    /** GET /v1/speech/{command_id}.wav: the same voice the house just heard. */
+    private Response speech(Request request) {
+        if (authenticate(request) == null) {
+            return Response.error(401, "unauthenticated", "Token invalido.");
+        }
+        String name = request.path.substring("/v1/speech/".length());
+        if (!name.endsWith(".wav")) return Response.error(404, "not_found", "Audio no encontrado.");
+        String id = name.substring(0, name.length() - 4);
+        File file = RemoteSpeechCache.find(context, id);
+        if (file == null) return Response.error(404, "not_found", "Ese audio ya no esta disponible.");
+        try {
+            return Response.binary(200, "audio/wav", Files.readAllBytes(file.toPath()));
+        } catch (IOException error) {
+            return Response.error(500, "internal", "No pude leer el audio.");
+        }
+    }
+
+    private boolean awaitSpeech(String id, long maxMs) {
+        long end = System.currentTimeMillis() + maxMs;
+        while (System.currentTimeMillis() < end) {
+            if (RemoteSpeechCache.find(context, id) != null) return true;
+            try {
+                Thread.sleep(50L);
+            } catch (InterruptedException stopped) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return RemoteSpeechCache.find(context, id) != null;
+    }
+
+    private static boolean validCommandBody(JSONObject body) {
+        java.util.Set<String> allowed = new java.util.HashSet<>(
+            Arrays.asList("id", "text", "client_ts_ms", "want_wav"));
+        for (java.util.Iterator<String> keys = body.keys(); keys.hasNext(); ) {
+            if (!allowed.contains(keys.next())) return false;
+        }
+        Object id = body.opt("id");
+        Object text = body.opt("text");
+        Object stamp = body.opt("client_ts_ms");
+        if (!(id instanceof String) || !(text instanceof String)) return false;
+        if (!(stamp instanceof Integer || stamp instanceof Long)) return false;
+        if (body.has("want_wav") && !(body.opt("want_wav") instanceof Boolean)) return false;
+        long clientTs = ((Number) stamp).longValue();
+        return clientTs > 0 && clientTs <= 9_999_999_999_999L
+            && RemoteVoicePolicy.command((String) id, (String) text, clientTs);
+    }
+
+    private boolean allow(String deviceId) {
+        long now = System.currentTimeMillis();
+        long[] window = rateLimits.computeIfAbsent(deviceId, key -> new long[]{now, 0});
+        synchronized (window) {
+            if (now - window[0] >= RATE_WINDOW_MS) {
+                window[0] = now;
+                window[1] = 0;
+            }
+            if (window[1] >= RATE_MAX) return false;
+            window[1]++;
+            return true;
+        }
+    }
+
+    private static JSONObject errorPayload(JSONObject payload) throws Exception {
+        JSONObject answer = new JSONObject()
+            .put("error", payload.optString("error", "internal"))
+            .put("message", payload.optString("message", "No se pudo completar la orden."))
+            .put("retryable", payload.optBoolean("retryable", false));
+        if (payload.has("retry_after_ms")) answer.put("retry_after_ms", payload.optLong("retry_after_ms"));
+        return answer;
     }
 
     private DeviceStore.Device authenticate(Request request) {
@@ -257,9 +393,10 @@ final class HomeGatewayServer {
     }
 
     private static void write(OutputStream output, Response response) throws IOException {
-        byte[] body = response.body.getBytes(StandardCharsets.UTF_8);
+        byte[] body = response.data != null
+            ? response.data : response.body.getBytes(StandardCharsets.UTF_8);
         String head = "HTTP/1.1 " + response.status + " " + reason(response.status) + "\r\n"
-            + "Content-Type: application/json; charset=utf-8\r\n"
+            + "Content-Type: " + response.type + "\r\n"
             + "Content-Length: " + body.length + "\r\n"
             + "Cache-Control: no-store\r\n"
             + "Connection: close\r\n\r\n";
@@ -281,6 +418,8 @@ final class HomeGatewayServer {
             case 413: return "Payload Too Large";
             case 426: return "Upgrade Required";
             case 429: return "Too Many Requests";
+            case 503: return "Service Unavailable";
+            case 504: return "Gateway Timeout";
             default: return "Internal Server Error";
         }
     }
@@ -314,20 +453,38 @@ final class HomeGatewayServer {
     private static final class Response {
         final int status;
         final String body;
+        final byte[] data;
+        final String type;
 
         Response(int status, String body) {
+            this(status, body, null, "application/json; charset=utf-8");
+        }
+
+        Response(int status, String body, byte[] data, String type) {
             this.status = status;
             this.body = body;
+            this.data = data;
+            this.type = type;
         }
 
         static Response json(int status, JSONObject body) {
             return new Response(status, body.toString());
         }
 
+        static Response binary(int status, String type, byte[] data) {
+            return new Response(status, null, data, type);
+        }
+
         static Response error(int status, String code, String message) {
+            return error(status, code, message, false, 0);
+        }
+
+        static Response error(int status, String code, String message,
+                boolean retryable, long retryAfterMs) {
             JSONObject body = new JSONObject();
             try {
-                body.put("error", code).put("message", message).put("retryable", false);
+                body.put("error", code).put("message", message).put("retryable", retryable);
+                if (retryAfterMs > 0) body.put("retry_after_ms", retryAfterMs);
             } catch (Exception ignored) { }
             return new Response(status, body.toString());
         }

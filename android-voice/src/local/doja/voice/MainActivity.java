@@ -1233,6 +1233,8 @@ public class MainActivity extends Activity {
     }
     private void pairingOptions() {
         HomeGatewayConfig.setEnabled(this, true);
+        // Vincular un telefono habilita sus ordenes; el gateway sigue apagado sin esta accion.
+        HomeGatewayConfig.setRemoteVoiceEnabled(this, true);
         Intent intent = new Intent(this, HomeGatewayService.class)
             .setAction(HomeGatewayService.ACTION_PAIR)
             .putExtra(HomeGatewayService.EXTRA_ENABLED, true);

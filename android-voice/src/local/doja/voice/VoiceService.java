@@ -5,6 +5,7 @@ import android.content.*;
 import android.media.*;
 import android.os.*;
 import android.speech.tts.*;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
 import java.net.*;
@@ -94,6 +95,30 @@ public class VoiceService extends Service {
     volatile boolean speechInterrupted;
     volatile boolean mutationRequested;
     SpeakerSpeech tts;
+    private final RemoteCommandBus.Session remoteSession = new RemoteCommandBus.Session() {
+        @Override public boolean ready() {
+            return running && output != null && conversationOnly && assistantTools && ttsReady;
+        }
+        @Override public boolean busy() {
+            return speaking || awaitingContext || cancelling || audioYielded
+                || conversationTurn.hasActiveTurn();
+        }
+        @Override public void send(JSONObject order) {
+            final String id = order.optString("id");
+            try {
+                controls.execute(() -> {
+                    try {
+                        byte[] data = order.toString().getBytes(StandardCharsets.UTF_8);
+                        frame(6, data, data.length);
+                    } catch (Exception error) {
+                        RemoteCommandBus.fail(id, 503, "offline", "Andromeda no esta escuchando.");
+                    }
+                });
+            } catch (RejectedExecutionException saturated) {
+                RemoteCommandBus.fail(id, 503, "offline", "Andromeda no esta escuchando.");
+            }
+        }
+    };
     final Handler main = new Handler(Looper.getMainLooper());
     public IBinder onBind(Intent intent) { return null; }
     public void onCreate() {
@@ -361,6 +386,7 @@ public class VoiceService extends Service {
             if (continuousVoice ? seconds != 0 : seconds != 90 && seconds != 300) throw new IOException("Duración inválida");
             if (!continuousVoice) expiresAt = Math.min(expiresAt, SystemClock.elapsedRealtime() + seconds * 1000L);
             health.phase(VoiceHealthPolicy.CHANNELS); resetActionChannels();
+            RemoteCommandBus.attach(remoteSession);
             if (!continuousVoice) main.postDelayed(() -> { pilotExpired = true; stopSelf(); }, Math.max(0, expiresAt - SystemClock.elapsedRealtime()));
             health.phase(VoiceHealthPolicy.TTS); main.post(this::initializeTts);
             long ttsDeadline = playbackDeadline(12000);
@@ -493,6 +519,7 @@ public class VoiceService extends Service {
             if (running) { VoiceHealthStore.finish(this,health,VoiceHealthStore.kind(error),error); lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
             boolean retry = reconnect && continuousVoice;
+            RemoteCommandBus.detach(remoteSession);
             if (timerChannel != null) timerChannel.close();
             if (agendaChannel != null) agendaChannel.close();
             if(alarmChannel!=null) alarmChannel.close();
@@ -920,6 +947,11 @@ public class VoiceService extends Service {
                 JSONObject event = readEvent(input);
                 if (!running) return;
                 String type = event.optString("type");
+                if ("remote_reply".equals(type)) {
+                    // The resident rejected or could not answer a phone order.
+                    RemoteCommandBus.complete(event.optString("id"), event.toString());
+                    continue;
+                }
                 if (wakeOnly && !VoiceSessionPolicy.wakeOnlyEventAllowed(type))
                     throw new IOException("Evento no permitido en prueba de activación");
                 if (conversationOnly) {
@@ -1149,6 +1181,7 @@ public class VoiceService extends Service {
             toolResult(event.optString("tool_call_id"), ok, message);
             return;
         }
+        if ("remote".equals(event.optString("origin"))) deliverRemote(event, message);
         // The model chose a self-destruct tool: its scene plays as she starts to speak.
         final FaceReaction scene = FaceReaction.parseScene(event.optString("face_scene", ""));
         noteReaction(scene);
@@ -1163,6 +1196,46 @@ public class VoiceService extends Service {
         }
         startSpeech(event, message);
     }
+    /** Hands the spoken answer back to the waiting phone; the house still speaks it. */
+    private void deliverRemote(JSONObject event, String message) {
+        String id = event.optString("command_id");
+        if (!RemoteVoicePolicy.id(id)) return;
+        try {
+            JSONObject reply = new JSONObject()
+                .put("id", id)
+                .put("say", message)
+                .put("receipts", remoteReceipts(event))
+                .put("origin", "remote")
+                .put("server_time_ms", System.currentTimeMillis());
+            RemoteCommandBus.complete(id, reply.toString());
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * Best-effort receipt for tools whose result is unambiguous from the
+     * resident's answer event. The phone shows what the house confirmed.
+     */
+    private static JSONArray remoteReceipts(JSONObject event) {
+        JSONArray receipts = new JSONArray();
+        String tool;
+        switch (event.optString("timer_control")) {
+            case "result": tool = "create_timer"; break;
+            case "light_result": tool = "control_lights"; break;
+            case "volume_result": tool = "set_phone_volume"; break;
+            case "web": tool = "search_web"; break;
+            case "reminder_list": tool = "list_reminders"; break;
+            case "reminder_delete_result": tool = "delete_reminder"; break;
+            default: return receipts;
+        }
+        int actions = event.optInt("actions_executed", 0);
+        if (actions <= 0) return receipts;
+        try {
+            receipts.put(new JSONObject().put("tool", tool)
+                .put("status", "COMPLETE_UNCONFIRMED").put("completed", actions).put("targets", actions));
+        } catch (Exception ignored) { }
+        return receipts;
+    }
+
     private void startSpeech(JSONObject event, String message) {
         speechDiagnostic = SpeechDiagnostics.begin(SystemClock.elapsedRealtime(), message.length());
         if (!ttsReady) { state(message + " (voz no disponible)", FaceState.ERROR, null); finishSpeech(false, SpeechDiagnostics.End.NOT_READY); return; }
@@ -1180,6 +1253,8 @@ public class VoiceService extends Service {
             activePlaybackMs = Math.min(SpeechPlaybackPolicy.LISTING_MS, activePlaybackMs + 1500);
         final long playbackEnd=playbackDeadline(conversationOnly?activePlaybackMs:12000);
         final long startBefore=conversationOnly ? event.optLong("deadline_ms") : Math.min(playbackEnd,SystemClock.elapsedRealtime()+3000);
+        final File remoteWav = "remote".equals(event.optString("origin"))
+            ? RemoteSpeechCache.target(this, event.optString("command_id")) : null;
         if(silenceListener==null) { interruptUnavailable(id,generation); return; }
         if (thinkingInterruption != null && silenceListener.started(thinkingInterruption)) {
             activeInterruption = thinkingInterruption;
@@ -1192,7 +1267,7 @@ public class VoiceService extends Service {
                 () -> running && speaking && id.equals(activeSpeechId) && generation==speechGeneration && !audioYielded,
                 () -> {
                     if(!running || !id.equals(activeSpeechId) || generation!=speechGeneration || audioYielded) return;
-                    if(SystemClock.elapsedRealtime()>=startBefore || tts.speak(spokenMessage,TextToSpeech.QUEUE_FLUSH,params,id)==TextToSpeech.ERROR) {
+                    if(SystemClock.elapsedRealtime()>=startBefore || tts.speak(spokenMessage,TextToSpeech.QUEUE_FLUSH,params,id,remoteWav)==TextToSpeech.ERROR) {
                         state("No se pudo iniciar la voz a tiempo",FaceState.ERROR,null); finishSpeech(false,SpeechDiagnostics.End.START_REJECTED);
                     }
                 },() -> interruptUnavailable(id,generation),text -> handleInterruptText(text,id));
