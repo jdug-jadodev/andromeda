@@ -24,6 +24,7 @@ public final class HomeGatewayService extends Service {
     private static final int NOTIFICATION_ID = 20;
 
     private HomeGatewayServer server;
+    static volatile String lastPairingCode = "";
 
     @Override
     public void onCreate() {
@@ -53,11 +54,13 @@ public final class HomeGatewayService extends Service {
             server = new HomeGatewayServer(this, new HomeGatewayServer.PairingListener() {
                 @Override
                 public void onPairing(String code) {
+                    lastPairingCode = code;
                     updateNotification("Emparejar teléfono", "Código: " + code + " · caduca en 2 min");
                 }
 
                 @Override
                 public void onClosed() {
+                    lastPairingCode = "";
                     updateNotification("Casa · puerto " + HomeGatewayServer.PORT, "Emparejamiento cerrado");
                 }
             });
@@ -100,6 +103,7 @@ public final class HomeGatewayService extends Service {
 
     @Override
     public void onDestroy() {
+        lastPairingCode = "";
         if (server != null) server.stop();
         server = null;
         super.onDestroy();

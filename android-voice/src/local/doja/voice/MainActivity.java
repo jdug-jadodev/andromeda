@@ -253,7 +253,7 @@ public class MainActivity extends Activity {
         GradientDrawable background = new GradientDrawable(); background.setColor(Color.rgb(15, 24, 42)); background.setCornerRadius(dp(22)); panel.setBackground(background);
         label(panel, "Andrómeda · opciones", 23, Color.WHITE);
         optionsCountdown = label(panel, "Se ocultan en 50 s sin interacción", 12, Color.rgb(151, 166, 195));
-        LinearLayout first = new LinearLayout(this), second = new LinearLayout(this), third = new LinearLayout(this), fourth = new LinearLayout(this), fifth = new LinearLayout(this);
+        LinearLayout first = new LinearLayout(this), second = new LinearLayout(this), third = new LinearLayout(this), fourth = new LinearLayout(this), fifth = new LinearLayout(this), sixth = new LinearLayout(this);
         button(first, "Color del brillo", this::chooseColor);
         button(first, "Contexto", this::contextOptions);
         button(first, "Fuentes web", () -> showDialog(new AlertDialog.Builder(this).setTitle("Última búsqueda · fuentes en RAM")
@@ -266,7 +266,8 @@ public class MainActivity extends Activity {
         button(fourth, "Luces", this::lightOptions);
         button(fourth, "Horario de luces", () -> lightScheduleOptions(LightTarget.BOTH));
         button(fifth, "Modo descanso", this::restModeOptions);
-        panel.addView(first); panel.addView(second); panel.addView(third); panel.addView(fourth); panel.addView(fifth);
+        button(sixth, "Vincular teléfono", this::pairingOptions);
+        panel.addView(first); panel.addView(second); panel.addView(third); panel.addView(fourth); panel.addView(fifth); panel.addView(sixth);
         ScrollView optionsScroll = new ScrollView(this);
         optionsScroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
@@ -1230,6 +1231,66 @@ public class MainActivity extends Activity {
         TextView view = new TextView(this); view.setText(text); view.setTextColor(color); view.setTextSize(size); view.setGravity(Gravity.CENTER);
         parent.addView(view, new LinearLayout.LayoutParams(-1, -2)); return view;
     }
+    private void pairingOptions() {
+        HomeGatewayConfig.setEnabled(this, true);
+        Intent intent = new Intent(this, HomeGatewayService.class)
+            .setAction(HomeGatewayService.ACTION_PAIR)
+            .putExtra(HomeGatewayService.EXTRA_ENABLED, true);
+        startForegroundService(intent);
+        handler.postDelayed(() -> showPairingDialog(10), 300);
+    }
+
+    private void showPairingDialog(int retries) {
+        String code = HomeGatewayService.lastPairingCode;
+        if (code == null || code.isEmpty()) {
+            if (retries > 0) {
+                handler.postDelayed(() -> showPairingDialog(retries - 1), 300);
+                return;
+            }
+            showDialog(new AlertDialog.Builder(this)
+                .setTitle("Vincular teléfono")
+                .setMessage("No se pudo iniciar el gateway. Revisa la notificación de Andrómeda.")
+                .setPositiveButton("Cerrar", null).create());
+            return;
+        }
+        String pin = GatewayKeystore.pin(this);
+        String address = tailscaleAddress();
+        String data = "Casa: " + AssistantConfig.NAME + "\n"
+            + "Host: andromeda" + (address.isEmpty() ? "" : "   (o " + address + ")") + "\n"
+            + "Puerto: " + HomeGatewayServer.PORT + "\n"
+            + "Pin del certificado:\n" + (pin.isEmpty() ? "(certificado no instalado)" : pin) + "\n"
+            + "Código: " + code + "   (caduca en 2 minutos)";
+        showDialog(new AlertDialog.Builder(this)
+            .setTitle("Vincular teléfono")
+            .setMessage(data)
+            .setPositiveButton("Copiar datos", (dialog, which) -> copyPairing(data))
+            .setNeutralButton("Otro código", (dialog, which) -> pairingOptions())
+            .setNegativeButton("Cerrar", null)
+            .create());
+    }
+
+    private void copyPairing(String data) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText("Andromeda", data));
+        Toast.makeText(this, "Datos de conexión copiados", Toast.LENGTH_SHORT).show();
+    }
+
+    private String tailscaleAddress() {
+        android.net.ConnectivityManager manager = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (manager == null) return "";
+        for (android.net.Network network : manager.getAllNetworks()) {
+            android.net.LinkProperties properties = manager.getLinkProperties(network);
+            if (properties == null) continue;
+            for (android.net.LinkAddress address : properties.getLinkAddresses()) {
+                byte[] bytes = address.getAddress().getAddress();
+                if (bytes.length == 4 && (bytes[0] & 0xff) == 100
+                    && (bytes[1] & 0xff) >= 64 && (bytes[1] & 0xff) <= 127)
+                    return address.getAddress().getHostAddress();
+            }
+        }
+        return "";
+    }
+
     private Button button(LinearLayout parent, String text, Runnable action) {
         Button view = new Button(this); view.setText(text); view.setAllCaps(false); view.setTextSize(14); view.setTextColor(Color.rgb(224, 234, 255));
         GradientDrawable background = new GradientDrawable(); background.setColor(Color.rgb(22, 34, 55)); background.setCornerRadius(dp(14));
