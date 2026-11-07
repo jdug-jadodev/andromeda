@@ -279,6 +279,9 @@ final class HomeGatewayServer {
         if (!HomeGatewayConfig.remoteVoiceEnabled(context)) {
             return Response.error(403, "forbidden", "Las ordenes remotas estan apagadas.");
         }
+        if (!HomeGatewayConfig.voiceOrdersEnabled(context)) {
+            return Response.error(403, "forbidden", "Las ordenes por voz estan suspendidas.");
+        }
         if (!allow(device.id)) {
             return Response.error(429, "rate_limited", "Demasiadas ordenes; espera un momento.", true, 1000);
         }

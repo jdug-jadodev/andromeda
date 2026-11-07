@@ -27,6 +27,17 @@ final class HomeGatewayConfig {
             .edit().putBoolean("remote_voice_enabled", value).apply();
     }
 
+    /** Ordenes por voz: suspendidas por ahora; el texto sigue disponible. */
+    static boolean voiceOrdersEnabled(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean("voice_orders_enabled", false);
+    }
+
+    static void setVoiceOrdersEnabled(Context context, boolean value) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("voice_orders_enabled", value).apply();
+    }
+
     /** Mensajes de voz: se encienden al vincular un telefono, nunca solos. */
     static boolean messagesEnabled(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
