@@ -1255,18 +1255,112 @@ public class MainActivity extends Activity {
         }
         String pin = GatewayKeystore.pin(this);
         String address = tailscaleAddress();
-        String data = "Casa: " + AssistantConfig.NAME + "\n"
-            + "Host: andromeda" + (address.isEmpty() ? "" : "   (o " + address + ")") + "\n"
+        String data = "Andrómeda · Casa\n"
+            + "Host: andromeda\n"
+            + (address.isEmpty() ? "" : "IP: " + address + "\n")
             + "Puerto: " + HomeGatewayServer.PORT + "\n"
-            + "Pin del certificado:\n" + (pin.isEmpty() ? "(certificado no instalado)" : pin) + "\n"
-            + "Código: " + code + "   (caduca en 2 minutos)";
+            + "Pin del certificado: " + (pin.isEmpty() ? "(no instalado)" : pin) + "\n"
+            + "Código: " + code + " (caduca en 2 minutos)";
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(4), dp(18), dp(4));
+
+        TextView intro = new TextView(this);
+        intro.setText("En el teléfono: abre Andrómeda, escribe estos datos y pulsa Emparejar.");
+        intro.setTextSize(12);
+        intro.setTextColor(Color.rgb(151, 166, 195));
+        intro.setLineSpacing(0, 1.12f);
+        content.addView(intro);
+
+        LinearLayout columns = new LinearLayout(this);
+        columns.setOrientation(LinearLayout.HORIZONTAL);
+        columns.setPadding(0, dp(8), 0, 0);
+
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout codeCard = pairingCard(Color.rgb(32, 23, 58));
+        codeCard.addView(pairingLabel("CÓDIGO"));
+        TextView codeView = pairingValue(code, 34, Color.WHITE);
+        codeView.setGravity(Gravity.CENTER_HORIZONTAL);
+        codeView.setLetterSpacing(0.08f);
+        codeCard.addView(codeView);
+        TextView expiry = new TextView(this);
+        expiry.setText("Caduca en 2 minutos. Pulsa «Otro código» si se vence.");
+        expiry.setTextSize(11);
+        expiry.setTextColor(Color.rgb(151, 166, 195));
+        expiry.setGravity(Gravity.CENTER_HORIZONTAL);
+        codeCard.addView(expiry);
+        left.addView(codeCard, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout connection = pairingCard(Color.rgb(15, 24, 42));
+        connection.addView(pairingLabel("CONEXIÓN"));
+        connection.addView(pairingValue("Host     andromeda"
+            + (address.isEmpty() ? "" : "\nIP       " + address)
+            + "\nPuerto   " + HomeGatewayServer.PORT, 12, Color.rgb(224, 234, 255)));
+        right.addView(connection, new LinearLayout.LayoutParams(-1, -2));
+
+        LinearLayout certificate = pairingCard(Color.rgb(15, 24, 42));
+        certificate.addView(pairingLabel("PIN DEL CERTIFICADO"));
+        certificate.addView(pairingValue(pin.isEmpty() ? "Certificado no instalado" : pin, 9,
+            pin.isEmpty() ? Color.rgb(255, 120, 120) : Color.rgb(191, 183, 255)));
+        LinearLayout.LayoutParams certParams = new LinearLayout.LayoutParams(-1, -2);
+        certParams.setMargins(0, dp(8), 0, 0);
+        right.addView(certificate, certParams);
+
+        columns.addView(left, new LinearLayout.LayoutParams(0, -1, 1.1f));
+        columns.addView(right, new LinearLayout.LayoutParams(0, -1, 1f));
+        content.addView(columns, new LinearLayout.LayoutParams(-1, -2));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(content);
         showDialog(new AlertDialog.Builder(this)
             .setTitle("Vincular teléfono")
-            .setMessage(data)
+            .setView(scroll)
             .setPositiveButton("Copiar datos", (dialog, which) -> copyPairing(data))
             .setNeutralButton("Otro código", (dialog, which) -> pairingOptions())
             .setNegativeButton("Cerrar", null)
             .create());
+    }
+
+    private LinearLayout pairingCard(int color) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(dp(16));
+        card.setBackground(background);
+        return card;
+    }
+
+    private TextView pairingLabel(String text) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(9);
+        view.setTextColor(Color.rgb(151, 166, 195));
+        view.setLetterSpacing(0.12f);
+        view.setPadding(0, 0, 0, dp(4));
+        return view;
+    }
+
+    private TextView pairingValue(String text, int size, int color) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        view.setTypeface(Typeface.MONOSPACE);
+        view.setTextIsSelectable(true);
+        view.setLineSpacing(0, 1.12f);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams pairingParams(int top) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, dp(top), 0, 0);
+        return params;
     }
 
     private void copyPairing(String data) {
