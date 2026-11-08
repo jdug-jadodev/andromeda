@@ -1,6 +1,7 @@
 """Authenticated turn-bound agenda grants and read-only web results. No event executor."""
 from datetime import datetime
 import re
+import time
 import uuid
 
 from agenda_requests import BOGOTA, request
@@ -166,8 +167,14 @@ class AssistantToolsTrial:
                 detail = data.get('response', data) if isinstance(data, dict) else {}
                 if isinstance(detail, dict) and detail.get('sent') is False:
                     return {'text': 'No pude apagar la TV: no responde en la red.'}
-                if isinstance(detail, dict) and detail.get('confirmed') is False:
-                    return {'text': 'Envié la orden de apagado. Si sigue encendida, revisa el control por red de la TV.'}
+                # Never claim it is off without checking: wait and ask the TV.
+                time.sleep(2.0)
+                try:
+                    state = tv_control.status(timeout=3)
+                except tv_control.TVError:
+                    state = {}
+                if state.get('reachable'):
+                    return {'text': 'La TV sigue encendida; no pude apagarla. Revisa su conexión por red.'}
                 return {'text': 'Listo, la TV quedó apagada.'}
             if kind == 'tv_volume':
                 if 'level' in result:

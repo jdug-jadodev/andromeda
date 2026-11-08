@@ -34,8 +34,8 @@ def _call(method, path, body=None, timeout=10):
         raise TVError('network', str(e))
 
 
-def status():
-    return _call('GET', '/status')
+def status(timeout=10):
+    return _call('GET', '/status', timeout=timeout)
 
 
 def apps():
