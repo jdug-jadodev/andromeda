@@ -15,7 +15,7 @@ def words(text):
 
 
 class WakeStability:
-    def __init__(self, target, stable_seconds=0.16, minimum_confidence=0.85):
+    def __init__(self, target, stable_seconds=0.16, minimum_confidence=0.55):
         tokens = words(target)
         if len(tokens) != 1:
             raise ValueError("Expected one wake word")
@@ -32,6 +32,8 @@ class WakeStability:
         if self.latched:
             return False
         if self.target not in words(text) or (confidence is not None and confidence < self.minimum_confidence):
+            if self.target in words(text):
+                print(f"wake_heard={text!r} conf={confidence}", flush=True)
             self.since = None
             return False
         if self.since is None:
