@@ -107,7 +107,7 @@ public class VoiceService extends Service {
         }
         @Override public boolean busy() {
             return speaking || messagePlaying || remoteVoiceActive || awaitingContext || cancelling || audioYielded
-                || conversationTurn.hasActiveTurn();
+                || conversationTurn.hasActiveTurn() && !conversationTurn.stale(SystemClock.elapsedRealtime());
         }
         @Override public void send(JSONObject order) {
             final String id = order.optString("id");
@@ -133,7 +133,8 @@ public class VoiceService extends Service {
         }
         @Override public boolean busy() {
             return speaking || messagePlaying || remoteVoiceActive || awaitingContext || cancelling
-                || audioYielded || dialogueListening || conversationTurn.hasActiveTurn();
+                || audioYielded || dialogueListening
+                || conversationTurn.hasActiveTurn() && !conversationTurn.stale(SystemClock.elapsedRealtime());
         }
         @Override public boolean play(String id, byte[] pcm, long durationMs) {
             if (!ready() || busy() || remoteVoiceActive) return false;
@@ -650,6 +651,10 @@ public class VoiceService extends Service {
                 }
                 if (continuousVoice && audioYielded && !resumeRequested && !awaitingContext) {
                     resumeRequested = true; awaitingContext = true; speaking = true; control("audio_resume"); awaitContextTimeout();
+                }
+                if (conversationTurn.stale(SystemClock.elapsedRealtime())) {
+                    conversationTurn.clear();
+                    if (activeSpeechId.isEmpty()) speaking = false;
                 }
                 if (speaking || messagePlaying || remoteVoiceActive || awaitingContext || SystemClock.elapsedRealtime() < resumeAfter || silenceListener.busy()) {
                     if (recording) {
@@ -1181,7 +1186,12 @@ public class VoiceService extends Service {
                              : "LFM pensando · pausando micrófono" + (assistantTools ? " · agenda/web experimental" : timerTrial ? " · timer experimental" : " · sin acciones"), FaceState.THINKING, "Escuché: " + event.optString("text"));
                         main.postDelayed(() -> {
                             if (running && conversationTurn.matches(id) && conversationTurn.expiredBeforeStart(SystemClock.elapsedRealtime())) {
-                                lastError = "Se agotó el plazo; respuesta descartada"; stopSelf();
+                                // One late turn must never stop the house: discard it
+                                // and keep listening for the next order.
+                                conversationTurn.clear();
+                                speaking = false;
+                                lastError = "Se agotó el plazo; respuesta descartada";
+                                state("No llegó la respuesta a tiempo; sigo escuchando", FaceState.READY, null);
                             }
                         }, Math.max(0, deadline - SystemClock.elapsedRealtime()));
                     } else if ("say".equals(type)) {

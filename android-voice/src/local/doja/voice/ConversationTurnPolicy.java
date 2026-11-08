@@ -49,6 +49,8 @@ final class ConversationTurnPolicy {
     synchronized boolean awaitingClose() { return !id.isEmpty() && ended && !closeReason.isEmpty(); }
     synchronized String closeReason() { return closeReason; }
     synchronized boolean expiredBeforeStart(long now) { return !id.isEmpty() && !started && !ended && now >= deadline; }
+    /** A turn past its deadline is not a reason to reject new orders forever. */
+    synchronized boolean stale(long now) { return !id.isEmpty() && now > deadline + 20000L; }
     synchronized boolean hasActiveTurn() { return !id.isEmpty(); }
     synchronized void clear() { id = ""; scheduled = started = ended = false; closeReason = ""; }
     synchronized void resetScope() {
