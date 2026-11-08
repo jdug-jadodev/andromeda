@@ -159,7 +159,15 @@ class AssistantToolsTrial:
                     return {'text': 'Envié la señal de encendido. Dale unos segundos y, si no prende, revisa el encendido por red de la TV.'}
                 return {'text': 'Envié la señal de encendido. Dale unos segundos y, si no prende, revisa el encendido por red de la TV.'}
             if kind == 'tv_power_off':
-                tv_control.power_off()
+                try:
+                    data = tv_control.power_off() or {}
+                except tv_control.TVError:
+                    return {'text': 'No pude apagar la TV: no responde en la red.'}
+                detail = data.get('response', data) if isinstance(data, dict) else {}
+                if isinstance(detail, dict) and detail.get('sent') is False:
+                    return {'text': 'No pude apagar la TV: no responde en la red.'}
+                if isinstance(detail, dict) and detail.get('confirmed') is False:
+                    return {'text': 'Envié la orden de apagado. Si sigue encendida, revisa el control por red de la TV.'}
                 return {'text': 'Listo, la TV quedó apagada.'}
             if kind == 'tv_volume':
                 if 'level' in result:
