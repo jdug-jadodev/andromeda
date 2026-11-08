@@ -759,13 +759,14 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         emit(pending_reset.request())
 
     def completed_turn(continue_chat):
-        nonlocal state, recognizer, timeline, turn
+        nonlocal state, recognizer, timeline, turn, entry
         # A remote order never opens a follow-up window in the house: after the
         # answer the resident goes back to wake and stops listening to the room.
         # A pending confirmation is kept so the same phone can say "si" next.
         if turn is not None and turn.get('remote'):
             recognizer = timeline = turn = None
-            preroll.clear(); detector.reset(); state = 'wake'
+            preroll.clear(); detector.reset(); flow.reset(); state = 'wake'
+            if entry is not None: entry.cancel_pending()
             print(json.dumps({'event': 'conversation_state', 'source': source, 'state': state}), flush=True)
             emit({'type': 'state', 'state': 'wake'})
             return
@@ -833,6 +834,33 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                 reset(continue_chat=True); return
             if response is not None:
                 timer_response(response); return
+            # La orden no responde al formulario pendiente: descartalo y
+            # atiendela como una peticion nueva, sin que el dialogo la trague.
+            if timers.pending_dialogue:
+                timers.cancel(); flow.reset()
+        if assistant_tools:
+            # La TV se ejecuta y responde aqui mismo: el turno remoto no puede
+            # quedarse esperando al modelo asincrono (eso dejaba la casa ocupada).
+            routed = None
+            try:
+                import deterministic_router
+                routed = deterministic_router.route(command['text'], model)
+            except Exception:
+                routed = None
+            if isinstance(routed, dict) and str(routed.get('kind', '')).startswith('tv_'):
+                try:
+                    response = timers.model_result(routed, turn, session_id, context_id, session_end)
+                except ValueError:
+                    response = None
+                if response is not None:
+                    timer_response(response); return
+            if isinstance(routed, dict) and routed.get('kind') == 'agenda_dialogue_start':
+                # Remoto: sin dialogo de varios pasos que deja la sesion colgada.
+                question = ('¿Cuándo quieres que te lo recuerde?'
+                            if routed.get('event_kind') == 'REMINDER'
+                            else '¿Para qué día y a qué hora quieres la alarma?')
+                say(question, offered_more=False)
+                return
         turn['compute_end'] = model.start(command['text'], current, session_end)
         state = 'thinking'
 
