@@ -150,6 +150,23 @@ Pruebas realizadas:
 - No se probó todavía un reinicio real del teléfono con el hook de arranque; el hook se ejecutó
   manualmente y funciona.
 
+### Corrección del vigilante que dejaba subir a 100% — 2026-11-08
+
+- Síntoma: la batería volvió a llegar al 100% y el log alternaba cada minuto `PAUSE` y
+  `WATCHDOG_RESUME`.
+- Causa: el vigilante trataba un `charge-guard.pid` ausente como «guard muerto» y reanudaba la
+  carga. El `pid` desaparecía porque `restore()` lo borraba al recibir una señal, aunque el
+  guard siguiera vivo; después nadie lo reescribía. Resultado: el guard pausaba y el vigilante
+  reanudaba 60 s después, en bucle, y la batería seguía cargando hasta 100%.
+- Corrección:
+  - El guard reescribe su `pid` en cada ciclo y una señal (TERM/HUP) lo termina de verdad tras
+    restaurar la carga.
+  - El vigilante usa el **latido** como fuente de verdad: mientras el latido tenga menos de 180 s
+    no toca nada, aunque falte el `pid`. Solo si el latido falta o está viejo reanuda y reinicia.
+  - El ciclo del guard baja a 30 s.
+- Verificado en el Moto el 2026-11-08: guard y vigilante con el código nuevo, `input_suspend=1`
+  estable a 100% (`Not charging`), ciclos cada 30 s y sin ningún `WATCHDOG_RESUME`.
+
 Esta medida reduce el tiempo a 100% y el calor, pero **no es una protección certificada** ni
 sustituye cargador/cable/regleta en buen estado. Ante hinchazón, olor o calor anormal, detener
 la carga y retirar el equipo.

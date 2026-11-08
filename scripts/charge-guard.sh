@@ -15,6 +15,7 @@ MAX=80
 MIN=70
 HOT=400
 COOL=380
+INTERVAL=30
 
 read_value() {
   if [ -r "$1" ]; then cat "$1" 2>/dev/null; else printf 'unknown\n'; fi
@@ -34,13 +35,19 @@ write_action() {
   temp=$(read_value "$BAT/temp")
   status=$(read_value "$BAT/status")
   suspended=$(read_value "$NODE")
-  printf '%s epoch=%s capacity=%s temp_deci_c=%s status=%s input_suspend=%s action=%s\n' \
-    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(date +%s)" "$cap" "$temp" "$status" "$suspended" "$action" >> "$LOG"
+  printf '%s epoch=%s pid=%s capacity=%s temp_deci_c=%s status=%s input_suspend=%s action=%s\n' \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(date +%s)" "$$" "$cap" "$temp" "$status" "$suspended" "$action" >> "$LOG"
 }
 restore() {
   echo 0 > "$NODE" 2>/dev/null
   write_action EXIT_RESTORE 2>/dev/null
   rm -f "$PID" "$HEARTBEAT" "$REASON"
+}
+on_signal() {
+  # A signal means stop for real: restore charging and leave the loop so a
+  # half-dead guard cannot keep fighting the watchdog.
+  restore
+  exit 0
 }
 
 if [ "${1:---loop}" = --loop ]; then
@@ -52,9 +59,14 @@ mkdir -p "$BASE" || exit 1
 chmod 700 "$BASE" || exit 1
 [ -w "$NODE" ] || { write_action NODE_UNAVAILABLE; exit 1; }
 echo $$ > "$PID"
-trap restore EXIT INT TERM HUP
+trap on_signal INT TERM HUP
+trap restore EXIT
 
 while :; do
+  # The PID file is rewritten every cycle: restore() removes it on any exit,
+  # and a stale copy must never make the watchdog think another guard is live.
+  current=$(cat "$PID" 2>/dev/null || echo '')
+  [ "$current" = "$$" ] || echo $$ > "$PID"
   if [ -f "$DISABLED" ]; then
     write_action DISABLED
     restore
@@ -76,6 +88,9 @@ while :; do
             && [ "$reason" = thermal ]; then
       # Resume only from a real thermal pause, never from the normal 80% pause.
       echo 0 > "$NODE" 2>/dev/null && { rm -f "$REASON"; action=THERMAL_RESUME; }
+    elif [ "$suspended" = 1 ] && [ -z "$reason" ]; then
+      # Recover the reason after an unclean stop, so the 80% pause still holds.
+      if [ "$cap" -ge "$MAX" ] && [ "$temp" -lt "$HOT" ]; then echo normal > "$REASON"; fi
     fi
   else
     action=INVALID_SENSOR
@@ -83,5 +98,5 @@ while :; do
   rotate_log
   write_action "$action"
   date +%s > "$HEARTBEAT"
-  sleep 60
+  sleep "$INTERVAL"
 done
