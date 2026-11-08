@@ -161,12 +161,15 @@ def route(text, model):
     if is_cancel(text):
         return {'kind': 'cancelled'}
     plain = normalized(text)
+    print(f"router_plain={plain!r}", flush=True)
     for name in TOOL_ORDER:
         if _matches(name, plain):
+            print(f"router_match={name}", flush=True)
             try:
                 return _dispatch(name, text, model)
             except (ValueError, KeyError, TypeError):
                 return {'kind': 'tools_rejected'}
+    print("router_no_match", flush=True)
     # Duración a secas ("5 minutos", "media hora") → temporizador, como follow-up
     # tras "pon un temporizador". El guard Java acepta la misma forma.
     try:

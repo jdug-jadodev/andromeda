@@ -30,7 +30,10 @@ def _call(method, path, body=None, timeout=10):
         if e.code == 400:
             raise TVError('param', e.read().decode())
         raise TVError('tv', e.read().decode())
-    except (urllib.error.URLError, TimeoutError) as e:
+    except TVError:
+        raise
+    except Exception as e:
+        # RemoteDisconnected, timeouts, JSON roto: nunca debe tumbar al residente.
         raise TVError('network', str(e))
 
 

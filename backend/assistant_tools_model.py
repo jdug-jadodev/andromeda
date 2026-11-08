@@ -263,7 +263,9 @@ class AssistantToolsModel(ConversationModel):
             'history_turns_available': len(self.memory.pairs)}
         try:
             import deterministic_router
+            print(f"router_tv={getattr(self, 'tv_enabled', None)}", flush=True)
             result = deterministic_router.route(text, self)
+            print(f"router_result={result.get('kind') if result else None}", flush=True)
             _debug(text, 'deterministic', result.get('kind', '?'), 'deterministic')
         except Exception as error:
             self.error = type(error).__name__; result = None

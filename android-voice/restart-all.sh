@@ -3,7 +3,15 @@
 set -eu
 [ "$(id -u)" = 0 ] || exit 2
 am force-stop local.doja.voice
-sleep 3
+sleep 2
+# Un residente anterior no debe quedarse con el canal: el nuevo no arrancaria
+# y seguiriamos usando codigo viejo.
+for p in $(ps -ef | grep -E 'resident_voice\.py|tv_api\.py serve' | grep -v grep | awk '{print $2}'); do
+  kill -TERM "$p" 2>/dev/null || true
+done
+sleep 4
+# El log se trunca en cada arranque limpio.
+: > /data/local/tmp/resident.log
 nohup sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms \
   >/data/local/tmp/resident-supervisor.log 2>&1 &
 i=0
