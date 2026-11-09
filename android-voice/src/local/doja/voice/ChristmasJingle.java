@@ -3,9 +3,12 @@ package local.doja.voice;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.media.AudioAttributes;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import java.io.IOException;
 
 /**
@@ -57,9 +60,28 @@ final class ChristmasJingle {
             player = next;
             next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
+            // Same rule as her voice and voice notes: the speaker, even when a
+            // headset or a Bluetooth device is connected. Without this the
+            // jingle went to the earpiece and the scene was silent.
+            AudioDeviceInfo speaker = speaker();
+            if (speaker != null) next.setPreferredDevice(speaker);
+            next.setVolume(1f, 1f);
             next.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
             next.setOnCompletionListener(done -> { if (player == done) stop(); });
             next.prepare(); next.start();
-        } catch (IOException | RuntimeException unavailable) { stop(); }   // without the jingle the scene still plays
+            Log.i("AndromedaJingle", "playing on " + (speaker == null ? "default" : "speaker"));
+        } catch (IOException | RuntimeException unavailable) {
+            Log.w("AndromedaJingle", "unavailable " + unavailable.getClass().getSimpleName());
+            stop();   // without the jingle the scene still plays
+        }
+    }
+
+    private AudioDeviceInfo speaker() {
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) return null;
+        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
+        }
+        return null;
     }
 }

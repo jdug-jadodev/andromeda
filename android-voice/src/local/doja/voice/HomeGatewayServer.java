@@ -345,7 +345,10 @@ final class HomeGatewayServer {
             .put("origin", "remote")
             .put("server_time_ms", payload.optLong("server_time_ms", System.currentTimeMillis()));
         if (payload.has("heard")) answer.put("heard", payload.optString("heard"));
-        if (wantWav && awaitSpeech(id, 5000L)) {
+        // A scene answer (Santa, self-destruct) starts speaking several seconds
+        // after the text arrives, so 5 s was not enough and the phone got no
+        // audio for Christmas. Wait past the longest scene delay.
+        if (wantWav && awaitSpeech(id, 12000L)) {
             answer.put("say_wav", "/v1/speech/" + id + ".wav");
         }
         return Response.json(200, answer);
