@@ -168,16 +168,20 @@ class AssistantToolsTrial:
                 print(f"tv_power_off sent={detail.get('sent')} confirmed={detail.get('confirmed')}", flush=True)
                 if isinstance(detail, dict) and detail.get('sent') is False:
                     return {'text': 'No pude apagar la TV: no responde en la red.'}
-                # Never claim it is off without checking: wait and ask the TV.
-                time.sleep(2.0)
-                try:
-                    state = tv_control.status(timeout=3)
-                except tv_control.TVError as error:
-                    state = {'error': error.kind}
-                print(f"tv_power_off status={state}", flush=True)
-                if state.get('reachable'):
-                    return {'text': 'La TV sigue encendida; no pude apagarla. Revisa su conexión por red.'}
-                return {'text': 'Listo, la TV quedó apagada.'}
+                # Never claim it is off without checking: the TV takes several
+                # seconds to drop off the network.
+                state = {}
+                limit = time.monotonic() + 10.0
+                while time.monotonic() < limit:
+                    time.sleep(2.0)
+                    try:
+                        state = tv_control.status(timeout=3)
+                    except tv_control.TVError as error:
+                        state = {'error': error.kind}
+                    print(f"tv_power_off status={state}", flush=True)
+                    if not state.get('reachable'):
+                        return {'text': 'Listo, la TV quedó apagada.'}
+                return {'text': 'La TV sigue encendida; no pude apagarla. Revisa su conexión por red.'}
             if kind == 'tv_volume':
                 if 'level' in result:
                     tv_control.set_volume(result['level'])
