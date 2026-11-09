@@ -121,12 +121,7 @@ final class MessagePlayback {
 
     /** Android cannot route MediaPlayer per app, but it can prefer a device. */
     private AudioDeviceInfo speaker() {
-        AudioManager audio = context.getSystemService(AudioManager.class);
-        if (audio == null) return null;
-        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
-        }
-        return null;
+        return AudioRoute.preferred(context);
     }
 
     void shutdown() {

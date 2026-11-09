@@ -60,16 +60,14 @@ final class ChristmasJingle {
             player = next;
             next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-            // Same rule as her voice and voice notes: the speaker, even when a
-            // headset or a Bluetooth device is connected. Without this the
-            // jingle went to the earpiece and the scene was silent.
-            AudioDeviceInfo speaker = speaker();
-            if (speaker != null) next.setPreferredDevice(speaker);
+            // Si hay audifonos, el jingle va con ellos; si no, al altavoz.
+            AudioDeviceInfo output = speaker();
+            if (output != null) next.setPreferredDevice(output);
             next.setVolume(1f, 1f);
             next.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
             next.setOnCompletionListener(done -> { if (player == done) stop(); });
             next.prepare(); next.start();
-            Log.i("AndromedaJingle", "playing on " + (speaker == null ? "default" : "speaker"));
+            Log.i("AndromedaJingle", "playing on " + (output == null ? "default" : output.getType()));
         } catch (IOException | RuntimeException unavailable) {
             Log.w("AndromedaJingle", "unavailable " + unavailable.getClass().getSimpleName());
             stop();   // without the jingle the scene still plays
@@ -77,11 +75,6 @@ final class ChristmasJingle {
     }
 
     private AudioDeviceInfo speaker() {
-        AudioManager audio = context.getSystemService(AudioManager.class);
-        if (audio == null) return null;
-        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
-        }
-        return null;
+        return AudioRoute.preferred(context);
     }
 }

@@ -232,7 +232,10 @@ final class SpeakerSpeech {
                 android.util.Log.i("AndromedaSpeech", "silent reply " + publicId);
             }
             AudioDeviceInfo routed = track.getRoutedDevice();
-            if (routed != null) lastRoutedType = routed.getType();
+            if (routed != null) {
+                lastRoutedType = routed.getType();
+                android.util.Log.i("AndromedaSpeech", "route=" + routed.getType());
+            }
             notifyStart(publicId);
             try (InputStream input = new FileInputStream(file)) {
                 skipFully(input, pcm.dataOffset);
@@ -272,12 +275,7 @@ final class SpeakerSpeech {
     }
 
     private AudioDeviceInfo speaker() {
-        AudioManager audio = context.getSystemService(AudioManager.class);
-        if (audio == null) return null;
-        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
-        }
-        return null;
+        return AudioRoute.preferred(context);
     }
 
     private void notifyStart(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onStart(id); } catch (RuntimeException ignored) { } }
