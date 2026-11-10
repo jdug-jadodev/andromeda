@@ -253,16 +253,33 @@ class AssistantToolsModel(ConversationModel):
                 if self.clock()<self.work_deadline: self.result=christmas or {'kind':'reply','text':local}
                 else: self.error='TimeoutError'
                 self.done.set(); return self.work_deadline
-        # Fase 1: router determinista. Sin llama-server ni búsqueda web local.
-        # El import es tardío para evitar import circular con deterministic_router.
+        # Fase 1: motor elegido por configuración. DeepSeek primero (natural y con
+        # hilo de conversación); el router determinista sigue siendo el respaldo
+        # permanente si no hay clave, red, saldo o si el cortacircuitos está abierto.
+        # Cancelar, autodestrucción y TV nunca esperan a la nube.
         self.cancelled.clear(); self.done.clear(); self.result = self.error = None
-        self.memory.messages(text, activity_ms=speech_end)
+        messages = self.memory.messages(text, activity_ms=speech_end)
         self.context_metrics = {'tools_model_choice': 'deterministic', 'tools_selected_tool': 'none',
             'tools_model_kind': 'reply', 'tools_validation': 'accepted',
             'tools_web_attempted': False, 'input_tokens': 0, 'input_token_budget': 1536,
             'history_turns_available': len(self.memory.pairs)}
         try:
             import deterministic_router
+        except Exception as error:
+            self.error = type(error).__name__
+            self.done.set()
+            return self.work_deadline
+        if (deterministic_router.planner_mode() == 'deepseek_first'
+                and deterministic_router.cloud_enabled()
+                and deterministic_router.planner_available()
+                and not deterministic_router.deterministic_priority(text)
+                and not (self.tv_enabled and re.search(TV, normalized(text)))):
+            self._cloud_primary(text, messages[1:-1])
+            return self.work_deadline
+        if deterministic_router.planner_mode() == 'deepseek_first' and deterministic_router.cloud_enabled():
+            self.context_metrics.update(planner_engine='deterministic',
+                planner_reason='breaker_open' if not deterministic_router.planner_available() else 'local_priority')
+        try:
             print(f"router_tv={getattr(self, 'tv_enabled', None)}", flush=True)
             result = deterministic_router.route(text, self)
             print(f"router_result={result.get('kind') if result else None}", flush=True)
@@ -272,31 +289,63 @@ class AssistantToolsModel(ConversationModel):
         if result is None:
             self.done.set()
             return self.work_deadline
-        # Fase 2: si el determinista no entendió y DeepSeek está configurado,
-        # razona en la nube (asíncrono, sin bloquear el bucle de sesión).
-        if (result.get('kind') == 'reply' and result.get('text') == FALLBACK
-                and deterministic_router.cloud_enabled()):
-            self._cloud_fallback(text)
-            return self.work_deadline
-        self.result = result
+        self.result = self._planner_notice(result)
         self.done.set()
         return self.work_deadline
 
-    def _cloud_fallback(self, text):
+    @staticmethod
+    def _planner_notice(result):
+        """Aviso único de saldo/clave, solo en respuestas habladas normales."""
+        try:
+            import tool_planner
+            notice = tool_planner.take_notice()
+        except Exception:
+            return result
+        if notice and isinstance(result, dict) and result.get('kind') == 'reply':
+            return dict(result, text=(notice + ' ' + str(result.get('text', '')).strip()).strip())
+        return result
+
+    def _cloud_primary(self, text, history):
+        """DeepSeek primero; si falla, la misma frase pasa por el determinista."""
         import deterministic_router
+        self.context_metrics.update(tools_model_choice='cloud', tools_validation='accepted',
+                                    tools_selected_tool='none')
+
         def work():
             try:
-                result = deterministic_router.route_cloud(text, self)
+                result, code, tool = deterministic_router.route_cloud_first(text, self, history)
+                engine = 'deepseek'
                 if result is None:
-                    result = {'kind': 'reply', 'text': FALLBACK}
+                    engine = 'deterministic'
+                    result = deterministic_router.route(text, self)
+                    try:
+                        import tool_planner
+                        latency = tool_planner.status().get('latency_ms', 0)
+                    except Exception:
+                        latency = 0
+                    result = self._planner_notice(result)
+                else:
+                    try:
+                        import tool_planner
+                        latency = tool_planner.status().get('latency_ms', 0)
+                    except Exception:
+                        latency = 0
+                print(json.dumps({'event': 'planner', 'engine': engine, 'reason': code,
+                                  'tool': tool, 'latency_ms': latency}), flush=True)
                 if not self.cancelled.is_set():
+                    kind = result.get('kind', 'reply') if isinstance(result, dict) else 'reply'
                     self.result = result
-                    _debug(text, 'cloud', result.get('kind', '?'), 'cloud_fallback')
+                    self.context_metrics.update(
+                        tools_model_choice='cloud' if engine == 'deepseek' else 'deterministic',
+                        tools_selected_tool=tool if engine == 'deepseek' else 'none',
+                        tools_model_kind=kind,
+                        tools_validation='reply' if kind == 'reply' else 'accepted',
+                        planner_engine=engine, planner_reason=code, planner_latency_ms=latency)
             except Exception as error:
                 self.error = type(error).__name__
             finally:
                 self.done.set()
-        self.thread = threading.Thread(target=work, daemon=True, name='deepseek-fallback')
+        self.thread = threading.Thread(target=work, daemon=True, name='deepseek-primary')
         self.thread.start()
 
     def enable_tv(self):

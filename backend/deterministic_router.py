@@ -194,22 +194,87 @@ def cloud_enabled():
     return cloud_model.enabled()
 
 
-def route_cloud(text, model):
-    """Fallback a DeepSeek. Devuelve un dict final (texto o herramienta despachada)
-    o None si no hay key / no responde / falla la red."""
+def planner_mode():
+    """Motor pedido: deepseek_first, deepseek_fallback o deterministic."""
     try:
-        import cloud_model
-        raw = cloud_model.reason(text, model)
+        import tool_planner
+        return tool_planner.policy()
     except Exception:
-        return None
+        return 'deterministic'
+
+
+def planner_available():
+    """False mientras el cortacircuitos esté abierto."""
+    try:
+        import tool_planner
+        return tool_planner.available()
+    except Exception:
+        return False
+
+
+def deterministic_priority(text):
+    """Órdenes que nunca esperan a la nube: cancelar y autodestrucción.
+
+    La TV conserva además su ruta local en el llamador porque se ejecuta y
+    verifica de forma síncrona. El resto puede ir primero a DeepSeek.
+    """
+    if is_cancel(text):
+        return True
+    from assistant_tools_model import tool_intent_matches
+    return tool_intent_matches('self_destruct', text)
+
+
+def route_cloud_first(text, model, history=None):
+    """DeepSeek como motor primario.
+
+    Devuelve `(resultado, codigo, herramienta)`. `resultado` es None cuando la
+    nube no pudo o no debió responder; el llamador usa entonces el router
+    determinista. Ninguna herramienta se ejecuta sin pasar por `_dispatch`,
+    que es la misma capa de validación de siempre.
+    """
+    import time
+    try:
+        import tool_planner
+        import cloud_model
+    except Exception:
+        return None, 'disabled', 'none'
+    if not cloud_model.enabled():
+        return None, 'disabled', 'none'
+    if not tool_planner.available():
+        return None, 'breaker_open', 'none'
+    started = time.monotonic()
+    try:
+        raw, code = cloud_model.reason_ex(text, model, history)
+    except Exception:
+        raw, code = None, 'exception'
+    latency = int((time.monotonic() - started) * 1000)
     if raw is None:
-        return None
+        tool_planner.failure(code, latency)
+        return None, code, 'none'
     if raw.get('kind') == 'text':
-        return {'kind': 'reply', 'text': raw['text']}
+        try:
+            from conversation_voice import conversational_reply
+            answer = conversational_reply({'content': raw['text']}, 'stop')
+        except Exception:
+            tool_planner.failure('invalid_text', latency)
+            return None, 'invalid_text', 'none'
+        tool_planner.success(latency)
+        return {'kind': 'reply', 'text': answer}, 'ok', 'none'
     name = raw.get('name')
     if name in TOOL_ORDER:
         try:
-            return _dispatch(name, text, model)
+            result = _dispatch(name, text, model)
         except (ValueError, KeyError, TypeError):
-            return {'kind': 'tools_rejected'}
-    return None
+            # El modelo eligió una herramienta que la casa rechaza: se cuenta el
+            # fallo y se deja que el determinista pruebe la misma frase.
+            tool_planner.failure('tool_rejected', latency)
+            return None, 'tool_rejected', name
+        tool_planner.success(latency)
+        return result, 'ok', name
+    tool_planner.failure('unknown_tool', latency)
+    return None, 'unknown_tool', 'none'
+
+
+def route_cloud(text, model):
+    """Compatibilidad con la fase anterior: solo el resultado o None."""
+    return route_cloud_first(text, model)[0]

@@ -101,7 +101,7 @@ def record_protocol_technical(inference_key,value):
 
 
 TOOLS_TECHNICAL_ENUMS = {
-    'choice': ('text', 'native', 'local'),
+    'choice': ('text', 'native', 'local', 'deterministic', 'cloud'),
     'tool': ('none', 'unvalidated', 'create_timer', 'create_alarm', 'create_reminder', 'search_web', 'set_phone_volume', 'control_lights', 'list_reminders', 'delete_reminder', 'self_destruct', 'tv_status', 'tv_power_on', 'tv_power_off', 'tv_volume', 'tv_audio', 'tv_inputs', 'tv_input', 'tv_open_app', 'tv_scene'),
     'result': ('reply', 'tools_rejected', 'timer_proposal', 'timer_rejected', 'agenda_proposal',
                'agenda_dialogue_start', 'alarm_delete_request', 'web_result', 'volume_proposal', 'volume_dialogue_start', 'light_proposal', 'reminder_list_request', 'reminder_delete_request', 'self_destruct', 'tv_status', 'tv_power_on', 'tv_power_off', 'tv_volume', 'tv_audio', 'tv_inputs', 'tv_input', 'tv_open_app', 'tv_scene'),
