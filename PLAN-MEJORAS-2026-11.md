@@ -351,7 +351,7 @@ se guarda con un nombre («atardecer»).
 |---|---|---|---|
 | 2026-11-09 | Plan creado | ✅ | Registro de las seis mejoras y reglas |
 | 2026-11-10 | 1. IA con herramientas | ✅ | DeepSeek primero (`ANDROMEDA_PLANNER=deepseek_first`), determinista de respaldo; probado en vivo con y sin clave (`bf17587`, `f913d0f`) |
-| 2026-11-10 | Autoarranque y recuperación | 🔄 | Usuario quitó el bloqueo. Ahora el gateway informa `status=ok`, `resident=running`, `remote_voice=true`, `tailscale=true`, y una orden de chat remoto respondió. APK `andromeda-autostart-v3.apk`; lock obsoleto y caída simulada recuperados. Falta un reinicio posterior a quitar el bloqueo para cerrar la validación de arranque en frío. |
+| 2026-11-10 | Autoarranque y recuperación | ✅ | Usuario confirmó reinicio real después de quitar el bloqueo: motor activo y micrófono abierto. Gateway `/v1/health` también informó residente/voz remota/Tailscale activos y respondió una orden. APK `andromeda-autostart-v3.apk`; lock obsoleto y caída simulada recuperados. |
 | | 2. Mensajes 24 h | ⏳ | Siguiente: repetir último, listar y reproducir uno; solo audio |
 | | 3. Memoria | 📝 | Pendiente |
 | | 4. Color hex | 📝 | Pendiente |
