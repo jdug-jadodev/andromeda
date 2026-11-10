@@ -275,7 +275,12 @@ final class SpeakerSpeech {
     }
 
     private AudioDeviceInfo speaker() {
-        return AudioRoute.preferred(context);
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) return null;
+        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
+        }
+        return null;
     }
 
     private void notifyStart(String id) { UtteranceProgressListener value = listener; if (value != null) try { value.onStart(id); } catch (RuntimeException ignored) { } }

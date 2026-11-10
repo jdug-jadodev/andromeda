@@ -60,7 +60,7 @@ final class ChristmasJingle {
             player = next;
             next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
-            // Si hay audifonos, el jingle va con ellos; si no, al altavoz.
+            // El jingle va siempre al altavoz, como su voz y los mensajes.
             AudioDeviceInfo output = speaker();
             if (output != null) next.setPreferredDevice(output);
             next.setVolume(1f, 1f);
@@ -75,6 +75,11 @@ final class ChristmasJingle {
     }
 
     private AudioDeviceInfo speaker() {
-        return AudioRoute.preferred(context);
+        AudioManager audio = context.getSystemService(AudioManager.class);
+        if (audio == null) return null;
+        for (AudioDeviceInfo device : audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+            if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) return device;
+        }
+        return null;
     }
 }
