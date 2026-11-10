@@ -6,29 +6,46 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
-/** Root bridge for the explicit user-facing activation button.
+/** Root bridge for activation and boot recovery.
  * Fixed commands only; no arbitrary shell, network, transcript or audio data. */
 final class AndromedaEngine {
     private static final String STATUS="/system/bin/sh /data/local/doha-voice/andromeda-resident-control.sh status";
+    private static final String RESIDENT_ALIVE="if /system/bin/ps -ef | /system/bin/grep '[r]esident_voice.py' >/dev/null; then echo alive; else echo absent; fi";
     private static final String START="/data/adb/magisk/busybox nohup /system/bin/sh /data/local/doha-voice/start-andromeda-resident.sh continuous-voice guided alarms >/dev/null 2>&1 &";
+    private static final String WATCHDOG="/data/adb/magisk/busybox nohup /system/bin/sh /data/local/doha-voice/watchdog.sh >/dev/null 2>&1 &";
     private static final long START_TIMEOUT_MS=120000L;
     private AndromedaEngine(){}
 
     static Result startAndWait(){
         try{
+            ensureWatchdog();
             String state=status();
-            if("running".equals(state))return new Result(true,"running");
+            boolean alive=residentAlive();
+            if("running".equals(state)&&alive)return new Result(true,"running");
+            // The metrics/lock record can survive a power loss after its
+            // process is gone. Treat that report as stale and let the guarded
+            // launcher recover the dead lock before starting a fresh resident.
+            if(("running".equals(state)||"preparing".equals(state))&&!alive)state="not_running";
             if(!"preparing".equals(state)&&!"not_running".equals(state))return new Result(false,state);
             if("not_running".equals(state)&&!launch())return new Result(false,"launch_failed");
             long until=System.currentTimeMillis()+START_TIMEOUT_MS;
             while(System.currentTimeMillis()<until){
-                Thread.sleep(750L); state=status();
-                if("running".equals(state))return new Result(true,"running");
-                if("not_running".equals(state))return new Result(false,"stopped_during_start");
+                Thread.sleep(750L); state=status(); alive=residentAlive();
+                if("running".equals(state)&&alive)return new Result(true,"running");
+                if("not_running".equals(state)&&!alive)return new Result(false,"stopped_during_start");
             }
             return new Result(false,"startup_timeout");
         }catch(InterruptedException interrupted){Thread.currentThread().interrupt();return new Result(false,"cancelled");}
         catch(Exception failure){return new Result(false,"bridge_unavailable");}
+    }
+
+    private static void ensureWatchdog() throws Exception {
+        String processes=runRoot("/system/bin/ps -ef",5000L);
+        if(!processes.contains("sh /data/local/doha-voice/watchdog.sh"))runRoot(WATCHDOG,5000L);
+    }
+
+    private static boolean residentAlive() throws Exception {
+        return "alive".equals(runRoot(RESIDENT_ALIVE,5000L).trim());
     }
 
     private static String status() throws Exception{

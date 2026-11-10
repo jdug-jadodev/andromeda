@@ -33,12 +33,32 @@ debian_user() {
     /opt/doha-voice/bin/python -B "$@"
 }
 if ss -lnt | grep -qE ':(11435|11436)[[:space:]]'; then exit 1; fi
-if dumpsys activity services local.doja.voice | grep -q ServiceRecord; then exit 1; fi
+# The phone gateway is allowed to stay up while the resident prepares. A live
+# VoiceService, however, owns the current stream and must not be duplicated.
+if dumpsys activity services local.doja.voice/.VoiceService | grep -q ServiceRecord; then exit 1; fi
 available=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
 temp=$(cat /sys/class/power_supply/battery/temp)
 [ "$available" -ge 1200000 ] && [ "$temp" -lt 380 ] || exit 1
 umask 077
-mkdir -m 700 "$LOCK" # Existing/stale/unknown lock is NEVER removed or replaced.
+
+# A power loss can leave the private lock behind even though its supervisor and
+# resident process are gone. Recover only a fully validated stale lock: exact
+# root-owned directory/members, a dead numeric PID and the expected private
+# work-path format. Never remove a live or malformed lock.
+if [ -e "$LOCK" ]; then
+  if ps -ef | grep '[r]esident_voice.py' >/dev/null; then exit 1; fi
+  [ -d "$LOCK" ] && [ ! -L "$LOCK" ] && [ "$(stat -c '%u %a' "$LOCK")" = '0 700' ] || exit 1
+  [ -f "$LOCK/pid" ] && [ ! -L "$LOCK/pid" ] && [ "$(stat -c '%u %a' "$LOCK/pid")" = '0 600' ] || exit 1
+  [ -f "$LOCK/work" ] && [ ! -L "$LOCK/work" ] && [ "$(stat -c '%u %a' "$LOCK/work")" = '0 600' ] || exit 1
+  OLD_PID=$(cat "$LOCK/pid")
+  echo "$OLD_PID" | grep -qE '^[0-9]+$' || exit 1
+  [ ! -d "/proc/$OLD_PID" ] || exit 1
+  OLD_WORK=$(cat "$LOCK/work")
+  echo "$OLD_WORK" | grep -qE '^/data/local/linux/debian-final/tmp/andromeda-resident\.[A-Za-z0-9]+$' || exit 1
+  rm -f "$LOCK/work" "$LOCK/pid"
+  rmdir "$LOCK"
+fi
+mkdir -m 700 "$LOCK"
 WORK=''
 INNER=''
 WORK_INODE=''

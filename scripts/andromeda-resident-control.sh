@@ -19,6 +19,10 @@ if [ "$1" = stop ]; then
   echo '{"state":"stop_requested","confirmed_stopped":false}'
   exit 0
 fi
+if ! ps -ef | grep '[r]esident_voice.py' >/dev/null; then
+  echo '{"state":"not_running"}'
+  exit 0
+fi
 if [ ! -f "$WORK/metrics.json" ]; then echo '{"state":"preparing"}'; exit 0; fi
 chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
   /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin /opt/doha-voice/bin/python -I -B -c \
