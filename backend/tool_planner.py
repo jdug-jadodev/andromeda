@@ -26,6 +26,9 @@ OPEN_SECONDS_CREDENTIALS = 3600
 
 # Fallos que no se arreglan reintentando en el mismo minuto.
 CREDENTIAL_CODES = frozenset({'unauthorized', 'payment_required'})
+# Sin red o con timeout, insistir solo alarga el turno: se corta el paso a la
+# nube de inmediato y se responde con lo determinista, que sigue funcionando.
+IMMEDIATE_CODES = frozenset({'timeout', 'network'})
 TRANSIENT_CODES = frozenset({'rate_limited', 'server_error', 'timeout', 'network',
                              'invalid_response', 'no_time', 'exception',
                              'invalid_text', 'tool_rejected', 'unknown_tool'})
@@ -89,6 +92,9 @@ def failure(code, latency_ms=0):
         elif code == 'unauthorized':
             _failures = max(_failures, FAILURE_THRESHOLD)
             _notice = 'La clave de la nube no es valida; sigo funcionando con lo de casa.'
+        elif code in IMMEDIATE_CODES:
+            # Sin red no tiene sentido esperar tres turnos de 8 s.
+            _failures = max(_failures, FAILURE_THRESHOLD)
         if _failures >= FAILURE_THRESHOLD:
             _open_until = time.monotonic() + breaker_seconds(code)
 

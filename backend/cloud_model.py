@@ -28,7 +28,7 @@ API_BASE = os.environ.get('DEEPSEEK_API_BASE', 'api.deepseek.com')
 # DeepSeek-V4.1-Flash-1017: el alias actual del modelo "Flash". El nombre
 # histórico `deepseek-chat` ya no es la vía correcta.
 MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-flash')
-NETWORK_SECONDS = 20.0
+NETWORK_SECONDS = 8.0
 MAX_BYTES = 32768
 MAX_CONTENT = 700
 MAX_HISTORY_CHARS = 6000

@@ -148,6 +148,13 @@ class BreakerTests(unittest.TestCase):
         self.assertFalse(tool_planner.available())
         self.assertIn('clave', tool_planner.take_notice())
 
+    def test_network_failure_opens_at_once(self):
+        for code in ('network', 'timeout'):
+            with self.subTest(code=code):
+                tool_planner.reset()
+                tool_planner.failure(code)
+                self.assertFalse(tool_planner.available())
+
     def test_breaker_survives_until_the_window_passes(self):
         tool_planner.failure('timeout')
         tool_planner.failure('timeout')
@@ -192,11 +199,19 @@ class CloudFirstTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual((code, tool), ('tool_rejected', 'delete_reminder'))
 
-    def test_after_three_failures_the_cloud_is_not_called(self):
+    def test_a_network_timeout_opens_the_breaker_immediately(self):
         with patch('cloud_model.reason_ex', return_value=(None, 'timeout')) as call:
-            for _ in range(3):
-                self.assertEqual(deterministic_router.route_cloud_first('hola', self.model), (None, 'timeout', 'none'))
+            self.assertEqual(deterministic_router.route_cloud_first('hola', self.model), (None, 'timeout', 'none'))
             self.assertEqual(deterministic_router.route_cloud_first('hola', self.model), (None, 'breaker_open', 'none'))
+        self.assertEqual(call.call_count, 1)
+
+    def test_three_server_failures_open_the_breaker(self):
+        with patch('cloud_model.reason_ex', return_value=(None, 'server_error')) as call:
+            for _ in range(3):
+                self.assertEqual(deterministic_router.route_cloud_first('hola', self.model),
+                                 (None, 'server_error', 'none'))
+            self.assertEqual(deterministic_router.route_cloud_first('hola', self.model),
+                             (None, 'breaker_open', 'none'))
         self.assertEqual(call.call_count, 3)
 
     def test_without_key_it_is_disabled_and_no_network_happens(self):

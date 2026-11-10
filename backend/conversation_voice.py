@@ -1058,6 +1058,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 model.memory.commit_followup(turn['text'], turn['answer'])
                             elif turn.get('timer_control'):
                                 model.memory.unanswered(turn['text'])
+                            elif turn.get('remote') and turn.get('answer'):
+                                # El chat del telefono conserva el hilo igual que la
+                                # voz local, para que "cuentame mas" no pregunte de que.
+                                model.memory.commit(turn['text'], turn['answer'])
                             elif not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
                             flow.spoken(turn['answer'], offered_more=turn['offered_more'])
                             print(json.dumps({'event': 'conversation_entry_notice' if turn.get('administrative') else 'conversation_memory_commit', 'source': source,
