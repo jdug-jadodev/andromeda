@@ -30,7 +30,7 @@ contrato versionado. Nada de esto puede quitar funciones que ya funcionan.
 
 | # | Mejora | Superficie | Prioridad | Riesgo | Estado |
 |---|---|---|---|---|---|
-| 1 | IA con herramientas (DeepSeek) + respaldo determinista | Ambas | **P0** | Medio | 📝 Diseñado |
+| 1 | IA con herramientas (DeepSeek) + respaldo determinista | Ambas | **P0** | Medio | ✅ Desplegado |
 | 2 | Historial de mensajes de voz 24 h (repetir/listar/reproducir uno) | Ambas | **P0** | Bajo | 📝 Diseñado |
 | 3 | Memoria de largo plazo y su gestión | Ambas | **P1** | Medio | 📝 Diseñado |
 | 4 | Color por hexadecimal y guardado con nombre | Ambas | **P1** | Bajo | 📝 Diseñado |
@@ -105,6 +105,21 @@ está disponible, todo sigue como hoy.
 - No regresión de los tests actuales de intérpretes y política remota.
 - Medición de latencia percibida: la nube no puede alargar el turno más de lo
   permitido.
+
+### Estado real (2026-11-10)
+- Implementado y desplegado: `tool_planner.py` decide motor y cortacircuitos;
+  `cloud_model.reason_ex` clasifica cada fallo; `route_cloud_first` mantiene las
+  guardas y ejecuta con `_dispatch`; `assistant_tools_model` registra motor,
+  motivo y latencia sin texto ni credenciales.
+- Decisión del usuario: **DeepSeek decide todas las órdenes** (más natural e
+  interpreta mejor frases mal oídas), con el determinista siempre disponible
+  como respaldo si no hay red, saldo o respuesta.
+- Prioridad local fija: cancelar, autodestrucción y TV nunca esperan a la nube.
+- Sin red o timeout, el cortacircuitos abre al primer fallo y la orden siguiente
+  va directa al determinista; sin clave/saldo abre 1 h y avisa una sola vez.
+- Probado en vivo: latencias 1,6–3,1 s; "cuéntame más" mantiene el hilo (incluido
+  el chat del teléfono); con la clave renombrada, Navidad y temporizador siguen
+  funcionando y una frase natural cae en el determinista.
 
 ### Criterios de aceptación
 - Con clave válida, órdenes naturales nuevas se ejecutan y se confirman con el
@@ -321,22 +336,22 @@ se guarda con un nombre («atardecer»).
 
 ## 10. Decisiones pendientes del usuario
 
-1. ¿DeepSeek debe decidir **todas** las órdenes o solo las que el router no
-   reconoce? (recomendación: empezar por las no reconocidas y ampliar midiendo).
-2. Mensajes de voz: ¿guardar también transcripción o solo audio? (recomendación:
-   solo audio 24 h).
+1. ✅ **Resuelto:** DeepSeek decide **todas** las órdenes; el determinista sigue
+   como respaldo permanente (probado quitando la clave).
+2. ✅ **Resuelto:** mensajes de voz: solo audio 24 h, sin transcripción.
 3. Música: ¿la familia aportará archivos locales? ¿Qué formatos y dónde?
 4. Xbox: modelo exacto, red, Instant-on y si la TV tiene CEC activo.
 5. Memoria: ¿compartida por toda la casa o separada por persona?
-6. ¿Se acepta subir el contrato a 1.5.0 con estos bloques?
+6. Contrato 1.5.0: el usuario no lo ve necesario todavía; se sube solo cuando la
+   app móvil vaya a usar los campos nuevos (serán opcionales y compatibles).
 
 ## 11. Registro de avance
 
 | Fecha | Bloque | Estado | Nota |
 |---|---|---|---|
 | 2026-11-09 | Plan creado | ✅ | Registro de las seis mejoras y reglas |
-| | 1. IA con herramientas | 📝 | Pendiente de aprobación de fase |
-| | 2. Mensajes 24 h | 📝 | Pendiente |
+| 2026-11-10 | 1. IA con herramientas | ✅ | DeepSeek primero (`ANDROMEDA_PLANNER=deepseek_first`), determinista de respaldo; probado en vivo con y sin clave (`bf17587`, `f913d0f`) |
+| | 2. Mensajes 24 h | ⏳ | Siguiente: repetir último, listar y reproducir uno; solo audio |
 | | 3. Memoria | 📝 | Pendiente |
 | | 4. Color hex | 📝 | Pendiente |
 | | 5. Música | 📝 | Pendiente |
