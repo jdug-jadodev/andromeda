@@ -77,3 +77,18 @@ class ContextReset:
             raise ValueError('Fresh client context required')
         self.consumed = True
         return snapshot, value['catalog'], not checkpoint
+
+    def claim_remote(self, value):
+        """SQLite handoff carries IDs/metadata only; human text stays server-side."""
+        keys = {'action', 'reset_nonce', 'previous_session_id', 'previous_context_id', 'context_id', 'voice_entry'}
+        checkpoint = self.reason == 'turn_checkpoint'
+        if (self.consumed or self.clock() >= self.before or not isinstance(value, dict) or set(value) != keys
+                or value.get('action') != 'voice_context' or value.get('reset_nonce') != self.nonce
+                or value.get('previous_session_id') != self.session or value.get('previous_context_id') != self.context
+                or type(value.get('voice_entry')) is not bool
+                or not identity(value.get('context_id'))
+                or checkpoint and (value['context_id'] != self.context or value['voice_entry'])
+                or not checkpoint and (value['context_id'] == self.context or not value['voice_entry'])):
+            raise ValueError('Unrelated/stale SQLite context handoff')
+        self.consumed = True
+        return value['context_id'], not checkpoint

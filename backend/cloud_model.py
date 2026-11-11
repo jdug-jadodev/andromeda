@@ -37,7 +37,15 @@ MAX_HISTORY_MESSAGES = 12
 CLOUD_SYSTEM = (SYSTEM + ' No tienes search_web: responde tú con tu conocimiento los datos y las preguntas. '
                 'Si la frase pide una acción (alarma, recordatorio, temporizador, luces, volumen, TV, '
                 'autodestrucción), selecciona la herramienta correspondiente; si no, responde con texto en español, '
-                'breve y natural. Mantén el hilo de la conversación: si el humano dice "cuéntame más", "sigue", '
+                'breve y natural. Si piden un temporizador, selecciona create_timer; si piden una alarma, '
+                'create_alarm; si piden un recordatorio o dicen «recuérdame», create_reminder. Selecciona la '
+                'herramienta aunque falte la duración, la hora o el contenido: la casa preguntará lo que falta. '
+                'Habla con naturalidad y carácter: cálida, directa, con un toque de humor seco; frases cortas; '
+                'no suenes a formulario ni repitas "¿Necesitas algo más?" después de una pregunta; si el humano '
+                'se corrige, ajústate sin pedirle que empiece de nuevo. Si el humano cambia de tema y su frase '
+                'no aporta el dato que falta de un recordatorio o alarma, responde al tema nuevo; no vuelvas a '
+                'pedir los datos del aviso. '
+                'Mantén el hilo de la conversación: si el humano dice "cuéntame más", "sigue", '
                 '"y entonces" o "sí, cuéntame", continúa el tema del historial; nunca preguntes de qué hablaba si '
                 'está en el historial. El historial es solo contexto: únicamente la última frase del humano '
                 'autoriza una acción. No inventes éxito ni estado de la casa.')
@@ -108,7 +116,15 @@ def _parse(data):
     if isinstance(calls, list) and calls:
         function = calls[0].get('function') if isinstance(calls[0], dict) else None
         if isinstance(function, dict) and isinstance(function.get('name'), str) and function['name']:
-            return {'kind': 'tool', 'name': function['name']}
+            arguments = function.get('arguments')
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except (ValueError, TypeError):
+                    arguments = {}
+            if not isinstance(arguments, dict):
+                arguments = {}
+            return {'kind': 'tool', 'name': function['name'], 'arguments': arguments}
     text = _content(message.get('content'))
     if text is not None:
         return {'kind': 'text', 'text': text}
@@ -152,7 +168,13 @@ def reason_ex(text, model, history=None):
     payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
     connection = http.client.HTTPSConnection(API_BASE, 443, timeout=timeout,
                                              context=ssl.create_default_context())
+    # Register the socket with the model so a turn cancellation can close it.
+    # Without this, `cancel_generation()` could only interrupt the local engine
+    # and a blocked cloud read would be misread as a stuck generation.
+    model.http = connection
     try:
+        if model.cancelled.is_set():
+            return None, 'cancelled'
         connection.request('POST', '/chat/completions', body=payload,
                            headers={'Authorization': 'Bearer ' + api_key(), 'Content-Type': 'application/json',
                                     'Accept': 'application/json', 'Accept-Encoding': 'identity'})
@@ -169,12 +191,14 @@ def reason_ex(text, model, history=None):
         parsed = _parse(json.loads(raw.decode('utf-8')))
         return (parsed, 'ok') if parsed is not None else (None, 'invalid_response')
     except TimeoutError:
-        return None, 'timeout'
-    except (OSError, ssl.SSLError):
-        return None, 'network'
+        return None, 'cancelled' if model.cancelled.is_set() else 'timeout'
+    except (OSError, ssl.SSLError, http.client.HTTPException):
+        return None, 'cancelled' if model.cancelled.is_set() else 'network'
     except (ValueError, TypeError, KeyError, json.JSONDecodeError):
-        return None, 'invalid_response'
+        return None, 'cancelled' if model.cancelled.is_set() else 'invalid_response'
     finally:
+        if getattr(model, 'http', None) is connection:
+            model.http = None
         connection.close()
 
 

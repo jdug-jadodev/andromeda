@@ -12,6 +12,9 @@ case "$TRIAL" in conversation) TIMER_FLAG='' ;; timer) TIMER_FLAG='--timer-trial
 ROOT=/data/local/linux/debian-final
 BASE=/data/local/doha-inference
 PRIVATE=/var/lib/andromeda-conversation
+mkdir -p "$ROOT$PRIVATE"
+chown 10218:10218 "$ROOT$PRIVATE"
+chmod 700 "$ROOT$PRIVATE"
 for name in server-cert.pem server-key.pem token; do
   [ -s "$ROOT$PRIVATE/$name" ] || { echo 'Missing private conversation credential/TLS setup' >&2; exit 1; }
 done

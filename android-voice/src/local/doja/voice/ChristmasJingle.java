@@ -58,7 +58,7 @@ final class ChristmasJingle {
         try (AssetFileDescriptor file = context.getAssets().openFd(ASSET)) {
             MediaPlayer next = new MediaPlayer();
             player = next;
-            next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            next.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build());
             // El jingle va siempre al altavoz, como su voz y los mensajes.
             AudioDeviceInfo output = speaker();
@@ -67,7 +67,14 @@ final class ChristmasJingle {
             next.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
             next.setOnCompletionListener(done -> { if (player == done) stop(); });
             next.prepare(); next.start();
-            Log.i("AndromedaJingle", "playing on " + (output == null ? "default" : output.getType()));
+            AudioDeviceInfo routed = null;
+            try { routed = next.getRoutedDevice(); } catch (RuntimeException ignored) { }
+            if (routed != null && routed.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER && output != null) {
+                next.setPreferredDevice(output);
+                try { routed = next.getRoutedDevice(); } catch (RuntimeException ignored) { }
+            }
+            Log.i("AndromedaJingle", "playing on " + (output == null ? "default" : output.getType())
+                + " route=" + (routed == null ? "?" : routed.getType()));
         } catch (IOException | RuntimeException unavailable) {
             Log.w("AndromedaJingle", "unavailable " + unavailable.getClass().getSimpleName());
             stop();   // without the jingle the scene still plays

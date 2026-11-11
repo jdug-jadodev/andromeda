@@ -23,6 +23,7 @@ from self_destruct import choose
 # ellos y el resto evita choques (p. ej. "enciende la tele" → tv_power_on, no
 # control_lights).
 TOOL_ORDER = (
+    'replay_voice_message',
     'self_destruct',
     'tv_power_off',
     'tv_power_on',
@@ -43,14 +44,27 @@ TOOL_ORDER = (
     'control_lights',
 )
 
+# When the cloud chose an action the house cannot validate, ask the missing
+# piece instead of degrading the whole planner with the breaker.
+CLARIFY = {
+    'create_timer': '¿De cuánto tiempo quieres el temporizador?',
+    'create_alarm': '¿Para qué hora quieres la alarma?',
+    'create_reminder': '¿Qué quieres recordar y a qué hora?',
+    'delete_reminder': 'Dime cuál recordatorio quieres borrar.',
+    'control_lights': '¿Qué luz quieres controlar y cómo?',
+    'set_phone_volume': '¿A qué volumen quieres el teléfono?',
+}
+
 
 def _matches(name, plain):
     pattern = TOOL_INTENT.get(name)
     return bool(pattern) and bool(re.search(pattern, plain))
 
 
-def _dispatch(name, text, model):
+def _dispatch(name, text, model, arguments=None):
     """Espejo de los cuerpos de rama de interpret_result, sin el modelo."""
+    if name == 'replay_voice_message':
+        return {'kind': 'voice_message_play_request', 'selector': 'latest'}
     if name == 'delete_reminder':
         if not model.reminder_deletion:
             raise ValueError('Reminder deletion not negotiated')
@@ -67,7 +81,16 @@ def _dispatch(name, text, model):
         try:
             seconds = literal_seconds(text)
         except TimerValidationError as invalid:
-            return {'kind': 'timer_rejected', 'reason': invalid.reason}
+            # The cloud may have heard the duration correctly even when the
+            # original ASR text is malformed ("ponen temporizador de un minuto").
+            duration = arguments.get('duration_text') if isinstance(arguments, dict) else None
+            if isinstance(duration, str) and duration.strip():
+                try:
+                    seconds = literal_seconds(duration)
+                except TimerValidationError:
+                    return {'kind': 'timer_rejected', 'reason': invalid.reason}
+            else:
+                return {'kind': 'timer_rejected', 'reason': invalid.reason}
         return {'kind': 'timer_proposal', 'seconds': seconds}
     if name in {'create_alarm', 'create_reminder'}:
         kind = 'ALARM' if name == 'create_alarm' else 'REMINDER'
@@ -213,12 +236,12 @@ def planner_available():
 
 
 def deterministic_priority(text):
-    """Órdenes que nunca esperan a la nube: cancelar y autodestrucción.
+    """Órdenes que nunca esperan a la nube: cancelar, repetición de voz y autodestrucción.
 
     La TV conserva además su ruta local en el llamador porque se ejecuta y
     verifica de forma síncrona. El resto puede ir primero a DeepSeek.
     """
-    if is_cancel(text):
+    if is_cancel(text) or _matches('replay_voice_message', normalized(text)):
         return True
     from assistant_tools_model import tool_intent_matches
     return tool_intent_matches('self_destruct', text)
@@ -249,7 +272,10 @@ def route_cloud_first(text, model, history=None):
         raw, code = None, 'exception'
     latency = int((time.monotonic() - started) * 1000)
     if raw is None:
-        tool_planner.failure(code, latency)
+        # A cancelled or out-of-time turn is not a cloud outage; never poison
+        # the breaker (and therefore the next unrelated requests) with it.
+        if code not in ('cancelled', 'no_time'):
+            tool_planner.failure(code, latency)
         return None, code, 'none'
     if raw.get('kind') == 'text':
         try:
@@ -261,14 +287,17 @@ def route_cloud_first(text, model, history=None):
         tool_planner.success(latency)
         return {'kind': 'reply', 'text': answer}, 'ok', 'none'
     name = raw.get('name')
+    arguments = raw.get('arguments') if isinstance(raw.get('arguments'), dict) else None
     if name in TOOL_ORDER:
         try:
-            result = _dispatch(name, text, model)
+            result = _dispatch(name, text, model, arguments)
         except (ValueError, KeyError, TypeError):
-            # El modelo eligió una herramienta que la casa rechaza: se cuenta el
-            # fallo y se deja que el determinista pruebe la misma frase.
-            tool_planner.failure('tool_rejected', latency)
-            return None, 'tool_rejected', name
+            # The cloud answered correctly; the house could not validate the
+            # action (missing field, feature not negotiated, ASR typo). Ask for
+            # the missing piece instead of opening the breaker and answering
+            # with a generic fallback for the next five minutes.
+            tool_planner.success(latency)
+            return {'kind': 'reply', 'text': CLARIFY.get(name, FALLBACK)}, 'tool_rejected', name
         tool_planner.success(latency)
         return result, 'ok', name
     tool_planner.failure('unknown_tool', latency)

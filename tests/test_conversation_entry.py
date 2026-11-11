@@ -16,9 +16,9 @@ class ConversationEntryTests(unittest.TestCase):
         self.old.commit('Hablamos de las luces del patio.', 'Respuesta pública.')
         self.entry = ConversationEntry({'a' * 32: self.old}, 'b' * 32, lambda: self.clock[0])
 
-    def test_default_is_new_even_if_previous_dialogue_exists(self):
+    def test_default_continues_the_recent_chat_instead_of_creating_one(self):
         result = self.entry.route('qué es una estrella')
-        self.assertEqual(result, {'kind': 'new', 'id': 'b' * 32})
+        self.assertEqual(result, {'kind': 'resume', 'id': 'a' * 32, 'automatic': True})
         self.assertEqual(len(self.old.pairs), 1)
 
     def test_search_requires_explicit_recuerdas_at_entry_and_confirmation(self):
@@ -50,7 +50,8 @@ class ConversationEntryTests(unittest.TestCase):
     def test_quoted_or_negated_control_is_not_a_lookup(self):
         for text in ['dije recuerdas las luces', 'no recuerdas las luces', '"recuerdas luces"']:
             entry = ConversationEntry({'a' * 32: self.old}, 'b' * 32, lambda: self.clock[0])
-            self.assertEqual(entry.route(text)['kind'], 'new')
+            result = entry.route(text)
+            self.assertEqual(result['kind'], 'resume'); self.assertTrue(result['automatic'])
 
     def test_incomplete_search_asks_for_topic_then_searches_that_topic(self):
         self.assertEqual(self.entry.route('recuerdas')['kind'], 'notice')
@@ -64,9 +65,11 @@ class ConversationEntryTests(unittest.TestCase):
         self.assertEqual(self.entry.route('sí')['id'], 'c' * 32)
         self.assertEqual(len(self.old.pairs), 1)
 
-    def test_failed_or_timed_out_offer_does_not_authorize_resume(self):
+    def test_failed_or_timed_out_offer_does_not_authorize_the_offered_resume(self):
         self.entry.route('recuerdas luces'); self.entry.cancel_pending()
-        self.assertEqual(self.entry.route('sí')['kind'], 'new')
+        result = self.entry.route('sí')
+        self.assertTrue(result.get('automatic'))
+        self.assertNotEqual(self.entry.stage, 'confirm_resume')
 
     def test_unclear_confirmation_does_not_silently_start_another_chat(self):
         self.entry.route('recuerdas luces')
@@ -74,9 +77,9 @@ class ConversationEntryTests(unittest.TestCase):
         self.assertEqual(self.entry.stage, 'confirm_resume')
         self.assertEqual(self.entry.route('sí')['kind'], 'resume')
 
-    def test_capacity_never_evicts_a_saved_chat(self):
+    def test_capacity_never_blocks_the_next_turn(self):
         self.entry.catalog = {f'{n:032x}': self.old for n in range(4)}
-        self.assertEqual(self.entry.route('hola')['kind'], 'notice')
+        self.assertEqual(self.entry.route('hola')['kind'], 'resume')
         self.assertEqual(len(self.entry.catalog), 4)
 
     def test_catalog_schema_duplicate_and_size_are_validated(self):

@@ -13,8 +13,9 @@ final class VoiceSessionPolicy {
         return protocol == 6 && conversation && !wakeOnly && wakeEnabled && aiEnabled && !actionsEnabled;
     }
     static boolean conversationEventAllowed(String type) {
-        return "state".equals(type) || "transcript".equals(type) || "thinking".equals(type)
-            || "say".equals(type) || "error".equals(type) || "conversation_closed".equals(type) || "context_selected".equals(type);
+            return "state".equals(type) || "transcript".equals(type) || "thinking".equals(type)
+                || "say".equals(type) || "error".equals(type) || "conversation_closed".equals(type)
+                || "context_selected".equals(type) || "memory_purged".equals(type);
     }
     static boolean timerEventAllowed(String type) {
         return conversationEventAllowed(type) || "timer_execute".equals(type);

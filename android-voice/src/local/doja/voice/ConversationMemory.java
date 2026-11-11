@@ -1,6 +1,7 @@
 package local.doja.voice;
 
 import java.util.*;
+import org.json.*;
 
 /** Bounded, process-local dialogue. No Android, disk, model, microphone or timers. */
 final class ConversationMemory {
@@ -42,7 +43,7 @@ final class ConversationMemory {
         final long remainingMs;
         final boolean current, closed;
         Info(Chat chat, long now, boolean current) {
-            id = chat.id; label = "Charla " + chat.number; turns = chat.turns.size();
+            id = chat.id; label = "Charla " + chat.number; turns = chat.retainedTurns;
             remainingMs = Math.max(0, INACTIVITY_MS - (now - chat.activity())); this.current = current;
             closed = chat.closed;
         }
@@ -51,6 +52,7 @@ final class ConversationMemory {
         final String id;
         final int number;
         long createdMs, lastHumanMs;
+        int retainedTurns;
         boolean closed;
         final List<Turn> turns = new ArrayList<>();
         Chat(int number, long now) { this(number, now, newId()); }
@@ -145,6 +147,26 @@ final class ConversationMemory {
         currentId = id; chats.get(id).closed = false;
         active = new Lease(id, ++generation); return active;
     }
+    synchronized void registerMetadata(String id, int turns, long remainingMs, long now) {
+        if (!validId(id) || turns < 0 || turns > MAX_TURNS || remainingMs < 0 || remainingMs > INACTIVITY_MS)
+            throw new IllegalArgumentException("Invalid remote conversation metadata");
+        Chat chat = chats.get(id);
+        if (chat == null) {
+            if (chats.size() >= MAX_CONVERSATIONS) throw new IllegalStateException("Remote catalog exceeds local metadata bound");
+            chat = new Chat(++number, now, id); chats.put(id, chat);
+        }
+        chat.turns.clear(); chat.retainedTurns = turns;
+        if (turns > 0) chat.lastHumanMs = now - (INACTIVITY_MS - remainingMs);
+        else { chat.lastHumanMs = 0; chat.createdMs = now; }
+    }
+    synchronized void registerCatalog(JSONArray catalog, long now) throws JSONException {
+        clearAll();
+        if (catalog == null || catalog.length() > MAX_CONVERSATIONS) throw new IllegalArgumentException("Invalid remote catalog");
+        for (int i=0;i<catalog.length();i++) {
+            JSONObject item=catalog.getJSONObject(i);
+            registerMetadata(item.getString("id"),item.getInt("turns"),item.getLong("remaining_ms"),now);
+        }
+    }
     synchronized void release(Lease lease) { if (owns(lease)) active = null; }
     synchronized boolean end(Lease lease, String turnId, long now) {
         prune(now);
@@ -162,6 +184,7 @@ final class ConversationMemory {
             Turn removed = chat.turns.remove(0);
             units -= removed.user.length() + (removed.assistant == null ? 0 : removed.assistant.length()) + (removed.webAnswer == null ? 0 : removed.webAnswer.length());
         }
+        chat.retainedTurns = chat.turns.size();
     }
     synchronized Snapshot snapshot(Lease lease, long now) {
         prune(now);
@@ -213,6 +236,16 @@ final class ConversationMemory {
         prune(now); long next = Long.MAX_VALUE;
         for (Chat chat : chats.values()) next = Math.min(next, chat.activity() + INACTIVITY_MS);
         return next == Long.MAX_VALUE ? 0 : next;
+    }
+    synchronized void clearText() {
+        for (Chat chat : chats.values()) {
+            chat.retainedTurns = chat.turns.size();
+            chat.turns.clear();
+        }
+    }
+    synchronized void clearAll() {
+        if (active != null) active = null;
+        chats.clear(); currentId = ""; number = 0; generation++;
     }
     static Snapshot emptySnapshot() { return new Snapshot(newId(), 0, Collections.emptyList()); }
 }

@@ -76,7 +76,7 @@ class CloudClassificationTests(unittest.TestCase):
             {'kind': 'text', 'text': 'Hola, ¿en qué te ayudo?'}, 'ok'))
         Connection.body = tool_body('create_timer')
         self.assertEqual(cloud_model.reason_ex('pon cinco minutos', model_stub())[0],
-                         {'kind': 'tool', 'name': 'create_timer'})
+                         {'kind': 'tool', 'name': 'create_timer', 'arguments': {}})
 
     def test_every_failure_has_its_own_code(self):
         cases = [(401, 'unauthorized'), (402, 'payment_required'), (403, 'unauthorized'),
@@ -196,14 +196,35 @@ class CloudFirstTests(unittest.TestCase):
         self.assertEqual((result['kind'], code, tool), ('timer_proposal', 'ok', 'create_timer'))
         with patch('cloud_model.reason_ex', return_value=({'kind': 'tool', 'name': 'delete_reminder'}, 'ok')):
             result, code, tool = deterministic_router.route_cloud_first('borra el recordatorio', self.model)
-        self.assertIsNone(result)
+        self.assertEqual(result['kind'], 'reply')
+        self.assertIn('recordatorio', result['text'])
         self.assertEqual((code, tool), ('tool_rejected', 'delete_reminder'))
+        self.assertTrue(tool_planner.available())
+
+    def test_cloud_duration_argument_executes_a_misheard_timer(self):
+        with patch('cloud_model.reason_ex', return_value=(
+                {'kind': 'tool', 'name': 'create_timer', 'arguments': {'duration_text': 'un minuto'}}, 'ok')):
+            result, code, tool = deterministic_router.route_cloud_first(
+                'ponen temporizador de un minuto', self.model)
+        self.assertEqual((result, code, tool),
+                         ({'kind': 'timer_proposal', 'seconds': 60}, 'ok', 'create_timer'))
+        self.assertTrue(tool_planner.available())
 
     def test_a_network_timeout_opens_the_breaker_immediately(self):
         with patch('cloud_model.reason_ex', return_value=(None, 'timeout')) as call:
             self.assertEqual(deterministic_router.route_cloud_first('hola', self.model), (None, 'timeout', 'none'))
             self.assertEqual(deterministic_router.route_cloud_first('hola', self.model), (None, 'breaker_open', 'none'))
         self.assertEqual(call.call_count, 1)
+
+    def test_cancelled_and_no_time_never_open_the_breaker(self):
+        for code in ('cancelled', 'no_time'):
+            with self.subTest(code=code):
+                tool_planner.reset()
+                with patch('cloud_model.reason_ex', return_value=(None, code)):
+                    for _ in range(3):
+                        self.assertEqual(deterministic_router.route_cloud_first('hola', self.model),
+                                         (None, code, 'none'))
+                self.assertTrue(tool_planner.available())
 
     def test_three_server_failures_open_the_breaker(self):
         with patch('cloud_model.reason_ex', return_value=(None, 'server_error')) as call:
@@ -224,6 +245,12 @@ class CloudFirstTests(unittest.TestCase):
         self.assertTrue(deterministic_router.deterministic_priority('cancélalo'))
         self.assertTrue(deterministic_router.deterministic_priority('autodestruyete'))
         self.assertFalse(deterministic_router.deterministic_priority('cuéntame más de romeo'))
+
+    def test_voice_message_replay_stays_deterministic_and_selects_latest(self):
+        phrase = 'Andrómeda, repite el último mensaje'
+        self.assertTrue(deterministic_router.deterministic_priority(phrase))
+        routed = deterministic_router.route(phrase, self.model)
+        self.assertEqual(routed, {'kind': 'voice_message_play_request', 'selector': 'latest'})
 
 
 class ConversationContinuityTests(unittest.TestCase):

@@ -171,8 +171,13 @@ public final class LightCommandParser {
     private static LightTarget target(String value){
         boolean lotus=value.matches(".*\\b(lotus|lotuslamp|melk|luz mueble|mueble)\\b.*");
         boolean star=value.matches(".*\\b(mr star|gatt[- ]+demo|luz del televisor|luz del tv|luz tv|televisor|television|tv|tele)\\b.*");
-        if(value.matches(".*\\b(ambas|ambos|las dos|las luces)\\b.*")||(lotus&&star)||(!lotus&&!star))return LightTarget.BOTH;
-        return lotus?LightTarget.LOTUS:LightTarget.MR_STAR;
+        // "las dos/ambas" is an explicit both. A generic plural ("las luces")
+        // must not override a specific target such as "las luces del televisor".
+        if(value.matches(".*\\b(ambas|ambos|las dos)\\b.*"))return LightTarget.BOTH;
+        if(lotus&&star)return LightTarget.BOTH;
+        if(lotus)return LightTarget.LOTUS;
+        if(star)return LightTarget.MR_STAR;
+        return LightTarget.BOTH;
     }
 
     private static String normalize(String text){

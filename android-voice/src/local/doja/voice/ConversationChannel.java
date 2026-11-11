@@ -11,6 +11,7 @@ final class ConversationChannel {
     final String sessionId;
     String contextId, newId;
     boolean voiceEntry, cancelled;
+    private boolean remoteStore;
     final Map<String, Integer> candidates = new HashMap<>();
     private ContinuousVoicePolicy.Reset pendingReset;
     private ConversationMemory.Snapshot pendingSnapshot;
@@ -19,7 +20,7 @@ final class ConversationChannel {
         this.memory = memory; this.lease = lease; this.sessionId = ready.getString("session_id");
         if (!sessionId.matches("[0-9a-f]{32}") || !lease.conversationId.equals(ready.optString("context_id")))
             throw new IOException("Identidad de contexto incompatible");
-        contextId = lease.conversationId;
+        contextId = lease.conversationId; remoteStore = "sqlite_debian_v1".equals(ready.optString("memory_store"));
     }
     ConversationChannel(ConversationMemory memory, ConversationMemory.Snapshot fresh,
             List<ConversationMemory.Snapshot> catalog, JSONObject ready) throws Exception {
@@ -27,7 +28,24 @@ final class ConversationChannel {
         contextId = newId = fresh.conversationId; voiceEntry = true;
         if (!sessionId.matches("[0-9a-f]{32}") || !contextId.equals(ready.optString("context_id")) || !ready.optBoolean("voice_entry"))
             throw new IOException("Entrada de voz incompatible");
-        for (ConversationMemory.Snapshot item : catalog) candidates.put(item.conversationId, item.turns.size());
+        remoteStore = "sqlite_debian_v1".equals(ready.optString("memory_store"));
+        if (remoteStore) {
+            memory.clearAll();
+            JSONArray metadata = ready.optJSONArray("catalog");
+            if (metadata == null || metadata.length() > ConversationMemory.MAX_CONVERSATIONS)
+                throw new IOException("Catálogo de memoria inválido");
+            for (int i = 0; i < metadata.length(); i++) {
+                JSONObject item = metadata.getJSONObject(i); String id = item.optString("id");
+                int turns = item.optInt("turns", -1);
+                if (item.length()!=4 || !(item.opt("closed") instanceof Boolean)
+                        || !id.matches("[0-9a-f]{32}") || turns < 0 || turns > ConversationMemory.MAX_TURNS
+                        || candidates.put(id, turns) != null) throw new IOException("Metadatos de charla inválidos");
+                long remaining = item.optLong("remaining_ms", -1);
+                if (remaining < 0 || remaining > ConversationMemory.INACTIVITY_MS)
+                    throw new IOException("Caducidad de metadatos inválida");
+                memory.registerMetadata(id, turns, remaining, android.os.SystemClock.elapsedRealtime());
+            }
+        } else for (ConversationMemory.Snapshot item : catalog) candidates.put(item.conversationId, item.turns.size());
     }
     synchronized void select(JSONObject event, long now) throws Exception {
         if (cancelled || !voiceEntry || lease != null || !sessionId.equals(event.optString("session_id"))
@@ -37,6 +55,12 @@ final class ConversationChannel {
         int expected = isNew ? 0 : candidates.getOrDefault(id, -1);
         if (!(isNew && newId.equals(id) || "resume".equals(kind) && expected >= 0)
                 || expected != event.optInt("restored_turns", -1)) throw new IOException("Charla no disponible en el catálogo enviado");
+        if (remoteStore) {
+            try { lease = memory.acquireExact(id, isNew, now); }
+            catch (IllegalStateException invalid) { throw new IOException("No se pudo actualizar el índice local", invalid); }
+            contextId = id;
+            return;
+        }
         ConversationMemory.Lease chosen = memory.acquireExact(id, isNew, now);
         if (memory.snapshot(chosen, now).turns.size() != expected) {
             memory.release(chosen); throw new IOException("El contexto cambió; vuelve a abrir la charla");
@@ -64,20 +88,25 @@ final class ConversationChannel {
             if (!voiceEntry || lease != null) throw new IOException("Control de entrada fuera de estado");
             return;
         }
+        if (remoteStore) return;
         if (lease == null) throw new IOException("No se seleccionó una conversación");
         if (!memory.human(lease, event.getString("turn_id"), event.getString("text"), event.getLong("speech_end_ms"), now))
             throw new IOException("Turno de contexto duplicado, cancelado o inválido");
     }
     synchronized boolean answer(String turnId, String text, long now) {
-        return !cancelled && (lease == null ? voiceEntry : memory.answer(lease, turnId, text, now));
+        if (cancelled) return false;
+        if (remoteStore) return text != null && !text.trim().isEmpty() && text.length() <= 700;
+        return lease == null ? voiceEntry : memory.answer(lease, turnId, text, now);
     }
     synchronized boolean webAnswer(String turnId, String text, long now) {
-        return !cancelled && lease != null && memory.webAnswer(lease, turnId, text, now);
+        return !cancelled && (remoteStore ? text != null && !text.trim().isEmpty() && text.length() <= 700
+                : lease != null && memory.webAnswer(lease, turnId, text, now));
     }
     synchronized boolean webFollowup(String turnId, String text, long now) {
-        return !cancelled && lease != null && memory.answer(lease, turnId, text, now, true);
+        return !cancelled && (remoteStore ? text != null && !text.trim().isEmpty() && text.length() <= 700
+                : lease != null && memory.answer(lease, turnId, text, now, true));
     }
-    synchronized boolean end(String turnId, long now) { return !cancelled && (lease == null ? voiceEntry : memory.end(lease, turnId, now)); }
+    synchronized boolean end(String turnId, long now) { return !cancelled && (remoteStore || (lease == null ? voiceEntry : memory.end(lease, turnId, now))); }
     synchronized JSONObject prepareContinuousReset(JSONObject event, long now, boolean dialogueClosed) throws Exception {
         verify(event);
         if (pendingReset != null) throw new IOException("Cambio de contexto ya pendiente");
@@ -88,18 +117,31 @@ final class ConversationChannel {
         ConversationMemory.Snapshot snapshot;
         if (checkpoint) {
             if (lease == null) throw new IOException("No hay charla para conservar");
-            snapshot = memory.snapshot(lease,now);
-            if (AgendaActionChannel.integer(event,"retained_turns") != snapshot.turns.size()
-                    || AgendaActionChannel.integer(event,"last_human_ms") != snapshot.lastHumanMs) throw new IOException("El contexto difiere del checkpoint");
+            if (remoteStore) {
+                ConversationMemory.Info info = null;
+                for (ConversationMemory.Info item : memory.list(now)) if (item.id.equals(contextId)) info = item;
+                long retained = AgendaActionChannel.integer(event,"retained_turns");
+                if (info == null || retained < 0 || retained > ConversationMemory.MAX_TURNS)
+                    throw new IOException("Metadatos de checkpoint incompatibles");
+                snapshot = new ConversationMemory.Snapshot(contextId, event.getLong("last_human_ms"), Collections.emptyList());
+            } else {
+                snapshot = memory.snapshot(lease,now);
+                if (AgendaActionChannel.integer(event,"retained_turns") != snapshot.turns.size()
+                        || AgendaActionChannel.integer(event,"last_human_ms") != snapshot.lastHumanMs) throw new IOException("El contexto difiere del checkpoint");
+            }
             memory.release(lease); lease = null;
             pendingCatalog = Collections.emptyList();
         } else {
             if ("human_inactivity".equals(reason) && lease != null && !memory.snapshot(lease,now).turns.isEmpty())
                 throw new IOException("El contexto humano no ha caducado");
             memory.release(lease); lease = null;
-            pendingCatalog = memory.catalogForContinuous(now); snapshot = ConversationMemory.emptySnapshot();
+            pendingCatalog = remoteStore ? Collections.emptyList() : memory.catalogForContinuous(now);
+            snapshot = ConversationMemory.emptySnapshot();
         }
         pendingReset = reset; pendingSnapshot = snapshot;
+        if (remoteStore) return new JSONObject().put("action","voice_context").put("reset_nonce",reset.nonce)
+            .put("previous_session_id",sessionId).put("previous_context_id",contextId)
+            .put("context_id",snapshot.conversationId).put("voice_entry",!checkpoint);
         JSONArray catalog = new JSONArray(); for (ConversationMemory.Snapshot item : pendingCatalog) catalog.put(encode(item));
         return new JSONObject().put("action","voice_context").put("reset_nonce",reset.nonce)
             .put("previous_session_id",sessionId).put("previous_context_id",contextId)
@@ -109,16 +151,18 @@ final class ConversationChannel {
         if (cancelled || pendingReset == null || pendingSnapshot == null) throw new IOException("Cambio de contexto no solicitado");
         boolean voiceEntry = !"turn_checkpoint".equals(pendingReset.reason);
         if (!(event.get("voice_entry") instanceof Boolean) || !(event.get("audio_yielded") instanceof Boolean) || event.getBoolean("voice_entry") != voiceEntry
-                || AgendaActionChannel.integer(event,"restored_turns") != pendingSnapshot.turns.size()
+                || !remoteStore && AgendaActionChannel.integer(event,"restored_turns") != pendingSnapshot.turns.size()
+                || remoteStore && !"sqlite_debian_v1".equals(event.optString("memory_store"))
                 || !ContinuousVoicePolicy.VOICE.equals(event.optString("voice_lifetime_policy"))
                 || !ContinuousVoicePolicy.RESET.equals(event.optString("dialogue_reset_policy"))) throw new IOException("Cambio de contexto incompatible");
         pendingReset.claim(AgendaActionChannel.text(event,"previous_session_id"),AgendaActionChannel.text(event,"previous_context_id"),
             AgendaActionChannel.text(event,"reset_nonce"),AgendaActionChannel.text(event,"session_id"),AgendaActionChannel.text(event,"context_id"),pendingSnapshot.conversationId,now);
         ConversationChannel next;
+        if (remoteStore && voiceEntry) memory.clearAll();
         if (voiceEntry) next = new ConversationChannel(memory,pendingSnapshot,pendingCatalog,event);
         else {
             ConversationMemory.Lease nextLease = memory.acquireExact(pendingSnapshot.conversationId,false,now);
-            if (memory.snapshot(nextLease,now).turns.size() != pendingSnapshot.turns.size()) {
+            if (!remoteStore && memory.snapshot(nextLease,now).turns.size() != pendingSnapshot.turns.size()) {
                 memory.release(nextLease); throw new IOException("El contexto cambió durante el relevo");
             }
             next = new ConversationChannel(memory,nextLease,event);

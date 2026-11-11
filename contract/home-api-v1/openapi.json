@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Andromeda Home API",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "Contrato entre la app acompanante (repo B) y la casa (repo A). Transporte: Tailscale + TLS con certificado fijado. Autenticacion: token por dispositivo."
   },
   "servers": [
@@ -266,6 +266,63 @@
               }
             }
           }
+        }
+      }
+    },
+    "/messages/history": {
+      "get": {
+        "summary": "Historial familiar de mensajes recibidos en la casa (24 h)",
+        "operationId": "messageHistory",
+        "responses": {
+          "200": {
+            "description": "Metadatos de mensajes; nunca incluye transcripción ni audio",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/MessageHistory"}
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"}
+        }
+      }
+    },
+    "/messages/{id}/audio": {
+      "get": {
+        "summary": "Descarga el audio original retenido hasta 24 h desde su recepción",
+        "operationId": "messageAudio",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true,
+           "schema": {"type": "string", "minLength": 8, "maxLength": 64}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Audio original; no contiene ni solicita transcripción",
+            "content": {
+              "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
+              "audio/aac": {"schema": {"type": "string", "format": "binary"}},
+              "audio/wav": {"schema": {"type": "string", "format": "binary"}}
+            }
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
+        }
+      }
+    },
+    "/messages/{id}/played": {
+      "post": {
+        "summary": "Marca el mensaje como reproducido desde la app; conserva su audio hasta las 24 h",
+        "operationId": "markMessagePlayed",
+        "parameters": [
+          {"name": "id", "in": "path", "required": true,
+           "schema": {"type": "string", "minLength": 8, "maxLength": 64}}
+        ],
+        "responses": {
+          "200": {"description": "Estado actualizado", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MessageStatus"}}}},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"}
         }
       }
     },
@@ -743,6 +800,32 @@
               "$ref": "#/components/schemas/MessageStatus"
             }
           }
+        }
+      },
+      "MessageHistory": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {"$ref": "#/components/schemas/MessageHistoryItem"}
+          }
+        }
+      },
+      "MessageHistoryItem": {
+        "type": "object",
+        "required": ["id", "sender", "received_at_ms", "duration_ms", "size_bytes", "status", "expires_at_ms"],
+        "properties": {
+          "id": {"type": "string", "minLength": 8, "maxLength": 64},
+          "sender": {"type": "string", "maxLength": 40},
+          "received_at_ms": {"type": "integer", "minimum": 0},
+          "duration_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+          "size_bytes": {"type": "integer", "minimum": 1, "maximum": 2097152},
+          "content_type": {"type": "string", "enum": ["audio/mp4", "audio/aac", "audio/wav"]},
+          "status": {"type": "string", "enum": ["queued", "playing", "played", "expired", "failed"]},
+          "expires_at_ms": {"type": "integer", "minimum": 0},
+          "played_at_ms": {"type": "integer", "minimum": 0}
         }
       },
       "Error": {

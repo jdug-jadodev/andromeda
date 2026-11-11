@@ -88,6 +88,14 @@ final class TimerActionChannel {
         String control = event.optString("timer_control"), value = text(event, "text");
         long count = integer(event, "actions_executed");
         if (count < 0 || count > 1 || !turn.equals(event.optString("turn_id"))) throw new IOException("Respuesta de otro turno");
+        if ("voice_message_play".equals(control)) {
+            JSONObject selector = event.optJSONObject("voice_message_selector");
+            if (count != 0 || !executedTurn.isEmpty() || selector == null || selector.length() != 1
+                    || !"latest".equals(selector.optString("type")) || value.length() > 120
+                    || !event.optString("close_reason").isEmpty())
+                throw new IOException("Solicitud de repetición de mensaje no válida");
+            return;
+        }
         if ("result".equals(control)) {
             boolean timeout = value.equals(ActionCompletionPolicy.text("No llegó la confirmación de Android. El resultado es incierto; revisa los temporizadores en la pantalla antes de pedir otro.", continuing));
             if (!executedTurn.equals(turn) || (timeout ? count != 0 : receipt == null

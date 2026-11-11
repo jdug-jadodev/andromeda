@@ -31,8 +31,8 @@ contrato versionado. Nada de esto puede quitar funciones que ya funcionan.
 | # | Mejora | Superficie | Prioridad | Riesgo | Estado |
 |---|---|---|---|---|---|
 | 1 | IA con herramientas (DeepSeek) + respaldo determinista | Ambas | **P0** | Medio | ✅ Desplegado |
-| 2 | Historial de mensajes de voz 24 h (repetir/listar/reproducir uno) | Ambas | **P0** | Bajo | 📝 Diseñado |
-| 3 | Memoria de largo plazo y su gestión | Ambas | **P1** | Medio | 📝 Diseñado |
+| 2 | Historial de mensajes de voz 24 h (repetir/listar/reproducir uno) | Ambas | **P0** | Bajo | ✅ Cerrado según prueba humana del usuario |
+| 3 | Memoria temporal por sesión/día y contexto en DB | Ambas | **P1** | Medio | 🟡 Alcance acordado; política y diseño técnico pendientes |
 | 4 | Color por hexadecimal y guardado con nombre | Ambas | **P1** | Bajo | 📝 Diseñado |
 | 5 | Música local / YouTube Premium | Ambas | **P2** | Medio | 📝 Diseñado |
 | 6 | Xbox: encender, abrir YouTube o un juego | Ambas | **P2** | Alto | 📝 Investigación |
@@ -177,36 +177,62 @@ mensaje de mamá», «reproduce el segundo», tanto en la casa como en la app.
 
 ---
 
-## 3. Memoria de largo plazo
+## 3. Memoria temporal por sesión/día y contexto conversacional
 
 ### Objetivo
-Que recuerde hechos y preferencias («mi cumpleaños es…», «la luz del salón es la
-de la derecha», «a mi mamá le gusta el café sin azúcar») y que se pueda ver,
-editar y borrar.
+Mantener continuidad útil durante una sesión o un día, sin crear una memoria
+permanente. El contexto de conversación que hoy vive en RAM de Android también
+pasará a persistencia local en base de datos, con límites y caducidad.
 
 ### Diseño
-1. **Almacén local** (SQLite en la casa): `id`, texto, etiquetas, origen
-   (voz/app), fecha, caducidad opcional, sensibilidad.
-2. **Qué guarda:** hechos y preferencias explícitos. **No** conversaciones
-   completas ni audio. Si el dato parece sensible (salud, contraseñas, dinero),
-   se pregunta antes de guardarlo.
-3. **Órdenes:**
-   - «recuerda que…» → guarda y confirma.
-   - «¿qué recuerdas de…?» → recupera por palabra clave/etiqueta.
-   - «olvida…» / «borra de tu memoria…» → confirmación antes de borrar.
-   - «muéstrame tu memoria» → lista paginada.
-   - «cambia…» → actualiza con confirmación si hay conflicto.
-4. **Recuperación:** búsqueda por texto/etiquetas; se inyectan solo las entradas
-   relevantes al planificador (tope de tokens). Límite de 200 entradas / 64 KB.
-5. **Gestión desde la app:** pantalla **Memoria** para listar, añadir, editar y
-   borrar; buscar; ver origen y fecha.
-6. **Fallback determinista:** las órdenes de memoria funcionan sin DeepSeek.
-7. **Contrato:** CRUD `/v1/memory` en 1.5.0; pruebas de duplicados y conflictos.
+1. **Persistencia:** SQLite en Debian del Moto G como fuente autoritativa y
+   compartida por la voz local y la app. El backend conserva el texto; Android
+   maneja solo IDs/contadores y solicita el chat seleccionado.
+2. **Retención:** una charla vence solo tras 1 h sin actividad humana. No hay
+   purga de medianoche: una conversación viva debe seguir recordando al cambiar
+   de día. El catálogo conserva como máximo 4 charlas y, al abrir una quinta,
+   desaloja la menos usada en vez de bloquear la voz. Al entrar por voz se
+   continúa automáticamente la charla viva más reciente; «recuerdas …» sigue
+   sirviendo para buscar un tema concreto.
+3. **Contenido:** persistir solo el contexto textual acotado; no grabar audio ni
+   generar resúmenes/recuerdos automáticos. Las notas de voz recibidas son otra
+   función y conservan su retención independiente de 24 h.
+4. **Recuperación eficiente:** cargar únicamente turnos recientes y datos
+   pertinentes, con límites de texto/tokens; SQLite reduce la retención del
+   catálogo en heap, pero el contexto activo todavía debe cargarse
+   temporalmente para enviarlo al modelo.
+5. **Gestión:** poder iniciar una charla limpia y borrar la memoria temporal.
+   Si el almacén falla o una charla caduca entre el saludo y la primera frase,
+   el turno sigue por voz con memoria vacía; nunca se cierra la sesión ni se
+   apaga el residente por un fallo de memoria.
+6. **Seguridad:** consultas parametrizadas, aislamiento por conversación y
+   caducidad verificable; no incluir audio ni texto privado en métricas/logs.
+7. **Protocolo:** subir la versión coordinadamente. El saludo autenticado no
+   enviará el catálogo con texto: la selección pedirá el contexto al backend,
+   que valida ID, estado y caducidad antes de restaurarlo.
+8. **Pruebas:** límites, expiración, reinicio del proceso, aislamiento de chats,
+   borrado y reconstrucción del contexto desde DB, además de regresión de voz.
 
 ### Criterios de aceptación
-- «Recuerda que…» persiste tras reiniciar el Moto.
-- Se puede consultar, corregir y borrar desde voz y app.
-- No se guarda nada que el usuario no haya pedido recordar explícitamente.
+- El contexto autorizado puede restaurarse desde DB después de cerrar/reiniciar
+  el proceso, sin restaurar entradas vencidas.
+- El contenido expira según la política elegida y no crece sin límite.
+- No se guarda audio; el alcance de guardado del texto se informa claramente.
+
+### Secuencia de implementación
+1. Crear SQLite y pruebas offline de límites, expiración por inactividad y
+   desalojo de la charla menos usada; todavía sin tocar datos del teléfono.
+2. Cambiar el protocolo coordinadamente: catálogo de metadatos, selección y
+   carga del chat elegido desde Debian; no enviar todos los textos al abrir voz.
+3. Persistir únicamente turnos aceptados y respuestas con TTS completado; al
+   fallar/interrumpirse TTS, conservar la pregunta sin inventar respuesta. El
+   turno activo se materializa en RAM del backend solo durante la inferencia.
+4. Conservar el vencimiento de una hora inactiva y descartar la purga de
+   medianoche; al entrar por voz, continuar la charla viva más reciente.
+5. Ejecutar suites/fixtures y revisar respaldo, compatibilidad, gestión de
+   listado/olvido autenticada y plan de reversa.
+   El despliegue y reinicio se acuerdan aparte porque pueden perder el contexto
+   temporal que exista en RAM.
 
 ---
 
@@ -341,7 +367,10 @@ se guarda con un nombre («atardecer»).
 2. ✅ **Resuelto:** mensajes de voz: solo audio 24 h, sin transcripción.
 3. Música: ¿la familia aportará archivos locales? ¿Qué formatos y dónde?
 4. Xbox: modelo exacto, red, Instant-on y si la TV tiene CEC activo.
-5. Memoria: ¿compartida por toda la casa o separada por persona?
+5. ✅ **Resuelto:** memoria temporal en SQLite de Debian del Moto G; máximo 4
+   charlas, 24 turnos por charla y 5.700 unidades UTF-16; vence tras una hora
+   sin actividad humana. Sin purga de medianoche: la charla viva se continúa al
+   entrar por voz y, al abrir una quinta, se desaloja la menos usada.
 6. Contrato 1.5.0: el usuario no lo ve necesario todavía; se sube solo cuando la
    app móvil vaya a usar los campos nuevos (serán opcionales y compatibles).
 
@@ -352,8 +381,32 @@ se guarda con un nombre («atardecer»).
 | 2026-11-09 | Plan creado | ✅ | Registro de las seis mejoras y reglas |
 | 2026-11-10 | 1. IA con herramientas | ✅ | DeepSeek primero (`ANDROMEDA_PLANNER=deepseek_first`), determinista de respaldo; probado en vivo con y sin clave (`bf17587`, `f913d0f`) |
 | 2026-11-10 | Autoarranque y recuperación | ✅ | Usuario confirmó reinicio real después de quitar el bloqueo: motor activo y micrófono abierto. Gateway `/v1/health` también informó residente/voz remota/Tailscale activos y respondió una orden. APK `andromeda-autostart-v3.apk`; lock obsoleto y caída simulada recuperados. |
-| | 2. Mensajes 24 h | ⏳ | Siguiente: repetir último, listar y reproducir uno; solo audio |
-| | 3. Memoria | 📝 | Pendiente |
+| 2026-11-10 | 2. Mensajes 24 h | ✅ | Usuario confirma que repitió/reprodujo y funcionó; bloque cerrado según su prueba. |
+| 2026-11-10 | 3. Memoria temporal | 🟡 | Desplegado al Moto G8 Plus: backend SQLite y APK actualizados. Validado en el dispositivo: permisos DB 0700/0600, integridad SQLite, handshake TLS de voz sin abrir micrófono, catálogo autenticado solo con metadatos y borrado confirmado de un chat de prueba; DB quedó vacía. Residente y servicios restaurados. Suites Python y build APK aislado pasan. Pendiente prueba de una conversación real con voz/TTS; memoria textual sin audio/resúmenes y notas de voz TTL separado 24 h. |
+| 2026-11-11 | 3. Memoria temporal | 🟠 | Corregido y desplegado: sin purga de medianoche, la charla viva sobrevive al cambio de día; al abrir una quinta charla se desaloja la menos usada; la entrada por voz continúa la charla viva más reciente y los fallos de memoria ya no cierran sesión ni apagan el residente. DB vacía (la purga de 00:00 había borrado todo); residente y servicios reiniciados. Pendiente prueba humana de voz y de un temporizador de 1 minuto. |
 | | 4. Color hex | 📝 | Pendiente |
 | | 5. Música | 📝 | Pendiente |
 | | 6. Xbox | 📝 | Pendiente de datos de la consola |
+
+---
+
+## 12. Estado actual y siguiente orden (2026-11-11)
+
+### Cerrado o desplegado en esta etapa
+- **IA con herramientas:** DeepSeek primero, respaldo determinista, cortacircuitos corregido (cancelaciones y rechazos ya no lo abren), memoria de acciones completadas.
+- **Memoria temporal:** SQLite en Debian, sin purga de medianoche, 4 charlas con desalojo LRU, 24 turnos / 5.700 unidades, 1 h de inactividad, entrada por voz que continúa la charla viva. Contexto del modelo acotado: 12 mensajes / 6.000 caracteres en la nube y 1.536 tokens en el modelo local; checkpoint cada 20 turnos y época máxima de 64.
+- **Mensajes de voz:** el último audio enviado por la app se reprodujo correctamente (`status=played`); el fallo era la memoria del turno, ya corregido.
+- **Audio:** voz y recordatorio por `SpeakerSpeech`/AudioTrack con altavoz preferido; recordatorio con uso de alarma y foco; jingle con uso de alarma verificado (`usecase RINGTONE`, `Speaker ON`).
+- **Vigilante:** ahora también levanta `VoiceService`/`HomeGatewayService` si faltan, no solo el residente.
+- **Luces:** el objetivo explícito manda sobre el plural genérico: «televisor/tv» -> MR Star, «mueble/lotus» -> Lotus, «las dos/ambas» -> ambas (0.13.77).
+
+### Siguiente, por prioridad
+1. **P0 - Voz y avisos conviviendo:** que `VoiceService` espere al aviso de agenda en vez de detenerse por el micrófono; el turno no se debe perder. Requiere APK + backend coordinados.
+2. **P0 - Palabra de activación:** hoy `wake_enabled=false` y la voz continua acepta cualquier frase; además el modelo Vosk no contiene «andrómeda». Opciones: activar la compuerta con una palabra que el modelo reconozca («Doha»/«Doja») o entrenar «Andrómeda» como palabra clave; exigirla al iniciar/retomar, no en cada turno de una charla activa.
+3. **P1 - Luces naturales:** aceptar «mueble en rojo» o «luz del mueble en rojo» con un «pon» implícito y que «sí, por favor + la orden» cuente como confirmación. Actualizar la descripción de `control_lights` para que el modelo sepa que «televisor» y «mueble» son objetivos de luz, no electrodomésticos.
+4. **P1 - Alarmas de solo lectura:** añadir `list_alarms`/lectura de `agenda.db` para responder «tengo alarmas pendientes»; hoy solo existe `list_reminders`.
+5. **P2 - Repetición de voz:** mantener la memoria del turno ya corregida y, si se quiere certificar, enviar un recibo `voice_message_played` desde la app al backend.
+6. **P2 - Memoria compacta de largo plazo (nueva):** guardar hechos/preferencias breves («la luz del televisor es MR Star», «café sin azúcar») que sobrevivan al recorte de turnos. No es resumen generado de la charla; sería una tabla explícita y acotada.
+7. **Plan original pendiente:** 4) color por hexadecimal y guardado con nombre (revisar qué falta en la app/backend), 5) música local/YouTube Premium, 6) Xbox.
+
+La regla sigue siendo la misma: cada bloque se prueba en real y se despliega app + backend juntos; si algo falla, se apaga la bandera y se conserva el comportamiento anterior.

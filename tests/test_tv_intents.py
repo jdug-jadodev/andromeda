@@ -2,12 +2,14 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 
 from tv_intents import parse_volume, parse_input, parse_scene, parse_audio, parse_app
 import tv_control
+from assistant_tools_trial import AssistantToolsTrial
 
 
 class TvIntentsTests(unittest.TestCase):
@@ -44,6 +46,17 @@ class TvIntentsTests(unittest.TestCase):
         self.assertEqual(tv_control.TVError('param').kind, 'param')
         self.assertEqual(tv_control.TVError('tv').kind, 'tv')
         self.assertEqual(tv_control.TVError('network').kind, 'network')
+
+    def test_power_off_does_not_poll_tv_status_during_voice_turn(self):
+        tools = AssistantToolsTrial(lambda: 0)
+        with patch('tv_control.power_off', return_value={'sent': True, 'confirmed': False}), \
+             patch('tv_control.status') as status:
+            response = tools._tv_result({'kind': 'tv_power_off'})
+
+        self.assertEqual(response, {
+            'text': 'Envié la orden de apagado, pero no puedo confirmar si la TV quedó apagada.'
+        })
+        status.assert_not_called()
 
 
 if __name__ == '__main__':

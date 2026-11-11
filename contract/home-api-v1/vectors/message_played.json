@@ -1,0 +1,22 @@
+{
+  "name": "message_played_from_app",
+  "description": "La app informa que terminó de reproducir el mensaje; el audio no se borra antes de las 24 h.",
+  "request": {
+    "method": "POST",
+    "path": "/v1/messages/msg-0001/played",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "X-Andromeda-Contract": "1"
+    },
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "msg-0001",
+      "status": "played",
+      "expires_at_ms": 1760086400000,
+      "played_at_ms": 1760000009000
+    }
+  }
+}

@@ -78,7 +78,7 @@ final class RemoteCommandBus {
                 return new Reply(503, error("offline", "Andromeda no esta escuchando.", true, 3000));
             }
             if (value.busy()) {
-                return new Reply(409, error("busy", "Hay una conversacion en casa; reintenta.", true, 3000));
+                return new Reply(409, error("busy", "Andromeda esta ocupada; vuelve a intentarlo cuando termine.", true, 3000));
             }
             if (entry == null) {
                 entry = new Entry();

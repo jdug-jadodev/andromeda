@@ -60,9 +60,15 @@ final class SpeakerSpeech {
     private volatile String audibleId = "";
     private volatile int lastRoutedType;
     private volatile boolean released;
+    private final int usage;
 
     SpeakerSpeech(Context context, TextToSpeech.OnInitListener ready, String engineName) {
+        this(context, ready, engineName, AudioAttributes.USAGE_MEDIA);
+    }
+
+    SpeakerSpeech(Context context, TextToSpeech.OnInitListener ready, String engineName, int usage) {
         this.context = context.getApplicationContext();
+        this.usage = usage;
         engine = new TextToSpeech(this.context, ready, engineName);
         engine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             @Override public void onStart(String synthId) { /* Synthesis only; audible start follows playback. */ }
@@ -212,7 +218,7 @@ final class SpeakerSpeech {
             if (minimum <= 0) throw new IOException("Unsupported synthesis format");
             track = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setUsage(usage)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(new AudioFormat.Builder().setEncoding(encoding)
                     .setSampleRate(pcm.sampleRate).setChannelMask(channels).build())
@@ -227,11 +233,18 @@ final class SpeakerSpeech {
             }
             track.play();
             if (track.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) throw new IOException("Playback did not start");
+            AudioDeviceInfo routed = track.getRoutedDevice();
+            if (routed != null && routed.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER && speaker != null) {
+                // The policy can pick the wired headset on the first frame even
+                // after setPreferredDevice; reapply once and re-read.
+                track.setPreferredDevice(speaker);
+                AudioDeviceInfo retried = track.getRoutedDevice();
+                if (retried != null) routed = retried;
+            }
             if (silentIds.remove(publicId)) {
                 track.setVolume(0f);
                 android.util.Log.i("AndromedaSpeech", "silent reply " + publicId);
             }
-            AudioDeviceInfo routed = track.getRoutedDevice();
             if (routed != null) {
                 lastRoutedType = routed.getType();
                 android.util.Log.i("AndromedaSpeech", "route=" + routed.getType());

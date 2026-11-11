@@ -60,6 +60,20 @@ class ContinuousVoiceTests(unittest.TestCase):
         with self.assertRaises(ValueError): reset.claim(self.reset_packet(event))
         with self.assertRaises(ValueError): packet(b'{"action":"x","action":"y"}')
 
+    def test_sqlite_reset_handoff_transmits_only_context_identity(self):
+        now=[100000]
+        for reason in ('dialogue_closed','human_inactivity','turn_checkpoint','audio_resume'):
+            reset=ContextReset('a'*32,'b'*32,reason,lambda:now[0],
+                retained_turns=3 if reason=='turn_checkpoint' else 0,
+                last_human_ms=99000 if reason=='turn_checkpoint' else 0)
+            fresh=reason!='turn_checkpoint'; identity='c'*32 if fresh else 'b'*32
+            value={'action':'voice_context','reset_nonce':reset.nonce,'previous_session_id':'a'*32,
+                'previous_context_id':'b'*32,'context_id':identity,'voice_entry':fresh}
+            selected,is_new=reset.claim_remote(value)
+            self.assertEqual((selected,is_new),(identity,fresh))
+            self.assertNotIn('context',value); self.assertNotIn('catalog',value)
+            with self.assertRaises(ValueError): reset.claim_remote(value)
+
     def test_continuous_frame_limit_is_opt_in_and_other_frames_keep_original_bounds(self):
         payload=json.dumps({'public':'x'*50000}).encode(); raw=struct.pack('!BI',5,len(payload))+payload
         def connection(data):
@@ -227,15 +241,17 @@ class ContinuousVoiceTests(unittest.TestCase):
         raw=Mock(); raw.__enter__=Mock(return_value=raw); raw.__exit__=Mock(return_value=False); server.accept.return_value=(raw,('127.0.0.1',1))
         conn=Mock(); conn.__enter__=Mock(return_value=conn); conn.__exit__=Mock(return_value=False)
         context=Mock(); context.wrap_socket.return_value=conn
-        hello=dict(token='public-key-'*4,protocol=12,mode='assistant_tools',source='synthetic_pcm',web_response_mode='worker_first_v3_spanish',
+        hello=dict(token='public-key-'*4,protocol=12,mode='assistant_tools',source='synthetic_pcm',memory_store='sqlite_debian_v1',
+            context_id='a'*32,voice_entry=True,web_response_mode='worker_first_v3_spanish',
             phone_volume_policy='absolute_media_v2_turn60',light_control_policy='voice_light_command_v1',agenda_dialogue_policy='guided_agenda_v1',action_completion_policy='continue_v1',
-            voice_lifetime_policy='continuous_voice_v1',dialogue_reset_policy='client_fresh_v1',context=dict(version=1,id='a'*32,last_human_ms=0,turns=[]))
+            voice_lifetime_policy='continuous_voice_v1',dialogue_reset_policy='client_fresh_v1')
         with tempfile.TemporaryDirectory() as directory:
             key=Path(directory)/'key'; key.write_text(hello['token'])
             with patch.object(voice.ssl,'SSLContext',return_value=context),patch.object(voice.socket,'socket',return_value=server), \
                     patch.object(voice,'read_hello',return_value=hello),patch.object(voice,'session',side_effect=['voice_peer_closed','voice_manual_stop']) as session,patch.object(voice,'print'), \
                     patch.object(voice,'now_ms',side_effect=clock),patch.object(voice.time,'CLOCK_BOOTTIME',7,create=True), \
-                    patch.object(voice.time,'clock_gettime',return_value=100,create=True):
+                    patch.object(voice.time,'clock_gettime',return_value=100,create=True), \
+                    patch.dict('os.environ',{'ANDROMEDA_CONVERSATION_DB':str(Path(directory)/'memory.db')}):
                 voice.serve(key,key,Mock(),0,'public-cert','public-key','synthetic_pcm',runtime.check,assistant_tools=True,guided_agenda=True,continuous_voice=True,resident=runtime)
         # Peer drop must not end the resident: it re-accepts, then an explicit stop shuts it down.
         self.assertEqual(session.call_count,2); owner.stop.assert_called_once(); self.assertTrue(runtime.closed)

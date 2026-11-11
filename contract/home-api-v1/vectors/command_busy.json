@@ -1,6 +1,6 @@
 {
   "name": "command_busy",
-  "description": "La casa esta atendiendo una conversacion local; la orden remota espera o recibe busy.",
+  "description": "Andromeda ya atiende otro turno; la orden remota recibe busy.",
   "request": {
     "method": "POST",
     "path": "/v1/command",
@@ -20,7 +20,7 @@
     "status": 409,
     "body": {
       "error": "busy",
-      "message": "Hay una conversacion en casa; reintenta.",
+      "message": "Andromeda esta ocupada; vuelve a intentarlo cuando termine.",
       "retryable": true,
       "retry_after_ms": 3000
     }

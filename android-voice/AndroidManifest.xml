@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="local.doja.voice"
-    android:versionCode="101" android:versionName="0.13.73-audio-altavoz">
+    android:versionCode="105" android:versionName="0.13.77-audio-altavoz">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -67,6 +67,8 @@
         android:label="Silenciar y cierre TLS sin micrófono ni modelo" android:functionalTest="true" />
     <instrumentation android:name=".ContextInstrumentation" android:targetPackage="local.doja.voice"
         android:label="Contexto en RAM sin audio ni modelo" android:functionalTest="true" />
+    <instrumentation android:name=".ConversationMemoryProtocolInstrumentation" android:targetPackage="local.doja.voice"
+        android:label="SQLite remoto por TLS sin micrófono ni TTS" android:functionalTest="true" />
     <instrumentation android:name=".SilenceInstrumentation" android:targetPackage="local.doja.voice"
         android:label="ASR Android con WAV públicos, sin micrófono ni altavoz" android:functionalTest="true" />
     <instrumentation android:name=".SpeakerRouteInstrumentation" android:targetPackage="local.doja.voice"

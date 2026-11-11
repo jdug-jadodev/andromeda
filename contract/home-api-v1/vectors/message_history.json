@@ -1,0 +1,30 @@
+{
+  "name": "message_history_24h",
+  "description": "Historial familiar: metadatos solamente, sin transcripcion ni audio.",
+  "request": {
+    "method": "GET",
+    "path": "/v1/messages/history",
+    "headers": {
+      "Authorization": "Bearer <device-token>",
+      "X-Andromeda-Contract": "1"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "messages": [
+        {
+          "id": "msg-0001",
+          "sender": "Mamá",
+          "received_at_ms": 1760000000000,
+          "duration_ms": 12000,
+          "size_bytes": 180000,
+          "content_type": "audio/mp4",
+          "status": "played",
+          "expires_at_ms": 1760086400000,
+          "played_at_ms": 1760000009000
+        }
+      ]
+    }
+  }
+}

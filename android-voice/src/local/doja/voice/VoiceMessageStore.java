@@ -17,7 +17,8 @@ import java.nio.file.Files;
  *
  * El audio se guarda en disco y el indice solo tiene metadatos: nunca se
  * mantiene un mensaje de 2 MB en memoria. Una entrada caduca a las 24 h y su
- * audio se borra en cuanto suena. Todo el estado vive en este proceso, asi que
+ * audio se conserva hasta 24 h desde la recepcion, incluso tras reproducirlo.
+ * Todo el estado vive en este proceso, asi que
  * el gateway y el servicio de voz comparten la misma instancia.
  */
 final class VoiceMessageStore {
@@ -87,6 +88,15 @@ final class VoiceMessageStore {
             if (pending >= VoiceMessagePolicy.PENDING) {
                 throw new Fault(429, "rate_limited", "Hay demasiados mensajes pendientes.", 60000L);
             }
+            long storedBytes = 0;
+            for (JSONObject entry : entries.values()) {
+                File stored = file(entry);
+                if (stored != null && stored.isFile()) storedBytes += stored.length();
+            }
+            if (entries.size() >= VoiceMessagePolicy.HISTORY_ITEMS
+                    || storedBytes + audio.length > VoiceMessagePolicy.TOTAL_BYTES) {
+                throw new Fault(429, "rate_limited", "El historial de voz esta lleno.", 60000L);
+            }
             Long last = lastUpload.get(deviceId);
             if (last != null && now - last < VoiceMessagePolicy.MIN_INTERVAL_MS) {
                 long wait = VoiceMessagePolicy.MIN_INTERVAL_MS - (now - last);
@@ -107,6 +117,7 @@ final class VoiceMessageStore {
                     .put("status", VoiceMessagePolicy.QUEUED)
                     .put("type", type)
                     .put("duration_ms", durationMs)
+                    .put("size_bytes", audio.length)
                     .put("file", name)
                     .put("created_ms", now)
                     .put("expires_at_ms", now + VoiceMessagePolicy.TTL_MS);
@@ -148,6 +159,53 @@ final class VoiceMessageStore {
         }
     }
 
+    /** Family-wide metadata history; audio and transcripts are never embedded. */
+    JSONArray history() {
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
+            JSONArray ordered = new JSONArray();
+            java.util.ArrayList<JSONObject> values = new java.util.ArrayList<>(entries.values());
+            for (int index = values.size() - 1; index >= 0; index--) {
+                JSONObject entry = values.get(index);
+                JSONObject item = new JSONObject();
+                try {
+                    item.put("id", entry.optString("id"))
+                        .put("sender", entry.optString("device_name"))
+                        .put("received_at_ms", entry.optLong("created_ms"))
+                        .put("duration_ms", entry.optLong("duration_ms"))
+                        .put("size_bytes", entry.optLong("size_bytes"))
+                        .put("content_type", entry.optString("type"))
+                        .put("status", entry.optString("status"))
+                        .put("expires_at_ms", entry.optLong("expires_at_ms"));
+                    if (entry.has("played_at_ms")) item.put("played_at_ms", entry.optLong("played_at_ms"));
+                    ordered.put(item);
+                } catch (Exception ignored) { }
+            }
+            return ordered;
+        }
+    }
+
+    byte[] audio(String id) throws IOException {
+        if (!VoiceMessagePolicy.id(id)) return null;
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
+            JSONObject entry = entries.get(id);
+            File stored = entry == null ? null : file(entry);
+            if (stored == null || !stored.isFile() || stored.length() > VoiceMessagePolicy.MAX_BYTES) return null;
+            return Files.readAllBytes(stored.toPath());
+        }
+    }
+
+    String audioType(String id) {
+        synchronized (lock) {
+            load();
+            JSONObject entry = entries.get(id);
+            return entry == null ? null : entry.optString("type", null);
+        }
+    }
+
     int queuedCount() {
         synchronized (lock) {
             load();
@@ -157,6 +215,13 @@ final class VoiceMessageStore {
                 if (VoiceMessagePolicy.QUEUED.equals(entry.optString("status"))) count++;
             }
             return count;
+        }
+    }
+
+    void purgeExpired() {
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
         }
     }
 
@@ -186,6 +251,43 @@ final class VoiceMessageStore {
         }
     }
 
+    /** Newest retained playable note, without changing its queue/play state. */
+    JSONObject latestForReplay() {
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
+            java.util.Iterator<JSONObject> iterator = new java.util.ArrayList<>(entries.values()).stream()
+                .sorted((left, right) -> Long.compare(right.optLong("created_ms"), left.optLong("created_ms")))
+                .iterator();
+            while (iterator.hasNext()) {
+                JSONObject entry = iterator.next();
+                if (VoiceMessagePolicy.PLAYING.equals(entry.optString("status"))) continue;
+                File stored = file(entry);
+                if (stored != null && stored.isFile()) return entry;
+            }
+            return null;
+        }
+    }
+
+    JSONObject beginReplay(String id) {
+        if (!VoiceMessagePolicy.id(id)) return null;
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
+            JSONObject entry = entries.get(id);
+            if (entry == null || VoiceMessagePolicy.PLAYING.equals(entry.optString("status"))) return null;
+            File stored = file(entry);
+            if (stored == null || !stored.isFile()) return null;
+            try {
+                entry.put("status", VoiceMessagePolicy.PLAYING);
+                save();
+                return entry;
+            } catch (Exception failure) {
+                return null;
+            }
+        }
+    }
+
     File file(JSONObject entry) {
         String name = entry.optString("file");
         if (name.isEmpty() || name.contains("/") || name.contains("\\")) return null;
@@ -194,6 +296,25 @@ final class VoiceMessageStore {
 
     void markPlayed(String id) {
         finish(id, true);
+    }
+
+    JSONObject markPlayedFromClient(String id) {
+        if (!VoiceMessagePolicy.id(id)) return null;
+        synchronized (lock) {
+            load();
+            prune(System.currentTimeMillis());
+            JSONObject entry = entries.get(id);
+            if (entry == null) return null;
+            try {
+                entry.put("status", VoiceMessagePolicy.PLAYED)
+                    .put("played_at_ms", System.currentTimeMillis());
+                entry.remove("error");
+                save();
+                return status(entry);
+            } catch (Exception failure) {
+                return null;
+            }
+        }
     }
 
     void markFailed(String id) {
@@ -209,8 +330,6 @@ final class VoiceMessageStore {
                 entry.put("status", completed ? VoiceMessagePolicy.PLAYED : VoiceMessagePolicy.FAILED);
                 if (completed) entry.put("played_at_ms", System.currentTimeMillis());
                 else entry.put("error", "playback_failed");
-                File audio = file(entry);
-                if (audio != null) audio.delete();
                 save();
             } catch (Exception ignored) { }
         }
@@ -249,23 +368,27 @@ final class VoiceMessageStore {
             String state = entry.optString("status");
             long created = entry.optLong("created_ms");
             long expires = entry.optLong("expires_at_ms");
-            boolean pending = VoiceMessagePolicy.QUEUED.equals(state) || VoiceMessagePolicy.PLAYING.equals(state);
-            if (pending && now >= expires) {
+            if (now >= expires) {
                 try {
-                    entry.put("status", VoiceMessagePolicy.EXPIRED);
+                    if (VoiceMessagePolicy.QUEUED.equals(state) || VoiceMessagePolicy.PLAYING.equals(state)) {
+                        entry.put("status", VoiceMessagePolicy.EXPIRED);
+                    }
                     File audio = file(entry);
-                    if (audio != null) audio.delete();
+                    if (audio != null && audio.exists()) audio.delete();
+                    iterator.remove();
                     changed = true;
                 } catch (Exception ignored) { }
-            } else if (!pending && now - created > VoiceMessagePolicy.TTL_MS + 86400000L) {
+            } else if (created <= 0) {
                 iterator.remove();
                 changed = true;
             }
         }
-        while (entries.size() > 200) {
-            java.util.Iterator<String> first = entries.keySet().iterator();
-            first.next();
-            first.remove();
+        while (entries.size() > VoiceMessagePolicy.HISTORY_ITEMS) {
+            java.util.Iterator<JSONObject> oldest = entries.values().iterator();
+            JSONObject removed = oldest.next();
+            File audio = file(removed);
+            if (audio != null && audio.exists()) audio.delete();
+            oldest.remove();
             changed = true;
         }
         if (changed) {

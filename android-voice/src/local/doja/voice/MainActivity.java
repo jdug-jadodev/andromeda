@@ -27,7 +27,8 @@ public class MainActivity extends Activity {
     ProcessingBorderView border;
     FrameLayout root, faceLayer, optionsLayer;
     LinearLayout idleLayer;
-    TextView clock, date, weather, weatherDetail, wakeHint, state, transcript, previewBadge, optionsCountdown;
+    TextView clock, date, weather, weatherDetail, wakeHint, state, transcript, previewBadge, optionsCountdown, remoteBusyText;
+    View remoteBusyIndicator;
     Button microphoneStop, assistantStart, assistantAction;
     final UiPolicy policy = new UiPolicy();
     private final ListeningSleepPolicy sleep = new ListeningSleepPolicy();
@@ -83,6 +84,8 @@ public class MainActivity extends Activity {
 
     final BroadcastReceiver receiver = new BroadcastReceiver() {
         public void onReceive(Context c, Intent intent) {
+            if (intent != null && intent.hasExtra("remote_app_busy"))
+                showRemoteBusy(intent.getBooleanExtra("remote_app_busy", false));
             stopPreview();
             String words = intent == null ? null : intent.getStringExtra("transcript");
             if (words != null && !words.isEmpty() && weatherData != null
@@ -203,6 +206,7 @@ public class MainActivity extends Activity {
         microphoneStop.setVisibility(View.GONE); microphoneStop.setOnClickListener(value -> stopMicrophone());
         FrameLayout.LayoutParams stop = new FrameLayout.LayoutParams(-2, dp(48), Gravity.TOP | Gravity.END);
         stop.topMargin = dp(8); stop.rightMargin = dp(12); root.addView(microphoneStop, stop);
+        buildRemoteBusyIndicator();
         buildOptions();
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             public boolean onDown(android.view.MotionEvent event) { return true; }
@@ -220,6 +224,32 @@ public class MainActivity extends Activity {
         });
         applyChristmas();
         setContentView(root); refreshServiceState(); immersive();
+    }
+    private void buildRemoteBusyIndicator() {
+        LinearLayout indicator = new LinearLayout(this);
+        indicator.setGravity(Gravity.CENTER_VERTICAL);
+        indicator.setPadding(dp(5), dp(3), dp(7), dp(3));
+        indicator.setAlpha(0.78f);
+        indicator.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
+        indicator.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        indicator.setContentDescription("Andrómeda ocupada por una orden de la app");
+        GradientDrawable dot = new GradientDrawable(); dot.setShape(GradientDrawable.OVAL);
+        dot.setColor(Color.rgb(198, 91, 96));
+        View redDot = new View(this); redDot.setBackground(dot);
+        indicator.addView(redDot, new LinearLayout.LayoutParams(dp(6), dp(6)));
+        remoteBusyText = new TextView(this); remoteBusyText.setText("Ocupada");
+        remoteBusyText.setTextSize(11); remoteBusyText.setTextColor(Color.rgb(203, 147, 151));
+        LinearLayout.LayoutParams text = new LinearLayout.LayoutParams(-2, -2); text.leftMargin = dp(5);
+        indicator.addView(remoteBusyText, text);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, dp(28), Gravity.TOP | Gravity.START);
+        params.topMargin = dp(12); params.leftMargin = dp(12);
+        root.addView(indicator, params);
+        remoteBusyIndicator = indicator;
+        showRemoteBusy(VoiceService.remoteAppBusy);
+    }
+    private void showRemoteBusy(boolean busy) {
+        if (remoteBusyIndicator != null)
+            remoteBusyIndicator.setVisibility(busy ? View.VISIBLE : View.GONE);
     }
     private void buildIdle() {
         idleLayer = new LinearLayout(this); idleLayer.setOrientation(LinearLayout.VERTICAL);
@@ -782,41 +812,82 @@ public class MainActivity extends Activity {
         });
     }
     void contextOptions() {
-        long now = SystemClock.elapsedRealtime();
-        List<ConversationMemory.Info> items = ConversationContexts.MEMORY.list(now);
         if (VoiceService.active) {
-            showDialog(new AlertDialog.Builder(this).setTitle("Contexto local en RAM")
-                .setMessage("Silencia primero para gestionar u olvidar una charla. Para retomar por voz abre con «Andrómeda, recuerdas…» y confirma la coincidencia. Una apertura normal crea otra charla.\n\nLFM todavía puede usar mal el historial recibido.")
+            showDialog(new AlertDialog.Builder(this).setTitle("Memoria temporal en Debian")
+                .setMessage("Silencia primero para gestionar u olvidar una charla. La base compartida por la voz y la app conserva solo texto acotado; se purga a medianoche y tras una hora sin actividad.")
                 .setPositiveButton("Cerrar", null).create()); return;
         }
+        if (getIntent().getBooleanExtra("offline_preview", false)) { renderContextOptions(); return; }
+        android.app.ProgressDialog loading=android.app.ProgressDialog.show(this,"Memoria temporal","Consultando SQLite en el Moto G…",true,false);
+        new Thread(() -> {
+            try {
+                org.json.JSONObject response=VoiceConnection.memoryAdmin(this,"list",null);
+                org.json.JSONArray catalog=response.getJSONArray("catalog");
+                runOnUiThread(() -> {
+                    loading.dismiss();
+                    try {
+                        ConversationContexts.MEMORY.registerCatalog(catalog,SystemClock.elapsedRealtime());
+                        ConversationContexts.scheduleExpiry(); renderContextOptions();
+                    } catch (Exception invalid) {
+                        showDialog(new AlertDialog.Builder(this).setTitle("Memoria")
+                            .setMessage("El catálogo recibido no es válido; no se modificó la base.")
+                            .setPositiveButton("Cerrar",null).create());
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> { loading.dismiss(); showDialog(new AlertDialog.Builder(this)
+                    .setTitle("Memoria no disponible").setMessage("No pude consultar la base del Moto G. No cambié ni borré nada.")
+                    .setPositiveButton("Cerrar",null).create()); });
+            }
+        },"conversation-memory-list").start();
+    }
+    private void renderContextOptions() {
+        long now = SystemClock.elapsedRealtime();
+        List<ConversationMemory.Info> items = ConversationContexts.MEMORY.list(now);
+        if (VoiceService.active) return;
         List<String> labels = new ArrayList<>();
         for (ConversationMemory.Info info : items) labels.add((info.current ? "✓ " : "") + info.label
             + (info.closed ? " · cerrada, retomable" : "") + " · " + info.turns + " turnos · " + Math.max(1, (info.remainingMs + 59999) / 60000) + " min restantes");
-        labels.add("Nueva conversación"); labels.add("Olvidar la conversación seleccionada…");
-        showDialog(new AlertDialog.Builder(this).setTitle("Gestionar RAM · retoma por voz con «recuerdas»")
+        labels.add("Empezar una charla nueva por voz…"); labels.add("Olvidar la conversación seleccionada…");
+        showDialog(new AlertDialog.Builder(this).setTitle("Gestionar memoria temporal · SQLite en Debian")
             .setItems(labels.toArray(new String[0]), (dialog, index) -> {
                 if (VoiceService.active) return;
                 long at = SystemClock.elapsedRealtime();
                 if (index < items.size()) ConversationContexts.MEMORY.select(items.get(index).id, at);
                 else if (index == items.size()) {
-                    if (ConversationContexts.MEMORY.create(at) == null) {
-                        showDialog(new AlertDialog.Builder(this).setMessage("Hay cuatro charlas. Olvida una antes de crear otra.")
-                            .setPositiveButton("Cerrar", null).create()); return;
-                    }
+                    showDialog(new AlertDialog.Builder(this).setTitle("Nueva charla")
+                        .setMessage("Abre la voz y empieza un tema nuevo. Andrómeda lo guardará en SQLite solo después de aceptar el turno.")
+                        .setPositiveButton("Cerrar",null).create()); return;
                 } else {
                     ConversationMemory.Info selected = null;
                     for (ConversationMemory.Info info : items) if (info.current) selected = info;
                     if (selected == null) return;
                     final String id = selected.id;
                     showDialog(new AlertDialog.Builder(this).setTitle("Olvidar solo este contexto")
-                        .setMessage("Los mensajes de esta charla se borran. No cancela temporizadores, alarmas ni recordatorios. Cerrar el proceso o reiniciar también borra la memoria RAM.")
+                        .setMessage("Se borrará esta charla de SQLite en el Moto G. No cancela temporizadores, alarmas ni recordatorios.")
                         .setNegativeButton("Volver", null).setPositiveButton("Olvidar", (confirmation, which) -> {
-                            if (!VoiceService.active) {
-                                ConversationContexts.MEMORY.forget(id, SystemClock.elapsedRealtime());
-                                VoiceService.lastTranscript = ""; VoiceService.lastStatus = "Micrófono apagado · contexto olvidado";
-                                VoiceService.uiState = FaceState.MUTED; refreshServiceState();
-                            }
-                            ConversationContexts.scheduleExpiry();
+                            if (VoiceService.active) return;
+                            android.app.ProgressDialog deleting=android.app.ProgressDialog.show(this,"Olvidar charla","Borrando en SQLite…",true,false);
+                            new Thread(() -> {
+                                try {
+                                    org.json.JSONObject result=VoiceConnection.memoryAdmin(this,"forget",id);
+                                    runOnUiThread(() -> {
+                                        deleting.dismiss();
+                                        if (result.optBoolean("removed")) {
+                                            ConversationContexts.MEMORY.forget(id,SystemClock.elapsedRealtime());
+                                            VoiceService.lastTranscript=""; VoiceService.lastStatus="Micrófono apagado · contexto olvidado";
+                                            VoiceService.uiState=FaceState.MUTED; refreshServiceState(); ConversationContexts.scheduleExpiry();
+                                            contextOptions();
+                                        } else showDialog(new AlertDialog.Builder(this).setTitle("Charla no disponible")
+                                            .setMessage("La base ya no contenía esa conversación; no se borró otra.")
+                                            .setPositiveButton("Cerrar",null).create());
+                                    });
+                                } catch (Exception failure) {
+                                    runOnUiThread(() -> { deleting.dismiss(); showDialog(new AlertDialog.Builder(this)
+                                        .setTitle("No se confirmó el borrado").setMessage("No eliminé la copia local. Comprueba la conexión e inténtalo de nuevo.")
+                                        .setPositiveButton("Cerrar",null).create()); });
+                                }
+                            },"conversation-memory-forget").start();
                         }).create()); return;
                 }
                 ConversationContexts.scheduleExpiry();
@@ -1489,6 +1560,7 @@ public class MainActivity extends Activity {
         super.onResume(); resumed = visibleToUser = true;
         IntentFilter filter = new IntentFilter(VoiceService.STATE);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(receiver, filter);
+        showRemoteBusy(VoiceService.remoteAppBusy);
         refreshServiceState(); face.setForeground(true); border.setForeground(true); handler.post(tick); handler.post(weatherRefresh);
         if (christmas) { backdrop.setForeground(true); clockDecor.setRunning(!reducedMotion()); }
         screenIdleDelay = ScreenBrightnessPolicy.IDLE_MS;

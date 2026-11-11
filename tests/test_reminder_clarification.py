@@ -90,6 +90,20 @@ class ReminderClarificationTests(unittest.TestCase):
         self.assertEqual(model.turn_deadline(99900,400000),baseline.turn_deadline(99900,400000))
         self.assertEqual(baseline.preparation_ms,45000);self.assertEqual(model.preparation_ms,55000)
 
+    def test_spoken_filler_reminder_keeps_the_pending_form_and_waits(self):
+        clock=[100000];trial=AssistantToolsTrial(lambda:clock[0],True,64,True,True,True,True)
+        first=turn('bueno un recordatorio',1)
+        response=trial.model_result({'kind':'agenda_dialogue_start','event_kind':'REMINDER'},first,'a'*32,'b'*32,400000)
+        self.assertEqual(response['text'],form.REMINDER_INTENT);self.assertFalse(response['offered_more'])
+        clock[0]=100300;trial.spoken(first['id'],True)
+        for human,text in [(turn('sí',2),form.SUBJECT),(turn('comprar',3),form.WHEN)]:
+            clock[0]=human['calendar_boot_ms'];response=trial.human(human,'a'*32,'b'*32,400000)
+            self.assertEqual(response['text'],text);self.assertFalse(response['offered_more']);self.assertIsNone(trial.inflight)
+            clock[0]+=300;trial.spoken(human['id'],True)
+        final=turn('en cinco minutos',4);clock[0]=final['calendar_boot_ms']
+        grant=trial.human(final,'a'*32,'b'*32,400000)['event']
+        self.assertEqual(grant['text'],'comprar')
+
     def test_heard_intent_and_all_fresh_human_fields_only_then_single_matching_receipt(self):
         clock=[100000];trial=AssistantToolsTrial(lambda:clock[0],True,64,True,True,True,True)
         first=turn('con un recordatorio beber agua mañana a las 20:00',1)

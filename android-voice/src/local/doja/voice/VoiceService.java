@@ -17,6 +17,7 @@ import java.util.concurrent.*;
 public class VoiceService extends Service {
     public static final String STATE = "local.doja.voice.STATE";
     public static volatile boolean active = false;
+    public static volatile boolean remoteAppBusy = false;
     /** True once she has said her closing words and is only waiting for the authenticated close (face may jump out). */
     public static volatile boolean closingAfterSpeech = false;
     public static volatile boolean wakeListening = false;
@@ -97,10 +98,12 @@ public class VoiceService extends Service {
     SpeakerSpeech tts;
     MessagePlayback messages;
     volatile boolean messagePlaying;
+    volatile String pendingMessageReplayId = "";
     volatile boolean remoteVoiceActive;
     volatile boolean remoteUiMuted;
     volatile long remoteUiMutedUntil;
     volatile String remoteHeard = "";
+    private volatile boolean activeRemoteSpeech;
     private final RemoteCommandBus.Session remoteSession = new RemoteCommandBus.Session() {
         @Override public boolean ready() {
             return running && output != null && conversationOnly && assistantTools && ttsReady;
@@ -111,6 +114,7 @@ public class VoiceService extends Service {
         }
         @Override public void send(JSONObject order) {
             final String id = order.optString("id");
+            setRemoteAppBusy(true);
             muteHouse(25000L);
             try {
                 controls.execute(() -> {
@@ -118,10 +122,12 @@ public class VoiceService extends Service {
                         byte[] data = order.toString().getBytes(StandardCharsets.UTF_8);
                         frame(6, data, data.length);
                     } catch (Exception error) {
+                        setRemoteAppBusy(false);
                         RemoteCommandBus.fail(id, 503, "offline", "Andromeda no esta escuchando.");
                     }
                 });
             } catch (RejectedExecutionException saturated) {
+                setRemoteAppBusy(false);
                 RemoteCommandBus.fail(id, 503, "offline", "Andromeda no esta escuchando.");
             }
         }
@@ -139,6 +145,7 @@ public class VoiceService extends Service {
         @Override public boolean play(String id, byte[] pcm, long durationMs) {
             if (!ready() || busy() || remoteVoiceActive) return false;
             remoteVoiceActive = true;
+            setRemoteAppBusy(true);
             remoteHeard = "";
             muteHouse(Math.max(20000L, durationMs + 20000L));
             try {
@@ -146,6 +153,7 @@ public class VoiceService extends Service {
                 return true;
             } catch (RuntimeException failure) {
                 remoteVoiceActive = false;
+                setRemoteAppBusy(false);
                 return false;
             }
         }
@@ -554,6 +562,8 @@ public class VoiceService extends Service {
             List<ConversationMemory.Snapshot> catalog = continuousVoice ? ConversationContexts.MEMORY.catalogForContinuous(SystemClock.elapsedRealtime()) : ConversationContexts.MEMORY.catalog(SystemClock.elapsedRealtime());
             health.phase(VoiceHealthPolicy.CONNECT);
             VoiceConnection connection = VoiceConnection.open(this, "microphone", fresh, catalog, timerTrial, assistantTools,continuousVoice);
+            if ("sqlite_debian_v1".equals(connection.ready.optString("memory_store")))
+                ConversationContexts.MEMORY.clearAll();
             socket = connection.socket; output = connection.output;
             health.phase(VoiceHealthPolicy.READY);
             if (!running) throw new IOException("Sesión detenida");
@@ -703,6 +713,7 @@ public class VoiceService extends Service {
             if (running) { VoiceHealthStore.finish(this,health,VoiceHealthStore.kind(error),error); lastError = error.getClass().getSimpleName() + ": " + error.getMessage(); state("Conversación detenida: " + lastError, FaceState.ERROR, null); }
         } finally {
             boolean retry = reconnect && continuousVoice;
+            setRemoteAppBusy(false);
             RemoteCommandBus.detach(remoteSession);
             RemoteAudioBus.detach(remoteAudioSession);
             if (timerChannel != null) timerChannel.close();
@@ -1134,6 +1145,7 @@ public class VoiceService extends Service {
                 String type = event.optString("type");
                 if ("remote_reply".equals(type)) {
                     // The resident rejected or could not answer a phone order.
+                    setRemoteAppBusy(false);
                     RemoteCommandBus.complete(event.optString("id"), event.toString());
                     continue;
                 }
@@ -1158,6 +1170,17 @@ public class VoiceService extends Service {
                         contextGeneration++; awaitingContext = dialogueEnded = resumeRequested = false;
                         audioYielded = speaking = event.getBoolean("audio_yielded"); resumeAfter = SystemClock.elapsedRealtime()+600;
                         continue;
+                    }
+                    if ("memory_purged".equals(type)) {
+                        if (!"midnight_bogota".equals(event.optString("reason")))
+                            throw new IOException("Purga de memoria no reconocida");
+                        ConversationContexts.MEMORY.clearAll();
+                        ConversationContexts.scheduleExpiry();
+                        if (contextChannel != null) contextChannel.close();
+                        contextChannel = null; contextLease = null;
+                        lastError = "Memoria temporal borrada a medianoche";
+                        main.post(() -> stopSelf());
+                        return;
                     }
                     if ("context_selected".equals(type)) {
                         contextChannel.select(event, SystemClock.elapsedRealtime()); contextLease = contextChannel.lease;
@@ -1346,6 +1369,15 @@ public class VoiceService extends Service {
                 if(listing && (message.isEmpty() || message.length()>ReminderListPolicy.MAX_SPOKEN+40)) throw new IOException("Reminder speech outside limit");
                 activePlaybackMs = SpeechPlaybackPolicy.windowMs(assistantTools, workerRead, listing, message.length());
                 activeTimerControl = timerTrial || assistantTools ? event.optString("timer_control") : "";
+                pendingMessageReplayId = "";
+                if (assistantTools && "voice_message_play".equals(activeTimerControl)) {
+                    org.json.JSONObject selector = event.optJSONObject("voice_message_selector");
+                    if (selector == null || selector.length() != 1 || !"latest".equals(selector.optString("type")))
+                        throw new IOException("Selector de mensaje no permitido");
+                    org.json.JSONObject latest = VoiceMessageStore.get(this).latestForReplay();
+                    if (latest == null) message = "No hay mensajes recientes para repetir.";
+                    else pendingMessageReplayId = latest.optString("id");
+                }
             } else switch (event.optString("type")) {
                 case "timer":
                     message = TimerStore.create(this, event.getString("id"), event.getInt("seconds"));
@@ -1388,6 +1420,7 @@ public class VoiceService extends Service {
             main.postDelayed(() -> { if (running && !cancelling && turnGeneration == speechGeneration) startSpeech(event, line); }, sceneDelay);
             return;
         }
+        activeRemoteSpeech = "remote".equals(event.optString("origin"));
         startSpeech(event, message);
     }
     /** Hands the spoken answer back to the waiting phone; the house still speaks it. */
@@ -1570,6 +1603,10 @@ public class VoiceService extends Service {
         finishSpeech(completed, completed ? SpeechDiagnostics.End.DONE : SpeechDiagnostics.End.OTHER);
     }
     synchronized void finishSpeech(boolean completed, SpeechDiagnostics.End reason) {
+        if (activeRemoteSpeech) {
+            activeRemoteSpeech = false;
+            setRemoteAppBusy(false);
+        }
         interruptionPrewarmed = false;
         if (silenceListener != null) {
             if (thinkingInterruption != null) { silenceListener.end(thinkingInterruption); thinkingInterruption = null; }
@@ -1617,9 +1654,20 @@ public class VoiceService extends Service {
         resumeAfter = SystemClock.elapsedRealtime() + (speechInterrupted ? 1800 : 600);
         speaking = false; activeSpeechId = activeSpeechText = ""; activeTimerControl = ""; activeWebAnswer = "";
         activeGreetingKey = ""; activeGreetingPending = false;
+        String replayId = pendingMessageReplayId;
+        pendingMessageReplayId = "";
         if (running) {
             if (!conversationOnly) control("tts_done");
             if (uiState != FaceState.ERROR) state(conversationOnly ? (lightQuestion ? "Di sí para confirmar la orden de luces" : "Reanudando micrófono · continúa sin repetir Andrómeda") : "MICRÓFONO ACTIVO · " + (wakeEnabled ? "esperando " + AssistantConfig.NAME : "usa Hablar ahora"), conversationOnly ? FaceState.LISTENING : FaceState.READY, null);
+        }
+        if (completed && running && !replayId.isEmpty()) {
+            org.json.JSONObject entry = VoiceMessageStore.get(this).beginReplay(replayId);
+            if (entry != null) {
+                File audio = VoiceMessageStore.get(this).file(entry);
+                messagePlaying = true;
+                if (audio == null || !audio.isFile()) VoiceMessageStore.get(this).markFailed(replayId);
+                else playMessage(replayId, entry, audio);
+            }
         }
     }
     static void noteReaction(FaceReaction value) {
@@ -1631,6 +1679,18 @@ public class VoiceService extends Service {
     void muteHouse(long ms) {
         remoteUiMuted = true;
         remoteUiMutedUntil = SystemClock.elapsedRealtime() + Math.max(1000L, ms);
+    }
+
+    private final Runnable remoteBusyExpiry = () -> publishRemoteAppBusy(false);
+    private void setRemoteAppBusy(boolean busy) {
+        main.removeCallbacks(remoteBusyExpiry);
+        if (busy) main.postDelayed(remoteBusyExpiry, 90000L);
+        publishRemoteAppBusy(busy);
+    }
+    private void publishRemoteAppBusy(boolean busy) {
+        if (remoteAppBusy == busy) return;
+        remoteAppBusy = busy;
+        sendBroadcast(new Intent(STATE).setPackage(getPackageName()).putExtra("remote_app_busy", busy));
     }
 
     void state(String text, FaceState presentation, String words) {

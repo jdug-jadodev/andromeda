@@ -33,6 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.SSLContext;
@@ -69,6 +71,7 @@ final class HomeGatewayServer {
     private volatile boolean cameraCancelled;
     private static final long CAMERA_MAX_MS = 10 * 60 * 1000L;
     private final ExecutorService workers = Executors.newFixedThreadPool(MAX_WORKERS);
+    private final ScheduledExecutorService messageMaintenance = Executors.newSingleThreadScheduledExecutor();
     private volatile boolean running;
     private SSLServerSocket server;
     private Thread acceptThread;
@@ -88,6 +91,9 @@ final class HomeGatewayServer {
         socket.bind(new InetSocketAddress("0.0.0.0", PORT), 8);
         server = socket;
         running = true;
+        VoiceMessageStore.get(context).purgeExpired();
+        messageMaintenance.scheduleAtFixedRate(
+            () -> VoiceMessageStore.get(context).purgeExpired(), 1, 1, TimeUnit.HOURS);
         acceptThread = new Thread(this::acceptLoop, "andromeda-gateway");
         acceptThread.setDaemon(true);
         acceptThread.start();
@@ -104,6 +110,7 @@ final class HomeGatewayServer {
         running = false;
         close(server);
         workers.shutdownNow();
+        messageMaintenance.shutdownNow();
         pairingManager.shutdown();
     }
 
@@ -160,6 +167,9 @@ final class HomeGatewayServer {
         if ("POST".equals(request.method) && "/v1/command".equals(request.path)) return command(request);
         if ("GET".equals(request.method) && request.path.startsWith("/v1/speech/")
                 && request.path.endsWith(".wav")) return speech(request);
+        if ("GET".equals(request.method) && "/v1/messages/history".equals(request.path)) return messageHistory(request);
+        if ("GET".equals(request.method) && request.path.matches("/v1/messages/[A-Za-z0-9_-]{8,64}/audio")) return messageAudio(request);
+        if ("POST".equals(request.method) && request.path.matches("/v1/messages/[A-Za-z0-9_-]{8,64}/played")) return markMessagePlayed(request);
         if ("PUT".equals(request.method) && request.path.startsWith("/v1/messages/")) return putMessage(request);
         if ("PUT".equals(request.method) && request.path.startsWith("/v1/command/audio/")) return commandAudio(request);
         if ("GET".equals(request.method) && request.path.startsWith("/v1/messages/")) return messageStatus(request);
@@ -317,7 +327,7 @@ final class HomeGatewayServer {
             return Response.error(503, "offline", "Andromeda no esta escuchando.", true, 3000);
         }
         if (session.busy() || !session.play(id, pcm, duration)) {
-            return Response.error(409, "busy", "Hay una conversacion en casa; reintenta.", true, 3000);
+            return Response.error(409, "busy", "Andromeda esta ocupada; vuelve a intentarlo cuando termine.", true, 3000);
         }
         try {
             RemoteCommandBus.Reply reply = RemoteCommandBus.await(id,
@@ -482,6 +492,53 @@ final class HomeGatewayServer {
         } catch (Exception error) {
             return Response.error(500, "internal", "No pude leer los mensajes.");
         }
+    }
+
+    /** GET /v1/messages/history: metadata for all family senders, no transcript/audio. */
+    private Response messageHistory(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede consultar mensajes.");
+        }
+        try {
+            return Response.json(200, new JSONObject()
+                .put("messages", VoiceMessageStore.get(context).history()));
+        } catch (Exception error) {
+            return Response.error(500, "internal", "No pude leer el historial.");
+        }
+    }
+
+    /** GET /v1/messages/{id}/audio: authenticated original audio within its 24 h TTL. */
+    private Response messageAudio(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede descargar mensajes.");
+        }
+        String id = request.path.substring("/v1/messages/".length(), request.path.length() - "/audio".length());
+        VoiceMessageStore store = VoiceMessageStore.get(context);
+        try {
+            byte[] audio = store.audio(id);
+            String type = store.audioType(id);
+            if (audio == null || type == null) return Response.error(404, "not_found", "Audio vencido o desconocido.");
+            return Response.binary(200, type, audio);
+        } catch (IOException failure) {
+            return Response.error(500, "internal", "No pude leer el audio.");
+        }
+    }
+
+    /** POST /v1/messages/{id}/played: the app reports completed playback, audio remains retained. */
+    private Response markMessagePlayed(Request request) {
+        DeviceStore.Device device = authenticate(request);
+        if (device == null) return Response.error(401, "unauthenticated", "Token invalido.");
+        if (!device.capabilities.contains("messages")) {
+            return Response.error(403, "forbidden", "Este dispositivo no puede actualizar mensajes.");
+        }
+        String id = request.path.substring("/v1/messages/".length(), request.path.length() - "/played".length());
+        JSONObject status = VoiceMessageStore.get(context).markPlayedFromClient(id);
+        if (status == null) return Response.error(404, "not_found", "Mensaje vencido o desconocido.");
+        return Response.json(200, status);
     }
 
     /**

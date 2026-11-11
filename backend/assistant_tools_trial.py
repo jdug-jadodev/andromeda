@@ -168,20 +168,10 @@ class AssistantToolsTrial:
                 print(f"tv_power_off sent={detail.get('sent')} confirmed={detail.get('confirmed')}", flush=True)
                 if isinstance(detail, dict) and detail.get('sent') is False:
                     return {'text': 'No pude apagar la TV: no responde en la red.'}
-                # Never claim it is off without checking: the TV takes several
-                # seconds to drop off the network.
-                state = {}
-                limit = time.monotonic() + 10.0
-                while time.monotonic() < limit:
-                    time.sleep(2.0)
-                    try:
-                        state = tv_control.status(timeout=3)
-                    except tv_control.TVError as error:
-                        state = {'error': error.kind}
-                    print(f"tv_power_off status={state}", flush=True)
-                    if not state.get('reachable'):
-                        return {'text': 'Listo, la TV quedó apagada.'}
-                return {'text': 'La TV sigue encendida; no pude apagarla. Revisa su conexión por red.'}
+                # Do not poll synchronously: this runs on the voice turn loop,
+                # whose input stream expires after a short idle interval. The
+                # command was sent, but standby cannot be confirmed here.
+                return {'text': 'Envié la orden de apagado, pero no puedo confirmar si la TV quedó apagada.'}
             if kind == 'tv_volume':
                 if 'level' in result:
                     tv_control.set_volume(result['level'])
@@ -245,6 +235,12 @@ class AssistantToolsTrial:
         if self.read.inflight is not None: raise ValueError('A read result is already pending')
         if self.reminder_delete.active or self.reminder_delete.grant is not None:
             raise ValueError('A reminder deletion is already pending')
+        if result['kind'] == 'voice_message_play_request':
+            if (result.get('selector') != 'latest' or self.pending_dialogue or self.inflight
+                    or self.timer.inflight or self.volume.inflight or self.deletion.grant):
+                raise ValueError('Voice message replay unavailable')
+            return {'text': 'Voy a repetir el último mensaje.', 'timer_control': 'voice_message_play',
+                    'voice_message_selector': {'type': 'latest'}, 'offered_more': True}
         if result['kind']=='reminder_delete_request':
             if (not self.reminder_delete_enabled or self.pending_dialogue or self.inflight or self.timer.inflight
                     or self.volume.inflight or self.deletion.grant or turn['id'] in self.consumed or len(self.consumed)>=24):

@@ -12,14 +12,25 @@ from affirmation import is_negative, is_affirmative
 class ConversationEntry:
     STOP = set('a al algo alguna algun andromeda anterior anteriores antes aquella aquel asunto ayer charla como con conversacion cosa de del el en esa ese eso esta este esto fue hablabamos hablamos hay la las lo los me mi mis nos nuestra nuestro o pasada pasado por que recuerdas recordar se sobre su sus tal tema te tengo tuvimos ultima ultimo un una unos unas y yo'.split())
 
-    def __init__(self, catalog, new_id, clock):
+    def __init__(self, catalog, new_id, clock, loader=None, catalog_loader=None):
         self.catalog, self.new_id, self.clock = catalog, new_id, clock
+        self.loader, self.catalog_loader, self.selected = loader, catalog_loader, None
         self.stage, self.candidate = 'entry', None
+
+    def memory(self, identity):
+        if self.loader is None: return self.catalog.get(identity)
+        if identity != self.candidate and identity != self.new_id: return None
+        self.selected = self.loader(identity)
+        return self.selected
 
     def prune(self):
         now = self.clock()
-        self.catalog = {k: v for k, v in self.catalog.items()
-                        if not v.pairs or 0 <= now - v.last_human < 3600000}
+        if self.catalog_loader is not None:
+            self.catalog = {identity: item for identity, item in self.catalog_loader().items()
+                            if identity != self.new_id}
+        elif self.loader is None:
+            self.catalog = {k: v for k, v in self.catalog.items()
+                            if not v.pairs or 0 <= now - v.last_human < 3600000}
 
     def cancel_pending(self):
         if self.stage != 'active': self.stage, self.candidate = 'entry', None
@@ -57,7 +68,9 @@ class ConversationEntry:
                 self.stage = 'search_topic'
                 return {'kind': 'notice', 'text': '¿Qué tema de la conversación quieres buscar?'}
             matches = []
-            for identity, memory in self.catalog.items():
+            for identity, value in self.catalog.items():
+                memory = self.loader(identity) if self.loader is not None else value
+                if memory is None: continue
                 evidence = set().union(*(self.terms(g[0]['content']) for g in memory.pairs))
                 if terms <= evidence: matches.append((memory.last_human, identity))
             if matches:
@@ -67,11 +80,27 @@ class ConversationEntry:
                 return {'kind': 'notice', 'text': message, 'matches': len(matches)}
             self.stage = 'confirm_new'
             return {'kind': 'notice', 'text': 'No encuentro esa conversación entre las charlas disponibles. El contexto caduca tras una hora sin actividad. ¿Quieres empezar una nueva?'}
+        return self.continue_recent()
+
+    def continue_recent(self):
+        """A voice entry continues the latest live chat instead of opening one.
+
+        Memory exists to keep the thread, not to force "recuerdas" before every
+        sentence. The SQLite store still bounds the catalog and its 1 h TTL.
+        """
+        latest = []
+        for identity, item in self.catalog.items():
+            if isinstance(item, dict):
+                turns, at = item.get('turns', 0), item.get('last_human_ms') or item.get('created_ms') or 0
+            else:
+                turns, at = len(item.pairs), item.last_human
+            if turns > 0: latest.append((at, identity))
+        if latest:
+            self.candidate = max(latest)[1]
+            self.stage = 'active'
+            return {'kind': 'resume', 'id': self.candidate, 'automatic': True}
         return self.new()
 
     def new(self):
-        if len(self.catalog) >= 4:
-            self.stage = 'entry'
-            return {'kind': 'notice', 'text': 'Hay cuatro charlas guardadas. Silencia y olvida una desde Contexto antes de empezar otra.'}
         self.stage = 'active'
         return {'kind': 'new', 'id': self.new_id}

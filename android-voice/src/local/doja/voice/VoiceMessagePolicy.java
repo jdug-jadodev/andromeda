@@ -7,11 +7,14 @@ import java.util.Set;
 /** Pure policy for voice messages, mirrored with contract/home-api-v1. */
 final class VoiceMessagePolicy {
     static final String POLICY = "voice_message_v1";
+    static final String HISTORY_POLICY = "voice_message_history_v1";
     static final int MAX_BYTES = 2097152;
     static final int MAX_MS = 60000;
     static final int PENDING = 20;
     static final long TTL_MS = 86400000L;
     static final long MIN_INTERVAL_MS = 30000L;
+    static final int HISTORY_ITEMS = 50;
+    static final long TOTAL_BYTES = 52428800L;
 
     static final String QUEUED = "queued", PLAYING = "playing", PLAYED = "played",
         EXPIRED = "expired", FAILED = "failed";

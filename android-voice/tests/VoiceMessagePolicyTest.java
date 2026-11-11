@@ -10,6 +10,9 @@ import java.util.regex.Pattern;
 public final class VoiceMessagePolicyTest {
     public static void main(String[] args) throws Exception {
         check("voice_message_v1".equals(VoiceMessagePolicy.POLICY), "policy");
+        check("voice_message_history_v1".equals(VoiceMessagePolicy.HISTORY_POLICY), "history policy");
+        check(VoiceMessagePolicy.HISTORY_ITEMS == 50, "history count limit");
+        check(VoiceMessagePolicy.TOTAL_BYTES == 50L * 1024 * 1024, "history bytes limit");
         check(VoiceMessagePolicy.id("msg-0001"), "id");
         check(!VoiceMessagePolicy.id("msg"), "short id");
         check(!VoiceMessagePolicy.id("msg/0001"), "path id");
@@ -34,6 +37,9 @@ public final class VoiceMessagePolicyTest {
         check(VoiceMessagePolicy.PENDING == intValue(limits, "messages_pending"), "contract pending");
         check(VoiceMessagePolicy.TTL_MS == longValue(limits, "message_ttl_ms"), "contract ttl");
         check(VoiceMessagePolicy.MIN_INTERVAL_MS == longValue(limits, "message_min_interval_ms"), "contract interval");
+        check(VoiceMessagePolicy.HISTORY_ITEMS == intValue(limits, "message_history_items"), "contract history count");
+        check(VoiceMessagePolicy.TOTAL_BYTES == longValue(limits, "message_total_bytes"), "contract history bytes");
+        check(VoiceMessagePolicy.HISTORY_POLICY.equals(stringValue(policies, "voice_message_history")), "contract history policy");
 
         System.out.println("Voice message policy tests passed.");
     }

@@ -5,6 +5,7 @@ This process never executes tools, shell or Android actions itself.
 """
 from collections import deque
 import copy
+from datetime import datetime, timedelta, timezone
 import hmac
 import http.client
 import json
@@ -26,6 +27,7 @@ from affirmation import is_negative
 import remote_voice
 from conversation_flow import ConversationFlow
 from conversation_entry import ConversationEntry
+from conversation_store import DEFAULT_PATH, ConversationStore, INACTIVITY_MS as MEMORY_INACTIVITY_MS
 
 PROTOCOL = 6
 MAX_STORED_TURNS = 24
@@ -571,7 +573,7 @@ class ConversationModel:
                 if connection.sock is not None: connection.sock.shutdown(socket.SHUT_RDWR)
                 connection.close()
             except OSError: pass
-        if self.thread is not None: self.thread.join(timeout=.5)
+        if self.thread is not None: self.thread.join(timeout=1.0)
         self.result = self.error = None
         return self.thread is None or not self.thread.is_alive()
 
@@ -581,7 +583,7 @@ class ConversationModel:
         self.cancel_generation()
 
 
-def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False):
+def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False, conversation_store=None, remote_memory=False):
     from vosk import KaldiRecognizer, SetLogLevel
     from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
         MAX_EPOCH_TURNS, STREAM_START_MS, STREAM_IDLE_MS, VOICE_POLICY, RESET_POLICY)
@@ -651,7 +653,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
 
     def remote_busy(turn_or_command_id):
         command_id = turn_or_command_id if isinstance(turn_or_command_id, str) else turn_or_command_id.get('command_id', '')
-        remote_reply(command_id, error='busy', message='Hay una conversacion en casa; reintenta.',
+        remote_reply(command_id, error='busy', message='Andromeda esta ocupada; vuelve a intentarlo cuando termine.',
                      retryable=True, retry_after_ms=3000)
 
     def remote_decline(text):
@@ -705,8 +707,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                  **({'reminder_delete':turn['reminder_delete']} if turn.get('reminder_delete') is not None else {}),
                **({'agenda_kind': turn['agenda_kind']} if turn.get('timer_control') == 'agenda_question' else {}),
                **({'sources': turn.get('sources', [])} if assistant_tools else {}),
-              **({'web_answer': turn['web_answer']} if assistant_tools and turn.get('timer_control') == 'web'
-                 and turn.get('web_answer') is not None else {}),
+               **({'web_answer': turn['web_answer']} if assistant_tools and turn.get('timer_control') == 'web'
+                  and turn.get('web_answer') is not None else {}),
+               **({'voice_message_selector': turn['voice_message_selector']}
+                  if turn.get('timer_control') == 'voice_message_play' else {}),
              'close_reason': close_reason, 'offered_more': turn['offered_more']})
 
     def timer_response(response):
@@ -715,6 +719,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         if response.get('executing'):
             state = 'executing'; return
         turn['timer_control'] = response.get('timer_control', '')
+        if turn['timer_control'] == 'voice_message_play':
+            turn['voice_message_selector'] = response.get('voice_message_selector')
         turn['face_scene'] = response.get('face_scene', '')
         turn['agenda_kind'] = response.get('agenda_kind', '')
         turn['sources'] = response.get('sources', [])
@@ -816,6 +822,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
               'calendar_anchor_ms': turn['calendar_anchor_ms'], 'calendar_boot_ms': current,
               'action_window_end_ms': session_end, 'administrative': True})
         recognizer = timeline = None; preroll.clear()
+        # A remote turn has its own wall/boot anchor; the deterministic agenda
+        # parser must use it instead of a stale local anchor.
+        model.anchor_wall = turn['calendar_anchor_ms']; model.anchor_boot = turn['calendar_boot_ms']
         closing = flow.closing_reason(command['text']) or remote_decline(command['text'])
         if closing:
             if timers is not None: timers.cancel()
@@ -881,7 +890,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             'action_window_ms': ACTION_WINDOW_MS, 'stream_start_ms': STREAM_START_MS, 'stream_idle_ms': STREAM_IDLE_MS} if continuous_voice else {}),
                       'restored_turns': len(model.memory.pairs), 'continuous_chat': True,
                        'listen_idle_ms': LISTEN_IDLE_MS, 'followup_offer': True, 'closing_farewell': True,
-                       'voice_entry': entry is not None, 'speech_interrupt': True})
+                       'voice_entry': entry is not None, 'context_id': context_id,
+                       'speech_interrupt': True,
+                        **({'memory_store': 'sqlite_debian_v1', 'catalog': _client_catalog(conversation_store)} if conversation_store is not None else {})})
     try:
         while continuous_voice or now_ms() < session_end:
             current = now_ms()
@@ -906,7 +917,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             # Inactivity pauses reception; it does not delete or split a chat.
             if state == 'listen' and current - activation >= LISTEN_IDLE_MS: reset()
             if turn is not None:
-                if state == 'thinking' and current >= turn['deadline_ms'] - 5000 and not getattr(model, 'web_in_progress', False):
+                compute_end = turn.get('compute_end', turn['deadline_ms'] - 5000)
+                if state == 'thinking' and current >= min(compute_end, turn['deadline_ms'] - 5000) and getattr(model, 'web_in_progress', False) is not True:
                     if assistant_tools: observe_tools_technical(model, sequence, turn['speech_end'], 2)
                     if continuous_voice:
                         # No executor was dispatched in thinking. Cancel the owned
@@ -962,20 +974,38 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     last_input = now_ms(); stream_started = True
                     if kind == 5:
                         if pending_reset is None: raise ValueError('Unsolicited continuous context')
-                        snapshot, catalog, voice_entry = pending_reset.claim(context_packet(data))
+                        packet = context_packet(data)
+                        if remote_memory:
+                            chosen, voice_entry = pending_reset.claim_remote(packet)
+                            snapshot = None; restored = {}
+                        else:
+                            snapshot, catalog, voice_entry = pending_reset.claim(packet)
+                            restored = restore_catalog(catalog)
                         warm_public = reminder_read and pending_reset.reason != 'turn_checkpoint'
-                        memory = ShortMemory(now_ms); chosen = memory.restore(snapshot)
-                        restored = restore_catalog(catalog)
-                        if chosen in restored: raise ValueError('Duplicate continuous context')
+                        if remote_memory:
+                            if voice_entry:
+                                memory = ShortMemory(now_ms)
+                                memory.restore({'version': 1, 'id': chosen, 'last_human_ms': 0, 'turns': []})
+                            else:
+                                chosen = context_id; memory = model.memory; entry = None
+                            if voice_entry:
+                                metadata = {item['id']: item for item in conversation_store.list_metadata()}
+                                entry = ConversationEntry(metadata, chosen, now_ms,
+                                    loader=lambda identity: _load_stored_memory(conversation_store, identity),
+                                    catalog_loader=lambda: {item['id']: item for item in conversation_store.list_metadata()})
+                        else:
+                            memory = ShortMemory(now_ms); chosen = memory.restore(snapshot)
+                            if chosen in restored: raise ValueError('Duplicate continuous context')
+                            entry = ConversationEntry(restored, chosen, now_ms) if voice_entry else None
                         old_session, old_context, nonce = session_id, context_id, pending_reset.nonce
                         model.memory = memory; context_id = chosen; session_id = uuid.uuid4().hex
-                        entry = ConversationEntry(restored, chosen, now_ms) if voice_entry else None
                         sequence = 0; timers = AssistantToolsTrial(now_ms, guided_agenda=True, maximum_sequence=MAX_EPOCH_TURNS,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion)
                         pending_reset = None
                         accept_audio_after = now_ms() + 600
                         emit({'type': 'voice_context_ready', 'previous_session_id': old_session, 'previous_context_id': old_context,
                             'reset_nonce': nonce, 'voice_entry': voice_entry, 'restored_turns': len(memory.pairs),
-                            'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,'audio_yielded':audio_yielded})
+                            'voice_lifetime_policy': VOICE_POLICY, 'dialogue_reset_policy': RESET_POLICY,'audio_yielded':audio_yielded,
+                            **({'memory_store': 'sqlite_debian_v1', 'catalog': _client_catalog(conversation_store)} if remote_memory else {})})
                         if audio_yielded:
                             state = 'yield'; emit({'type':'state','state':'audio_yield'})
                         else: reset(continue_chat=checkpoint_followup)
@@ -1050,12 +1080,20 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                     'actions_executed': turn.get('actions_executed', 0)}), flush=True)
                         elif action == 'tts_done' and turn.get('tts_started'):
                             if guided_agenda: timers.spoken(turn['id'], True)
+                            completed_action = bool(turn.get('answer') and (
+                                (turn.get('actions_executed') and turn.get('timer_control'))
+                                or turn.get('timer_control') == 'voice_message_play'))
                             if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation'}:
                                 model.memory.commit_web(turn['text'], turn['web_answer']['answer_es'])
                             elif (turn.get('web_answer') or {}).get('mode') == 'service_excerpt':
                                 model.memory.commit_web(turn['text'], turn['web_answer']['evidence'])
                             elif turn.get('timer_control') == 'web_followup':
                                 model.memory.commit_followup(turn['text'], turn['answer'])
+                            elif completed_action:
+                                # The action really happened. Keeping it as an
+                                # unanswered human turn made the model ask for the
+                                # same alarm/reminder forever.
+                                model.memory.commit(turn['text'], turn['answer'])
                             elif turn.get('timer_control'):
                                 model.memory.unanswered(turn['text'])
                             elif turn.get('remote') and turn.get('answer'):
@@ -1063,11 +1101,23 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 # voz local, para que "cuentame mas" no pregunte de que.
                                 model.memory.commit(turn['text'], turn['answer'])
                             elif not turn.get('administrative'): model.memory.commit(turn['text'], turn['answer'])
+                            if conversation_store is not None and not turn.get('administrative'):
+                                if (turn.get('web_answer') or {}).get('mode') in {'service_answer', 'service_translation'}:
+                                    conversation_store.record_answer(context_id, turn['id'], turn['web_answer']['answer_es'], web_answer=True)
+                                elif (turn.get('web_answer') or {}).get('mode') == 'service_excerpt':
+                                    conversation_store.record_answer(context_id, turn['id'], turn['web_answer']['evidence'], web_answer=True)
+                                elif turn.get('timer_control') == 'web_followup':
+                                    conversation_store.record_answer(context_id, turn['id'], turn['answer'], web_followup=True)
+                                elif completed_action:
+                                    conversation_store.record_answer(context_id, turn['id'], turn['answer'])
+                                elif not turn.get('timer_control') and turn.get('answer'):
+                                    conversation_store.record_answer(context_id, turn['id'], turn['answer'])
                             flow.spoken(turn['answer'], offered_more=turn['offered_more'])
                             print(json.dumps({'event': 'conversation_entry_notice' if turn.get('administrative') else 'conversation_memory_commit', 'source': source,
                                 'turn_seq': turn['seq'], 'retained_turns': len(model.memory.pairs),
                                 'retained_pairs': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             if turn['close_reason']:
+                                if conversation_store is not None: conversation_store.close(context_id)
                                 closed()
                                 if not continuous_voice: return
                                 request_context('dialogue_closed'); continue
@@ -1153,13 +1203,35 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     route = entry.route(text) if entry is not None else {'kind': 'model'}
                     if route['kind'] in {'new', 'resume'}:
                         old_id = context_id
-                        model.memory = ShortMemory(now_ms) if route['kind'] == 'new' else entry.catalog[route['id']]
+                        if route['kind'] == 'new':
+                            model.memory = ShortMemory(now_ms)
+                        else:
+                            model.memory = entry.memory(route['id'])
+                            if model.memory is None:
+                                # The row expired between the handshake and the
+                                # first word: continue as a fresh chat instead of
+                                # failing the session.
+                                route = {'kind': 'new', 'id': entry.new_id}
+                                model.memory = ShortMemory(now_ms)
                         context_id = route['id']
+                        if conversation_store is not None:
+                            if route['kind'] == 'new': conversation_store.create(context_id)
+                            if not conversation_store.record_human(context_id, turn['id'], text,
+                                                                   time.time_ns() // 1_000_000):
+                                print(json.dumps({'event': 'conversation_memory_write_failed',
+                                                  'selection': route['kind']}), flush=True)
                         emit({'type': 'context_selected', 'previous_context_id': old_id,
                             'selection': route['kind'], 'restored_turns': len(model.memory.pairs)})
                         print(json.dumps({'event': 'conversation_context_selected', 'source': source,
                             'selection': route['kind'], 'restored_turns': len(model.memory.pairs)}), flush=True)
                     turn['administrative'] = route['kind'] in {'notice', 'close'}
+                    if (conversation_store is not None and route['kind'] == 'model'
+                            and not conversation_store.record_human(context_id, turn['id'], text,
+                                                                    time.time_ns() // 1_000_000)):
+                        # Losing this turn only costs memory, never the answer or
+                        # the resident: the store adopts or evicts by itself.
+                        print(json.dumps({'event': 'conversation_memory_write_failed',
+                                          'selection': 'model'}), flush=True)
                     emit({'type': 'thinking', 'text': text, 'turn_id': turn['id'], 'turn_seq': sequence,
                            'speech_end_ms': speech_end, 'deadline_ms': turn['deadline_ms'],
                             **({key: turn[key] for key in ('calendar_anchor_ms', 'calendar_boot_ms')} if assistant_tools else {}),
@@ -1169,7 +1241,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                     recognizer = timeline = None; preroll.clear()
                     if route['kind'] == 'notice':
                         say(route['text'], offered_more=False); continue
-                    if route['kind'] == 'resume' or route['kind'] == 'new' and plain_confirmation(text):
+                    if not route.get('automatic') and (route['kind'] == 'resume' or route['kind'] == 'new' and plain_confirmation(text)):
                         model.memory.last_human = speech_end
                         say('Retomamos esa charla. ¿En qué seguimos?' if route['kind'] == 'resume' else
                             'Empezamos una charla nueva. ¿De qué quieres hablar?', offered_more=False)
@@ -1230,6 +1302,45 @@ def restore_catalog(value):
     return catalog
 
 
+def _load_stored_memory(store, identity):
+    saved = store.load(identity)
+    if saved is None: return None
+    memory = ShortMemory(now_ms)
+    try: memory.restore(_stored_to_runtime(saved))
+    except ContextExpired: return None
+    return memory
+
+
+def _client_catalog(store):
+    wall = time.time_ns() // 1_000_000
+    return [{'id': item['id'], 'turns': item['turns'], 'closed': bool(item['closed']),
+             'remaining_ms': max(0, MEMORY_INACTIVITY_MS - (wall - (item['last_human_ms'] or item['created_ms'])))}
+            for item in store.list_metadata()]
+
+
+def _runtime_to_stored(snapshot):
+    """Translate Android/voice boot-clock stamps to durable Unix milliseconds."""
+    wall, boot = time.time_ns() // 1_000_000, now_ms()
+    copy = json.loads(json.dumps(snapshot))
+    if copy['last_human_ms']:
+        copy['last_human_ms'] = wall - max(0, boot - copy['last_human_ms'])
+        for turn in copy['turns']:
+            turn['human_ms'] = wall - max(0, boot - turn['human_ms'])
+    return copy
+
+
+def _stored_to_runtime(snapshot):
+    wall, boot = time.time_ns() // 1_000_000, now_ms()
+    copy = json.loads(json.dumps(snapshot))
+    if copy['last_human_ms']:
+        if wall < copy['last_human_ms'] or wall - copy['last_human_ms'] >= 3600000:
+            raise ContextExpired('Context expired')
+        copy['last_human_ms'] = boot - (wall - copy['last_human_ms'])
+        for turn in copy['turns']:
+            turn['human_ms'] = boot - (wall - turn['human_ms'])
+    return copy
+
+
 def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False):
     from continuous_voice import ContinuousVoiceFault, END_REASONS
     key = Path(key_path).read_text().strip()
@@ -1254,6 +1365,8 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
         from timer_trial_model import TimerTrialModel
         model_type = TimerTrialModel
     else: model_type = ConversationModel
+    conversation_store = ConversationStore(os.environ.get('ANDROMEDA_CONVERSATION_DB',
+        str(DEFAULT_PATH)))
     def make_model():
         value = model_type(inference_key,owned=resident.acquire()) if resident is not None else model_type(inference_key)
         if assistant_tools and resident is not None: value.technical_work = Path(inference_key).parent
@@ -1312,26 +1425,83 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 # starting a session; never extend the original deadline.
                                 send_event(conn, {'type': 'error', 'reason': 'resident_window_ending'})
                                 continue
-                            try: context_id = model.memory.restore(hello.get('context'))
-                            except ContextExpired:
-                                send_event(conn, {'type': 'error', 'reason': 'context_expired'})
-                                if continuous_voice:
-                                    resident.monitor.reason = 'voice_context_expired'; resident.shutdown(); return
+                            admin = hello.get('memory_admin')
+                            if admin is not None:
+                                if not isinstance(admin, dict) or set(admin) - {'action', 'id'}:
+                                    raise ValueError('Invalid memory administration request')
+                                if admin.get('action') == 'list' and set(admin) == {'action'}:
+                                    send_event(conn, {'type': 'memory_catalog', 'memory_store': 'sqlite_debian_v1',
+                                                      'catalog': _client_catalog(conversation_store)})
+                                elif (admin.get('action') == 'forget' and set(admin) == {'action', 'id'}
+                                        and isinstance(admin.get('id'), str)
+                                        and re.fullmatch('[0-9a-f]{32}', admin['id'])):
+                                    removed = conversation_store.delete(admin['id'])
+                                    send_event(conn, {'type': 'memory_forgotten', 'memory_store': 'sqlite_debian_v1',
+                                                      'id': admin['id'], 'removed': removed})
+                                else:
+                                    raise ValueError('Invalid memory administration operation')
                                 continue
-                            entry = None
-                            if hello.get('voice_entry') is True:
-                                if model.memory.pairs: raise ValueError('Voice entry must start unselected')
-                                catalog = restore_catalog(hello.get('catalog'))
-                                if context_id in catalog: raise ValueError('New identity already exists')
-                                entry = ConversationEntry(catalog, context_id, now_ms)
-                            elif source == 'microphone':
+                            remote_store = hello.get('memory_store') == 'sqlite_debian_v1'
+                            if not remote_store:
+                                send_event(conn, {'type': 'error', 'reason': 'memory_protocol_required'})
+                                continue
+                            if remote_store:
+                                if ('context' in hello or 'catalog' in hello
+                                        or not isinstance(hello.get('context_id'), str)
+                                        or not re.fullmatch('[0-9a-f]{32}', hello['context_id'])):
+                                    raise ValueError('Invalid SQLite memory handshake')
+                                context_id = hello['context_id']
+                                voice_entry = hello.get('voice_entry') is True
+                                if voice_entry:
+                                    model.memory = ShortMemory(now_ms)
+                                    model.memory.restore({'version': 1, 'id': context_id, 'last_human_ms': 0, 'turns': []})
+                                else:
+                                    saved = conversation_store.load(context_id)
+                                    if saved is None:
+                                        send_event(conn, {'type': 'error', 'reason': 'context_expired'})
+                                        continue
+                                    context_id = model.memory.restore(_stored_to_runtime(saved))
+                                catalog_meta = conversation_store.list_metadata()
+                                catalog = {item['id']: item for item in catalog_meta}
+                                if context_id in catalog and voice_entry:
+                                    raise ValueError('New identity already exists')
+                                entry = ConversationEntry(catalog, context_id, now_ms,
+                                    loader=lambda identity: _load_stored_memory(conversation_store, identity),
+                                    catalog_loader=lambda: {item['id']: item for item in conversation_store.list_metadata()}) if voice_entry else None
+                            else:
+                                try: context_id = model.memory.restore(hello.get('context'))
+                                except ContextExpired:
+                                    send_event(conn, {'type': 'error', 'reason': 'context_expired'})
+                                    # An expired chat is not a motor failure: the
+                                    # phone reconnects with a fresh voice entry.
+                                    continue
+                                # Authenticated pre-SQLite clients are migrated once.
+                                legacy_entry = hello.get('voice_entry') is True
+                                if not legacy_entry:
+                                    conversation_store.import_snapshot(_runtime_to_stored(hello.get('context')))
+                                    if not conversation_store.load(context_id): conversation_store.create(context_id)
+                                entry = None
+                                if legacy_entry:
+                                    if model.memory.pairs: raise ValueError('Voice entry must start unselected')
+                                    for item in hello.get('catalog', []):
+                                        conversation_store.import_snapshot(_runtime_to_stored(item))
+                                    catalog_meta = conversation_store.list_metadata()
+                                    catalog = {item['id']: item for item in catalog_meta}
+                                    if context_id in catalog: raise ValueError('New identity already exists')
+                                entry = ConversationEntry(catalog, context_id, now_ms,
+                                        loader=lambda identity: _load_stored_memory(conversation_store, identity),
+                                        catalog_loader=lambda: {item['id']: item for item in conversation_store.list_metadata()})
+                            if not remote_store:
+                                saved = conversation_store.load(context_id)
+                                if saved is not None: model.memory.restore(_stored_to_runtime(saved))
+                            if hello.get('voice_entry') is not True and source == 'microphone':
                                 raise ValueError('Microphone requires explicit voice entry')
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
                             try:
                                 end_reason = session(conn, detector, model, limit, resource_check, source, context_id, entry, timer_trial, assistant_tools,
-                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}), **({'reminder_read':True} if reminder_read else {}), **({'reminder_clarification':True} if reminder_clarification else {}), **({'reminder_deletion':True} if reminder_deletion else {}), **({'tv_enabled': True} if tv_enabled else {}))
+                                    **({'guided_agenda': True} if guided_agenda else {}), **({'continuous_voice': True} if continuous_voice else {}), **({'alarm_lifecycle':True} if alarm_lifecycle else {}), **({'confirmed_volume':True} if confirmed_volume else {}), **({'reminder_read':True} if reminder_read else {}), **({'reminder_clarification':True} if reminder_clarification else {}), **({'reminder_deletion':True} if reminder_deletion else {}), **({'tv_enabled': True} if tv_enabled else {}), conversation_store=conversation_store, remote_memory=remote_store)
                             except ContinuousVoiceFault as fault:
                                 if not continuous_voice: raise
                                 if getattr(fault,'technical',None) is not None:

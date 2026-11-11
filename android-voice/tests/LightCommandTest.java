@@ -19,6 +19,7 @@ public final class LightCommandTest {
         check(LightCommandParser.parse("Apaga Lotus").kind==LightCommand.Kind.POWER&&!LightCommandParser.parse("Apaga Lotus").powerOn);
         check(LightCommandParser.parse("Enciende la luz mueble").target==LightTarget.LOTUS);
         check(LightCommandParser.parse("Pon azul en la luz del televisor").target==LightTarget.MR_STAR);
+        check(LightCommandParser.parse("Pon las luces del televisor de color azul pero solo unas del televisor").target==LightTarget.MR_STAR);
         check(LightCommandParser.parse("Apaga las dos luces").target==LightTarget.BOTH);
         check(!LightCommandParser.parse("Apaga la del televisor").powerOn&&LightCommandParser.parse("Apaga la del televisor").target==LightTarget.MR_STAR);
         check(LightCommandParser.parse("Enciende la del mueble").powerOn&&LightCommandParser.parse("Enciende la del mueble").target==LightTarget.LOTUS);

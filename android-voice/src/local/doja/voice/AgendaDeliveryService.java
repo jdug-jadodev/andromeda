@@ -25,10 +25,11 @@ public final class AgendaDeliveryService extends Service {
     private AlarmOccurrencePolicy occurrence;
     private final String controlNonce=UUID.randomUUID().toString();
     private volatile boolean silenced;
-    private TextToSpeech tts;
+    private SpeakerSpeech tts;
     private Ringtone tone;
-    private SilenceListener listener;
-    private SilenceListener.Handle interruption;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private SilenceListener listener;    private SilenceListener.Handle interruption;
     private boolean outputRequested,interruptionStarted;
     private final AgendaOutputs.Output ownedOutput = () -> end(false);
     public IBinder onBind(Intent intent) { return null; }
@@ -105,7 +106,10 @@ public final class AgendaDeliveryService extends Service {
         int temperature = battery == null ? -1 : battery.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1);
         int mode = getSystemService(AudioManager.class).getMode();
         AudioManager audio = getSystemService(AudioManager.class);
-        int stream = entry != null && entry.kind == AgendaEntry.Kind.ALARM ? AudioManager.STREAM_ALARM : AudioManager.STREAM_MUSIC;
+        // Reminders use the alarm path too: the Moto forces it to the speaker
+        // even with a wired headset, and it is not ducked by the assistant's
+        // own media speech.
+        int stream = AudioManager.STREAM_ALARM;
         return info.availMem / 1024 >= 500000 && temperature >= 0 && temperature < 400
             && audio.getStreamVolume(stream) > 0 && !audio.isStreamMute(stream)
             && mode != AudioManager.MODE_IN_CALL && mode != AudioManager.MODE_IN_COMMUNICATION;
@@ -133,7 +137,7 @@ public final class AgendaDeliveryService extends Service {
         beginInterruption(); guardOutput();
     }
     private void initializeVoice() {
-        tts = new TextToSpeech(this, status -> main.post(() -> {
+        tts = new SpeakerSpeech(this, status -> main.post(() -> {
             if (ended) return;
             if (status != TextToSpeech.SUCCESS) { end(false); return; }
             Set<Voice> available = tts.getVoices(); Voice selected = null;
@@ -143,10 +147,17 @@ public final class AgendaDeliveryService extends Service {
                 if ("US".equals(voice.getLocale().getCountry())) { selected = voice; break; }
             }
             AudioManager audio = getSystemService(AudioManager.class);
-            if (selected == null || audio.isStreamMute(AudioManager.STREAM_MUSIC) || audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0 || tts.setVoice(selected) == TextToSpeech.ERROR) { end(false); return; }
+            audioManager = audio;
+            if (selected == null || audio.isStreamMute(AudioManager.STREAM_ALARM) || audio.getStreamVolume(AudioManager.STREAM_ALARM) == 0 || tts.setVoice(selected) == TextToSpeech.ERROR) { end(false); return; }
+            AudioAttributes focusAttributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
+            focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(focusAttributes).setWillPauseWhenDucked(false).build();
+            if (audio.requestAudioFocus(focusRequest) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { end(false); return; }
             interruption=listener.arm(id+":"+revision,expiresAt,Math.min(expiresAt,SystemClock.elapsedRealtime()+3000),() -> !ended,
                 () -> worker.execute(() -> { if (!acceptOutput(() -> {
-                Bundle params = new Bundle(); params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_MUSIC);
+                Bundle params = new Bundle(); params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, AudioManager.STREAM_ALARM);
+                params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
                 if (tts.speak("Recordatorio: " + entry.text, TextToSpeech.QUEUE_FLUSH, params, id + ":" + revision) == TextToSpeech.ERROR)
                     throw new IllegalStateException("Reminder voice failed");
             })) end(false);
@@ -154,7 +165,7 @@ public final class AgendaDeliveryService extends Service {
             final SilenceListener.Handle expected=interruption;
             if(expected==null) { end(false); return; }
             main.postDelayed(() -> { if(!ended && !started && interruption==expected) end(false); },SilenceWindowPolicy.ARM_MS);
-        }), "com.google.android.tts");
+        }), "com.google.android.tts", AudioAttributes.USAGE_ALARM);
         tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
             public void onStart(String utterance) { main.post(() -> { if (!ended && utterance.equals(id + ":" + revision)) beginInterruption(); }); }
             public void onDone(String utterance) { if (!ended && utterance.equals(id + ":" + revision)) end(true); }
@@ -189,6 +200,10 @@ public final class AgendaDeliveryService extends Service {
             try { if (tone != null) { completed = completed && (silenced || tone.isPlaying()); tone.stop(); stopped = !tone.isPlaying(); } }
             catch (RuntimeException failure) { completed = false; stopped = false; }
             if (tts != null) try { stopped &= tts.stop() != TextToSpeech.ERROR; } catch (RuntimeException failure) { stopped = false; }
+            if (audioManager != null && focusRequest != null) {
+                try { audioManager.abandonAudioFocusRequest(focusRequest); } catch (RuntimeException ignored) {}
+                focusRequest = null;
+            }
             if (listener != null) listener.end();
             outputStopped = stopped;
             if (stopped) AgendaOutputs.end(id, ownedOutput);

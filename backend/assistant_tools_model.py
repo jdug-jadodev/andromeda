@@ -80,6 +80,7 @@ GENERAL_FOLLOWUP_SYSTEM = ('Responde en español, brevemente, a pregunta_actual.
 # words. Otherwise the model misrouted (e.g. "me gané una medalla" -> create_reminder),
 # so we ask generally instead of forcing a reminder/action.
 TOOL_INTENT = {
+    'replay_voice_message': r'\b(?:repite|repetir|reproduceme|reproduce|ponme)\b.*\b(?:ultimo|ultima|ultimos|ultimas)\b',
     'create_timer': r'\b(?:temporizador|timer|cuenta atras|cuenta regresiva|en [0-9]+ (?:segundos?|minutos?|horas?))\b',
     'create_alarm': r'\b(?:alarma|despiertame|despiertame a|alarma a)\b',
     'create_reminder': r'\b(?:recuerdame|recuerda|recordatorio|recordarme|acuerdame|recuerde|recuerdes)\b',

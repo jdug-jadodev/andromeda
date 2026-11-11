@@ -8,6 +8,8 @@
   "message_ms": 60000,
   "messages_pending": 20,
   "message_ttl_ms": 86400000,
+  "message_history_items": 50,
+  "message_total_bytes": 52428800,
   "message_min_interval_ms": 30000,
   "camera_minutes": 10,
   "camera_viewers": 1,

@@ -170,7 +170,7 @@ class ConversationVoiceTests(unittest.TestCase):
                 model.cancel()
             model.owned.stop.assert_called_once(); self.assertIsNone(model.result); self.assertFalse(model.thread.is_alive())
 
-    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None, continuous_voice=False, wake_on_pcm=False, initial_ms=100000, memory_setup=None,alarm_lifecycle=False,confirmed_volume=False,reminder_read=False,reminder_clarification=False,reminder_deletion=False):
+    def run_session(self, steps, *, ready=True, transcripts=None, answer='Hola.', entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, answers=None, continuous_voice=False, wake_on_pcm=False, initial_ms=100000, memory_setup=None,alarm_lifecycle=False,confirmed_volume=False,reminder_read=False,reminder_clarification=False,reminder_deletion=False,conversation_store=None,context_id=None):
         clock = [initial_ms]; events = []
         model = Mock(result=answer, error=None, context_metrics={})
         model.cancel_generation.return_value = True
@@ -201,7 +201,8 @@ class ConversationVoiceTests(unittest.TestCase):
                 patch.object(voice, 'FramePump', return_value=pump), patch.object(voice, 'send_event', side_effect=lambda c, e: events.append(e)), \
                 patch.object(voice.time, 'time', return_value=1792328400):
             voice.session(Mock(), detector, model, 0 if continuous_voice else 90, lambda: True, 'synthetic_pcm', entry=entry(clock) if entry else None,
-                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda,continuous_voice=continuous_voice,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion)
+                          timer_trial=timer_trial, assistant_tools=assistant_tools, guided_agenda=guided_agenda,continuous_voice=continuous_voice,alarm_lifecycle=alarm_lifecycle,confirmed_volume=confirmed_volume,reminder_read=reminder_read,reminder_clarification=reminder_clarification,reminder_deletion=reminder_deletion,
+                          conversation_store=conversation_store, context_id=context_id)
         return events, model
 
     @staticmethod
@@ -225,11 +226,11 @@ class ConversationVoiceTests(unittest.TestCase):
         old.commit('hablamos de luces', 'Respuesta anterior pública.')
         return voice.ConversationEntry({'a' * 32: old}, 'b' * 32, lambda: clock[0])
 
-    def test_voice_entry_normal_question_starts_empty_without_old_history(self):
+    def test_voice_entry_normal_question_continues_the_recent_chat(self):
         events, model = self.run_session(self.utterance(), entry=self.voice_entry)
         selected = next(e for e in events if e['type'] == 'context_selected')
-        self.assertEqual(selected['selection'], 'new'); self.assertEqual(selected['restored_turns'], 0)
-        self.assertEqual(len(model.observed_contexts[0]), 2)
+        self.assertEqual(selected['selection'], 'resume'); self.assertEqual(selected['restored_turns'], 1)
+        self.assertEqual(model.observed_contexts[0][1]['content'], 'hablamos de luces')
 
     def test_voice_entry_search_and_yes_restore_before_followup_generation(self):
         steps = self.utterance() + [(101000, self.ack_last), (103020, [self.pcm(103020)]),
@@ -260,6 +261,27 @@ class ConversationVoiceTests(unittest.TestCase):
         self.assertEqual(events[0]['input_source'], 'synthetic_pcm'); self.assertFalse(events[0]['actions_enabled'])
         self.assertEqual(events[-1]['state'], 'command'); self.assertEqual(events[-1]['trigger'], 'followup')
         self.assertEqual(len(model.memory.pairs), 1); model.cancel.assert_called_once()
+
+    def test_sqlite_persists_human_immediately_and_answer_only_after_tts_done(self):
+        from conversation_store import ConversationStore
+        with tempfile.TemporaryDirectory() as directory:
+            store=ConversationStore(Path(directory)/'memory.db')
+            spoken='a'*32; interrupted='b'*32
+            self.assertTrue(store.create(spoken)); self.assertTrue(store.create(interrupted))
+            events,_=self.run_session(self.utterance()+[(101000,self.ack_last)],conversation_store=store,context_id=spoken)
+            said=next(event for event in events if event['type']=='say')
+            saved=store.load(spoken)
+            self.assertEqual(len(saved['turns']),1)
+            self.assertEqual(saved['turns'][0]['assistant'],said['text'])
+
+            def interrupt(values):
+                event=next(item for item in values if item['type']=='say')
+                return [self.control('tts_started',turn_id=event['turn_id'],at_ms=event['speech_end_ms']+1180),
+                        self.control('tts_interrupted',turn_id=event['turn_id'])]
+            events,_=self.run_session(self.utterance()+[(101000,interrupt)],conversation_store=store,context_id=interrupted)
+            pending=store.load(interrupted)['turns']
+            self.assertEqual(len(pending),1)
+            self.assertNotIn('assistant',pending[0])
 
     def test_voice_actor_keeps_history_across_four_acknowledged_turns(self):
         questions = ['qué es una estrella', 'qué es un planeta', 'recuerdas las dos preguntas', 'cuáles fueron']
@@ -451,6 +473,8 @@ class ConversationVoiceTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         script = (root / 'scripts/start-andromeda-conversation.sh').read_text()
         self.assertIn('--conversation-only', script); self.assertIn('--synthetic-input', script)
+        self.assertIn('chown 10218:10218 "$ROOT$PRIVATE"', script)
+        self.assertIn('chmod 700 "$ROOT$PRIVATE"', script)
         self.assertNotIn('--chat', script); self.assertNotIn('am start', script)
         self.assertNotIn('ConversationAgent(', (root / 'backend/conversation_voice.py').read_text())
 

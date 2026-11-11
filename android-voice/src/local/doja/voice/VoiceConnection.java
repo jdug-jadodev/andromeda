@@ -12,6 +12,7 @@ import javax.net.ssl.*;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import java.util.List;
+import java.util.Set;
 
 /** Pinned TLS authenticates the server before the separate client token is sent. */
 final class VoiceConnection implements Closeable {
@@ -73,7 +74,7 @@ final class VoiceConnection implements Closeable {
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
             DataOutputStream output = new DataOutputStream(socket.getOutputStream());
             JSONObject hello = new JSONObject().put("protocol", lifecycle ? 13 : continuousVoice ? 12 : guidedAgenda ? 11 : assistantTools ? 10 : timerTrial ? 8 : 6).put("mode", assistantTools ? "assistant_tools" : timerTrial ? "timer_trial" : "conversation_only").put("source", source)
-                .put("token", token).put("context", ConversationChannel.encode(snapshot));
+                .put("token", token).put("memory_store", "sqlite_debian_v1").put("context_id", snapshot.conversationId);
              if (assistantTools) hello.put("web_response_mode", "worker_first_v3_spanish").put("phone_volume_policy", guidedAgenda?"confirmed_media_v3":"absolute_media_v1").put("light_control_policy", "voice_light_command_v1");
             if (guidedAgenda) hello.put("agenda_dialogue_policy", "guided_agenda_v1").put("action_completion_policy", "continue_v1");
             if(guidedAgenda) hello.put("reminder_read_policy",ReminderListPolicy.POLICY);
@@ -81,11 +82,7 @@ final class VoiceConnection implements Closeable {
             if (continuousVoice) hello.put("voice_lifetime_policy",ContinuousVoicePolicy.VOICE).put("dialogue_reset_policy",ContinuousVoicePolicy.RESET);
             if(lifecycle) hello.put("alarm_lifecycle_policy",AlarmSchedule.POLICY);
             if(lifecycle) hello.put("reminder_delete_policy",ReminderDeletion.POLICY);
-            if (catalog != null) {
-                JSONArray chats = new JSONArray();
-                for (ConversationMemory.Snapshot chat : catalog) chats.put(ConversationChannel.encode(chat));
-                hello.put("voice_entry", true).put("catalog", chats);
-            }
+            if (catalog != null) hello.put("voice_entry", true);
             byte[] helloBytes = hello.toString().getBytes(StandardCharsets.UTF_8);
             if (helloBytes.length > 131072) throw new IOException("Contexto fuera del límite de transporte");
             writeFrame(output, 1, helloBytes);
@@ -122,11 +119,13 @@ final class VoiceConnection implements Closeable {
                     || lifecycle && !ReminderDeletion.POLICY.equals(ready.optString("reminder_delete_policy"))
                     || !ready.optBoolean("continuous_chat") || ready.optLong("listen_idle_ms") != ListeningSleepPolicy.CLOSE_AFTER_MS
                     || !ready.optBoolean("followup_offer") || !ready.optBoolean("closing_farewell")
-                    || catalog != null && !ready.optBoolean("voice_entry")
-                    || !snapshot.conversationId.equals(ready.optString("context_id"))
-                    || !ready.optString("session_id").matches("[0-9a-f]{32}")
-                    || ready.optInt("restored_turns", -1) != snapshot.turns.size()
-                    || Math.abs(SystemClock.elapsedRealtime() - ready.optLong("server_time_ms")) > 1000)
+                     || catalog != null && !ready.optBoolean("voice_entry")
+                     || !"sqlite_debian_v1".equals(ready.optString("memory_store"))
+                     || !snapshot.conversationId.equals(ready.optString("context_id"))
+                     || !ready.optString("session_id").matches("[0-9a-f]{32}")
+                     || ready.optInt("restored_turns", -1) < 0 || ready.optInt("restored_turns", -1) > ConversationMemory.MAX_TURNS
+                    || !validRemoteCatalog(ready.optJSONArray("catalog"))
+                     || Math.abs(SystemClock.elapsedRealtime() - ready.optLong("server_time_ms")) > 1000)
                 throw new IOException("El backend no es la conversación restringida o el reloj no coincide");
             return new VoiceConnection(socket, input, output, ready);
         } catch (Exception error) { try { socket.close(); } catch (Exception ignored) {} throw error; }
@@ -136,6 +135,71 @@ final class VoiceConnection implements Closeable {
         if (size < 1 || size > 65536) throw new IOException("Evento inválido");
         byte[] data = new byte[size]; input.readFully(data);
         return new JSONObject(new String(data, StandardCharsets.UTF_8));
+    }
+    private static boolean validRemoteCatalog(JSONArray catalog) {
+        if (catalog == null || catalog.length() > ConversationMemory.MAX_CONVERSATIONS) return false;
+        Set<String> ids = new java.util.HashSet<>();
+        for (int i=0;i<catalog.length();i++) {
+            JSONObject item=catalog.optJSONObject(i);
+            if (item==null || item.length()!=4 || !item.optString("id").matches("[0-9a-f]{32}")
+                    || item.optInt("turns",-1)<0 || item.optInt("turns",-1)>ConversationMemory.MAX_TURNS
+                    || item.optLong("remaining_ms",-1)<0 || item.optLong("remaining_ms",-1)>ConversationMemory.INACTIVITY_MS
+                    || !(item.opt("closed") instanceof Boolean) || !ids.add(item.optString("id"))) return false;
+        }
+        return true;
+    }
+    static JSONObject memoryAdmin(Context context, String action, String id) throws Exception {
+        if (!("list".equals(action) || "forget".equals(action)) || "forget".equals(action)
+                && (id == null || !id.matches("[0-9a-f]{32}"))) throw new IOException("Solicitud de memoria inválida");
+        boolean guided = AssistantConfig.GUIDED_AGENDA;
+        boolean continuous = AssistantConfig.CONTINUOUS_VOICE;
+        boolean lifecycle = continuous && AssistantConfig.ALARM_LIFECYCLE;
+        int protocol = lifecycle ? 13 : continuous ? 12 : guided ? 11 : 10;
+        SSLContext tls = SSLContext.getInstance("TLS");
+        tls.init(null, new TrustManager[]{new X509TrustManager() {
+            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+            public void checkClientTrusted(X509Certificate[] chain, String auth) throws CertificateException { throw new CertificateException("Solo servidor local"); }
+            public void checkServerTrusted(X509Certificate[] chain, String auth) throws CertificateException {
+                try {
+                    if (chain == null || chain.length == 0) throw new CertificateException("Sin certificado");
+                    chain[0].checkValidity();
+                    byte[] actual = MessageDigest.getInstance("SHA-256").digest(chain[0].getEncoded());
+                    byte[] expected = new byte[32];
+                    for (int i=0;i<32;i++) expected[i]=(byte)Integer.parseInt(AssistantConfig.CONVERSATION_CERT_SHA256.substring(i*2,i*2+2),16);
+                    if (!MessageDigest.isEqual(actual,expected)) throw new CertificateException("Servidor no reconocido");
+                } catch (GeneralSecurityException | IllegalArgumentException error) {
+                    throw new CertificateException("No se verificó el servidor local", error);
+                }
+            }
+        }}, new SecureRandom());
+        try (SSLSocket socket=(SSLSocket)tls.getSocketFactory().createSocket()) {
+            socket.setSoTimeout(5000); socket.setTcpNoDelay(true);
+            socket.connect(new InetSocketAddress("127.0.0.1",11436),1500); socket.startHandshake();
+            String token=new String(Files.readAllBytes(new File(context.getFilesDir(),"voice-conversation-token").toPath()),StandardCharsets.UTF_8).trim();
+            if(token.length()<32) throw new IOException("Falta credencial de conversación");
+            JSONObject hello=new JSONObject().put("protocol",protocol).put("mode","assistant_tools").put("source","microphone")
+                .put("token",token).put("memory_admin",new JSONObject().put("action",action));
+            if("forget".equals(action)) hello.getJSONObject("memory_admin").put("id",id);
+            hello.put("web_response_mode","worker_first_v3_spanish")
+                .put("phone_volume_policy",guided?"confirmed_media_v3":"absolute_media_v1")
+                .put("light_control_policy","voice_light_command_v1");
+            if(guided) hello.put("agenda_dialogue_policy","guided_agenda_v1").put("action_completion_policy","continue_v1")
+                .put("reminder_read_policy",ReminderListPolicy.POLICY).put("reminder_creation_policy",AgendaDialogue.REMINDER_POLICY);
+            if(continuous) hello.put("voice_lifetime_policy",ContinuousVoicePolicy.VOICE).put("dialogue_reset_policy",ContinuousVoicePolicy.RESET);
+            if(lifecycle) hello.put("alarm_lifecycle_policy",AlarmSchedule.POLICY).put("reminder_delete_policy",ReminderDeletion.POLICY);
+            DataOutputStream output=new DataOutputStream(socket.getOutputStream());
+            byte[] bytes=hello.toString().getBytes(StandardCharsets.UTF_8);
+            writeFrame(output,1,bytes);
+            JSONObject event=readEvent(new DataInputStream(socket.getInputStream()));
+            String expectedType="list".equals(action)?"memory_catalog":"memory_forgotten";
+            if(!expectedType.equals(event.optString("type")) || !"sqlite_debian_v1".equals(event.optString("memory_store")))
+                throw new IOException("El servidor no confirmó la operación de memoria");
+            if("list".equals(action) && !validRemoteCatalog(event.optJSONArray("catalog")))
+                throw new IOException("El servidor devolvió contenido no permitido en el índice de memoria");
+            if("forget".equals(action) && (!id.equals(event.optString("id")) || !event.has("removed")))
+                throw new IOException("Confirmación de olvido incompatible");
+            return event;
+        }
     }
     static void writeFrame(DataOutputStream output, int kind, byte[] data) throws IOException {
         synchronized (output) { output.writeByte(kind); output.writeInt(data.length); output.write(data); output.flush(); }
