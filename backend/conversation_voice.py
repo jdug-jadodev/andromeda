@@ -1342,7 +1342,7 @@ def _stored_to_runtime(snapshot):
 
 
 def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resource_check, timer_trial=False, assistant_tools=False, resident=None, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False):
-    from continuous_voice import ContinuousVoiceFault, END_REASONS
+    from continuous_voice import ContinuousVoiceFault, END_REASONS, ProtocolWindow
     key = Path(key_path).read_text().strip()
     if len(key) < 32: raise ValueError('Missing conversation credential')
     if guided_agenda and not assistant_tools: raise ValueError('Guided agenda requires tools')
@@ -1391,6 +1391,9 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
             print(json.dumps({'event': 'conversation_ready', 'protocol': 13 if alarm_lifecycle else 12 if continuous_voice else 11 if guided_agenda else 10 if assistant_tools else 8 if timer_trial else PROTOCOL, 'tls': True,
                               'input_source': source, 'microphone_opened': False, 'actions_enabled': timer_trial or assistant_tools}), flush=True)
             deadline = resident.deadline if resident is not None else now_ms() + 300000
+            # Un error de protocolo suelto cierra la conexión; solo una racha
+            # apaga el motor (ver ProtocolWindow).
+            protocol_faults = ProtocolWindow()
             while deadline is None or now_ms() < deadline:
                 if not resource_check() or not model.owned.alive(): raise RuntimeError('Conversation readiness guard')
                 try: raw, _ = server.accept()
@@ -1507,6 +1510,15 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 if getattr(fault,'technical',None) is not None:
                                     try: record_protocol_technical(inference_key,fault.technical)
                                     except (OSError,ValueError): pass
+                                if fault.reason == 'voice_protocol_error' and not protocol_faults.hit(time.monotonic()):
+                                    # Un mensaje que la casa no acepta no apaga
+                                    # Andrómeda: se cierra esta conexión y se sigue
+                                    # escuchando, igual que cuando cae el par.
+                                    resident.release(model); model = None; entry = None
+                                    detector.reset()
+                                    if not resident.check(): resident.shutdown(); return
+                                    model = make_model()
+                                    continue
                                 resident.monitor.reason = fault.reason; resident.shutdown(); return
                             if continuous_voice:
                                 # A dropped peer (no explicit stop) must not end the

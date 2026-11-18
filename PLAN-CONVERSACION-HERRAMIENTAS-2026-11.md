@@ -340,3 +340,18 @@ idempotencia y límites. Si `due_ms` no pasa la guarda, se rechaza como hoy.
 
 > **Registro por herramienta:** ver `HERRAMIENTAS-DEEPSEEK-2026-11.md`, con la
 > receta repetible, el estado de cada herramienta y el changelog.
+
+### 13.8 Un fallo de protocolo ya no apaga el motor
+
+Un `ValueError` de protocolo durante un turno hacía `resident.shutdown()`: la app
+mandaba un mensaje que la casa no aceptaba y **Andrómeda quedaba apagada** hasta
+que alguien la encendiera a mano. Eso explica el «se apagó».
+
+Ahora `serve()` tolera los fallos sueltos: cierra esa conexión, suelta el modelo y
+**sigue escuchando** para que la app reconecte. Solo una racha de 3 fallos en 10
+minutos se trata como cliente incompatible y apaga el motor (`ProtocolWindow` en
+`backend/continuous_voice.py`). Pruebas: `tests/test_protocol_window.py`.
+
+Sigue pendiente el auto-reinicio del residente si sale por otra causa (hoy, si el
+proceso termina, nadie lo levanta hasta un `restart-all.sh` o un reinicio con
+`BootReceiver` exitoso).

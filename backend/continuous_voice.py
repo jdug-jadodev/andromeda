@@ -27,6 +27,31 @@ class ContinuousVoiceFault(RuntimeError):
         self.reason=reason; super().__init__(reason)
 
 
+class ProtocolWindow:
+    """Un mensaje inválido cierra la conexión; una racha sí tumba el motor.
+
+    Matar el residente por un mensaje que la casa no entiende deja a Andrómeda
+    apagada hasta que alguien la encienda a mano. Se toleran los fallos sueltos
+    (la app reconecta) y solo una racha sostenida se trata como cliente
+    incompatible, para no quedarse en un bucle de reconexión.
+    """
+    def __init__(self, limit=3, seconds=600.0):
+        if type(limit) is not int or limit < 1 or not 0 < seconds <= 3600:
+            raise ValueError('Invalid protocol window')
+        self.limit, self.seconds = limit, float(seconds)
+        self.started = None
+        self.count = 0
+
+    def hit(self, now):
+        """Cuenta el fallo y devuelve True si la racha ya es fatal."""
+        if type(now) not in (int, float):
+            raise ValueError('Invalid clock')
+        if self.started is None or now - self.started > self.seconds:
+            self.started, self.count = now, 0
+        self.count += 1
+        return self.count >= self.limit
+
+
 def identity(value): return isinstance(value, str) and re.fullmatch('[0-9a-f]{32}', value) is not None
 
 
