@@ -15,13 +15,14 @@ def words(text):
 
 
 class WakeStability:
-    def __init__(self, target, stable_seconds=0.16, minimum_confidence=0.55):
+    def __init__(self, target, stable_seconds=0.24, minimum_confidence=0.85, prefix_only=True):
         tokens = words(target)
         if len(tokens) != 1:
             raise ValueError("Expected one wake word")
         self.target = tokens[0]
         self.stable_seconds = stable_seconds
         self.minimum_confidence = minimum_confidence
+        self.prefix_only = prefix_only
         self.reset()
 
     def reset(self):
@@ -31,9 +32,17 @@ class WakeStability:
     def observe(self, text, audio_time, final=False, confidence=None):
         if self.latched:
             return False
-        if self.target not in words(text) or (confidence is not None and confidence < self.minimum_confidence):
-            if self.target in words(text):
-                print(f"wake_heard={text!r} conf={confidence}", flush=True)
+        tokens = words(text)
+        # "Andrómeda ..." or "Oye Andrómeda ..."; not a mention in the middle
+        # of an unrelated conversation.
+        if self.prefix_only:
+            prefixed = tokens[:1] == [self.target] or tokens[:2] == ["oye", self.target]
+        else:
+            prefixed = self.target in tokens
+        if (not prefixed or confidence is None
+                or confidence < self.minimum_confidence):
+            if self.target in tokens:
+                print(f"wake_heard conf={confidence}", flush=True)
             self.since = None
             return False
         if self.since is None:
@@ -45,7 +54,8 @@ class WakeStability:
 
 
 class SpanishWakeDetector:
-    def __init__(self, target, model_dir, model=None):
+    def __init__(self, target, model_dir, model=None, stable_seconds=0.24,
+                 minimum_confidence=0.85, prefix_only=True):
         from vosk import Model, SetLogLevel
         SetLogLevel(-1)
         self.model = model if model is not None else Model(str(model_dir))
@@ -55,7 +65,7 @@ class SpanishWakeDetector:
         distractors = ["androide", "andrés", "andamio", "adormecida", "dormida"]
         self.grammar = [target, "[unk]"] + [word for word in distractors
             if word != target and self.model.vosk_model_find_word(word) >= 0]
-        self.stability = WakeStability(target)
+        self.stability = WakeStability(target, stable_seconds, minimum_confidence, prefix_only)
         self.reset()
 
     def reset(self):
