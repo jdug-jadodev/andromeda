@@ -337,3 +337,6 @@ idempotencia y límites. Si `due_ms` no pasa la guarda, se rechaza como hoy.
   confirma (hoy: resuelve y confirma, porque el resumen dice la fecha absoluta).
 - Si el aviso pendiente sobrevive a un cambio de chat (hoy: solo dentro de la
   misma conversación).
+
+> **Registro por herramienta:** ver `HERRAMIENTAS-DEEPSEEK-2026-11.md`, con la
+> receta repetible, el estado de cada herramienta y el changelog.

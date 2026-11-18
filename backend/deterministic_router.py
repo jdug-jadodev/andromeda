@@ -10,6 +10,7 @@ import re
 
 from doja_intents import normalized
 from cancel_phrases import is_cancel
+import tool_arguments
 from assistant_tools_model import TOOL_INTENT, FALLBACK, TV_UNCLEAR
 from timer_proposals import literal_seconds, TimerValidationError
 from agenda_requests import current_event, AgendaValidationError
@@ -102,9 +103,19 @@ def _dispatch(name, text, model, arguments=None):
                 pass
             else:
                 return dict(kind='alarm_delete_request', **target)
+        # El modelo puede traer los datos; la casa los valida (prueba de origen,
+        # fecha real, futura y coherente). Apagado, manda el parser de siempre.
+        proposal = None
+        if tool_arguments.enabled() and isinstance(arguments, dict) and arguments:
+            proposal = tool_arguments.propose(kind, arguments, text, model.anchor_wall,
+                lifecycle=model.alarm_lifecycle, series=getattr(model, 'series_supported', False))
+            if proposal['ok']:
+                return dict(proposal['value'], kind='agenda_proposal')
         try:
             value = current_event(kind, text, model.anchor_wall, model.alarm_lifecycle)
         except AgendaValidationError:
+            if proposal is not None:
+                return {'kind': 'reply', 'text': proposal['message']}
             if not model.guided_agenda:
                 raise
             from agenda_dialogue import opening

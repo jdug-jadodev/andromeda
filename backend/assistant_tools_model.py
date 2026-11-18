@@ -6,6 +6,7 @@ import re
 import threading
 
 from agenda_requests import current_event, AgendaValidationError
+import tool_arguments
 from conversation_voice import ConversationModel, conversational_reply
 from doja_intents import normalized
 from timer_proposals import selected_timer_seconds, TimerValidationError
@@ -46,6 +47,11 @@ TOOLS = [tool('create_timer', 'Duración literal.', 'duration_text'),
          tool('set_phone_volume', 'Ajusta el volumen multimedia del teléfono al porcentaje pedido. Ejemplos: sube el volumen al cien por ciento; baja el volumen al veinte por ciento; a la mitad. Sin argumentos.'),
          tool('control_lights', 'Controla o programa SOLO las luces: encender, apagar, color validado, brillo con porcentaje y horario diario. La frase actual contiene el objetivo, las horas y los valores; sin argumentos. No hay televisor, estufa ni otros electrodomésticos.'),
          tool('self_destruct', 'Autodestrucción de Andrómeda si el humano dice autodestruyete, destruyete o muerete. Sin argumentos.')]
+# Con ANDROMEDA_TOOL_ARGUMENTS el modelo aporta los datos (tema, fragmento de
+# tiempo, fecha y repetición) y la casa los valida. Apagado, el esquema queda
+# exactamente como siempre (sin datos): cero cambios en el camino actual.
+if tool_arguments.enabled():
+    TOOLS = tool_arguments.extend(TOOLS)
 TV_TOOLS = [
     tool('tv_status',   'Consulta si la TV está encendida, qué app muestra y el volumen. Sin argumentos.'),
     tool('tv_inputs',   'Lista las entradas disponibles de la TV. Sin argumentos.'),
@@ -148,10 +154,17 @@ def native_call(message, finish):
     if isinstance(args, str):
         if len(args) > 1024: raise ValueError('Oversized native arguments')
         args = json.loads(args, object_pairs_hook=unique)
-    if not isinstance(args, dict) or set(args) != set(spec['parameters']['properties']) or any(
-            not isinstance(value, str) or len(value) > (250 if name in {'create_alarm', 'create_reminder'} else 160) for value in args.values()): raise ValueError('Invalid native arguments')
-    if any(not value for value in args.values()): raise ValueError('Empty argument')
-    return name, args
+    if not isinstance(args, dict): raise ValueError('Invalid native arguments')
+    properties = spec['parameters'].get('properties') or {}
+    required = spec['parameters'].get('required', list(properties))
+    if not isinstance(properties, dict) or not isinstance(required, list): raise ValueError('Invalid native arguments')
+    # Los obligatorios son los que la casa necesita; los opcionales se omiten si
+    # el modelo no los sabe (antes había que mandar todos, aunque sobraran).
+    if not set(required) <= set(args) <= set(properties): raise ValueError('Invalid native arguments')
+    if any(not isinstance(value, str) or len(value) > (250 if name in {'create_alarm', 'create_reminder'} else 160)
+            for value in args.values()): raise ValueError('Invalid native arguments')
+    if any(not args[key] for key in required): raise ValueError('Empty argument')
+    return name, {key: value for key, value in args.items() if value}
 
 
 class AssistantToolsModel(ConversationModel):
@@ -469,8 +482,9 @@ class AssistantToolsModel(ConversationModel):
                         return finish({'kind': 'timer_rejected', 'reason': invalid.reason}, 'timer_request_rejected')
                     return finish({'kind': 'timer_proposal', 'seconds': seconds}, 'accepted')
                 if name in {'create_alarm', 'create_reminder'}:
-                    # The strict zero-argument schema rejects (never repairs)
-                    # any model-supplied date, duration, text or copied request.
+                    # Sin datos del modelo, el parser literal manda (como siempre).
+                    # Con ANDROMEDA_TOOL_ARGUMENTS, el modelo aporta los datos y la
+                    # casa los valida: prueba de origen + fecha real y futura.
                     validation = 'agenda_request_rejected'
                     kind = 'ALARM' if name == 'create_alarm' else 'REMINDER'
                     if self.alarm_lifecycle and kind=='ALARM':
@@ -478,8 +492,18 @@ class AssistantToolsModel(ConversationModel):
                         try: target=deletion_target(human)
                         except ValueError: pass
                         else: return finish(dict(kind='alarm_delete_request',**target),'accepted')
+                    proposal = None
+                    if tool_arguments.enabled() and args:
+                        proposal = tool_arguments.propose(kind, args, human, self.anchor_wall,
+                            lifecycle=self.alarm_lifecycle,
+                            series=getattr(self, 'series_supported', False))
+                        if proposal['ok']:
+                            return finish(dict(proposal['value'], kind='agenda_proposal'), 'accepted')
                     try: value = current_event(kind, human, self.anchor_wall,self.alarm_lifecycle)
                     except AgendaValidationError:
+                        if proposal is not None:
+                            return finish({'kind': 'reply', 'text': proposal['message']},
+                                          'agenda_request_rejected')
                         if not self.guided_agenda: raise
                         from agenda_dialogue import opening
                         opening(kind, human, self.reminder_clarification, self.anchor_wall)  # Question only; Android independently reconstructs.
