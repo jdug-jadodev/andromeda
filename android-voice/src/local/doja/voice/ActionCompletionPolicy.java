@@ -4,7 +4,10 @@ package local.doja.voice;
 final class ActionCompletionPolicy {
     static final String OFFER = "¿Necesitas algo más?";
     static String text(String receipt, boolean continuing) {
-        return continuing ? receipt + " " + OFFER : receipt;
+        // Nunca despues de una pregunta: corta al humano a mitad de la orden.
+        // Debe coincidir con ConversationFlow.with_offer() en el backend.
+        if (!continuing || receipt.replaceAll("\\s+$", "").endsWith("?")) return receipt;
+        return receipt + " " + OFFER;
     }
     static boolean valid(boolean continuing, String close, boolean offered) {
         return continuing ? "".equals(close) && offered : "action_result".equals(close) && !offered;

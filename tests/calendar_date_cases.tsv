@@ -37,3 +37,9 @@ two_word_clock	hoy a las cinco veinte la tarde	1792610130000	1792621200000	0
 la_noche_period	hoy a las once y media la noche	1792610130000	1792643400000	0
 weekday_prefix	jueves cinco de noviembre del dos mil veintiseis a las doce y treinta	1792610130000	1793899800000	0
 spoken_midday	el cinco de noviembre de dos mil veintiseis a las doce y treinta del mediodia	1792610130000	1793899800000	0
+weekday_only	el martes a las 3 de la tarde	1792610130000	1793131200000	0
+weekday_para	para el martes a las 3 de la tarde	1792610130000	1793131200000	0
+weekday_next	el próximo martes a las 3 de la tarde	1792610130000	1793131200000	0
+weekday_single	el miércoles a las 19:00	1792610130000	1793232000000	0
+bare_day	el 24 a las 5 de la tarde	1792610130000	1792879200000	0
+weekday_mismatch	el martes dieciocho de noviembre de 2026 a las 3 de la tarde	1792610130000	INVALID	0

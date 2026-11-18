@@ -8,6 +8,22 @@ from timer_proposals import literal_seconds
 BOGOTA = timezone(timedelta(hours=-5))
 MAX_AHEAD_MS = 366 * 86400000
 MONTHS = 'enero febrero marzo abril mayo junio julio agosto septiembre octubre noviembre diciembre'.split()
+WEEKDAYS = ('lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo')
+# Marcadores que abren una expresión de tiempo dentro de la frase. El cuerpo es
+# lo que queda a la izquierda. Incluye días de la semana sueltos ("el martes"),
+# "este/próximo/siguiente" y el día hablado ("el veinticinco de octubre"). Se
+# comparan sobre el texto humano tal cual, así que se toleran las tildes y la ñ
+# que el ASR sí escribe ("mañana", "miércoles", "próximo").
+_WEEKDAY_WORDS = r'lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo'
+_TIME_OPENING = (
+    r'(?:para )?(?:en |dentro de |hoy\b|ma[ñn]ana\b|pasado ma[ñn]ana\b|todos los d[ií]as\b|'
+    r'cada d[ií]a\b|este\b|esta\b|(?:el |la )?(?:pr[oó]xim[oa]|siguiente)\b|'
+    r'(?:el |la )?(?:' + _WEEKDAY_WORDS + r')\b|'
+    r'el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/)')
+_WHEN_START = re.compile(_TIME_OPENING, re.I)
+_WHEN_BOUNDARY = re.compile(r' (?=' + _TIME_OPENING + r')', re.I)
+_BODY_TAIL = re.compile(
+    r'\b(?:para|de|el|la|los|las|este|esta|pr[oó]xim[oa]|siguiente)$', re.I)
 
 
 class AgendaValidationError(ValueError):
@@ -38,25 +54,47 @@ def clean(text):
 
 
 def calendar_day(text, anchor_ms):
-    """A literal local date, with no inferred hour/year or fuzzy month repair."""
+    """A literal local date, with no inferred hour or fuzzy month repair."""
     if type(anchor_ms) is not int or anchor_ms <= 0: raise AgendaValidationError('invalid_clock')
-    date = re.sub(r'^(?:para )?(?:el )?', '', normalized(clean(text)))
-    # El ASR suele incluir el día de la semana ("jueves cinco de noviembre"); se descarta.
-    date = re.sub(r'^(?:lunes|martes|miercoles|jueves|viernes|sabado|domingo) ', '', date)
+    value = re.sub(r'^(?:para )?(?:el )?', '', normalized(clean(text)))
     today = datetime.fromtimestamp(anchor_ms / 1000, BOGOTA).date()
+    this_week = bool(re.match(r'^este ', value))
+    if this_week: value = value[5:]
+    next_week = bool(re.match(r'^(?:el )?(?:proximo|proxima|siguiente) ', value))
+    if next_week: value = re.sub(r'^(?:el )?(?:proximo|proxima|siguiente) ', '', value)
+    # El ASR suele incluir el día de la semana ("jueves cinco de noviembre").
+    weekday, match = None, re.match(r'(' + '|'.join(WEEKDAYS) + r')(?= |$)', value)
+    if match: weekday, value = match[1], value[match.end():].strip()
     try:
-        relative = re.fullmatch(r'(?:en|dentro de) (.+?) dias?', date)
+        relative = re.fullmatch(r'(?:en|dentro de) (.+?) dias?', value)
         if relative:
             days = number(relative[1])
             if not 1 <= days <= 366: raise ValueError()
             day = today + timedelta(days=days)
-        elif date in {'hoy', 'manana', 'pasado manana'}:
-            day = today + timedelta(days={'hoy': 0, 'manana': 1, 'pasado manana': 2}[date])
+        elif value in {'hoy', 'manana', 'pasado manana'}:
+            day = today + timedelta(days={'hoy': 0, 'manana': 1, 'pasado manana': 2}[value])
+        elif value == '' and weekday is not None:
+            # "el martes": la próxima ocurrencia; "este martes" puede ser hoy y
+            # "el próximo/siguiente martes" siempre es una semana después si hoy
+            # ya es martes. Nunca se asume la hora.
+            delta = (WEEKDAYS.index(weekday) - today.weekday()) % 7
+            if next_week and delta == 0: delta = 7
+            if delta == 0 and not this_week: delta = 7
+            day = today + timedelta(days=delta)
         else:
-            if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', date): day = datetime.strptime(date, '%Y-%m-%d').date()
-            elif re.fullmatch(r'[0-9]{2}/[0-9]{2}/[0-9]{4}', date): day = datetime.strptime(date, '%d/%m/%Y').date()
+            explicit_month = bool(re.search(r' (?:de|del) (?:este|el) mes$', value))
+            if explicit_month: value = re.sub(r' (?:de|del) (?:este|el) mes$', '', value)
+            if re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', value): day = datetime.strptime(value, '%Y-%m-%d').date()
+            elif re.fullmatch(r'[0-9]{2}/[0-9]{2}/[0-9]{4}', value): day = datetime.strptime(value, '%d/%m/%Y').date()
+            elif re.fullmatch(r'[0-9]{1,2}', value):
+                # "el 24": este mes si todavía no pasó; si ya pasó, el próximo mes.
+                day_num = int(value)
+                day = datetime(today.year, today.month, day_num).date()
+                if day < today and not explicit_month:
+                    day = datetime(today.year + (1 if today.month == 12 else 0), today.month % 12 + 1, day_num).date()
+                elif day < today: raise ValueError()
             else:
-                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r')(?: (?:de|del) (.+))?', date)
+                parts = re.fullmatch(r'(.+?) de (' + '|'.join(MONTHS) + r')(?: (?:de|del) (.+))?', value)
                 if not parts: raise ValueError()
                 month = MONTHS.index(parts[2]) + 1
                 day_num = number(parts[1])
@@ -75,6 +113,9 @@ def calendar_day(text, anchor_ms):
                         if not 0 <= suffix <= 99: raise ValueError()
                         year = 2000 + suffix
                     day = datetime(year, month, day_num).date()
+        # Un día de la semana explícito debe coincidir con la fecha resuelta.
+        if weekday is not None and value != '' and day.weekday() != WEEKDAYS.index(weekday):
+            raise ValueError()
         if not 0 <= (day - today).days <= 366: raise ValueError()
         return day
     except (ValueError, OverflowError): raise AgendaValidationError('invalid_date') from None
@@ -164,7 +205,32 @@ def calendar_due(when, anchor_ms):
     raise AgendaValidationError('missing_time')
 
 
+def opens_with_time(text):
+    """True si la frase (o su cola) empieza con una expresión de tiempo."""
+    return bool(_WHEN_START.match(text))
+
+
+def weekly_day(when):
+    """True si la expresión solo nombra un día de la semana ("el martes").
+
+    Una alarma semanal debe pasar por el ciclo de vida; no se convierte en una
+    alarma de una sola vez.
+    """
+    plain = re.sub(r'^para ', '', normalized(clean(when)))
+    day = re.sub(r' a (?:las? )?.+$', '', plain, flags=re.I)
+    names = '|'.join(WEEKDAYS)
+    return bool(re.fullmatch(r'(?:(?:el|los) |todos los |cada )?(?:' + names + r')', day)
+        or re.fullmatch(r'(?:el |la )?(?:proximo|proxima|siguiente) (?:' + names + r')', day))
+
+
 def parts(kind, raw):
+    """Candidatos (cuándo, contenido) en orden canónico.
+
+    El primer candidato que valide gana; ya no se exige que la frase tenga una
+    sola forma. Así "ver el partido de champions el martes…" no confunde el tema
+    con la fecha: «el partido de champions» no resuelve como fecha y el corte
+    bueno («el martes…») es el que queda.
+    """
     candidates = []
     if kind == 'ALARM':
         match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|(?:una |la )?alarma) (?:para )?(.+)', raw, re.I)
@@ -172,14 +238,34 @@ def parts(kind, raw):
     else:
         prefix = re.fullmatch(r'(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)', raw, re.I)
         if prefix:
-            tail = prefix[1]
+            tail = re.sub(r'^que ', '', prefix[1], flags=re.I)
             front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
             if front: candidates.append((re.sub(r'^(?:para|de) ', '', front[1], flags=re.I), front[2]))
-            for start in re.finditer(r' (?=(?:para )?(?:en |dentro de |hoy |ma[ñn]ana |pasado ma[ñn]ana |todos los d[ií]as |cada d[ií]a |el (?=[0-9]|[a-záéíóúñ]+(?: y [a-záéíóúñ]+)? de )|[0-9]{4}-|[0-9]{2}/))', tail, re.I):
+            for start in _WHEN_BOUNDARY.finditer(tail):
                 body = tail[:start.start()]
-                if not re.search(r'\bpara$', body, re.I):
-                    candidates.append((re.sub(r'^para ', '', tail[start.end():], flags=re.I), re.sub(r'^(?:para|de) ', '', body, flags=re.I)))
+                # "para", "de" o un artículo suelto a la izquierda no son contenido.
+                if _BODY_TAIL.search(body): continue
+                when = re.sub(r'^para ', '', tail[start.end():], flags=re.I)
+                candidates.append((when, re.sub(r'^(?:para|de) ', '', body, flags=re.I)))
+            # Solo la hora, sin contenido: la casa preguntará qué recordar.
+            if _WHEN_START.match(tail): candidates.append((re.sub(r'^para ', '', tail, flags=re.I), ''))
     return list(dict.fromkeys(candidates))
+
+
+def _value(kind, when, body, anchor_ms, alarm_lifecycle):
+    if kind == 'ALARM' and not alarm_lifecycle and weekly_day(when):
+        raise AgendaValidationError('invalid_request')
+    if kind == 'REMINDER' and (not 0 < len(body) <= 160 or re.search(
+            r'[;.!?]|(?:\b(?:y|ademas|tambien|despues|luego)\b|,)\s+(?:andromeda[, ]+)?(?:por favor )?'
+            r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
+            r'|\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\b', normalized(body))):
+        raise AgendaValidationError('invalid_request')
+    if alarm_lifecycle:
+        from alarm_schedule import schedule
+        time = schedule(kind, when, anchor_ms)
+    else:
+        due, delay = calendar_due(when, anchor_ms); time = dict(due_ms=due, delay_ms=delay)
+    return dict(event_kind=kind, text=body, zone='America/Bogota', **time)
 
 
 def request(kind, human, when_text, reminder_text, anchor_ms, alarm_lifecycle=False):
@@ -189,39 +275,24 @@ def request(kind, human, when_text, reminder_text, anchor_ms, alarm_lifecycle=Fa
         raise AgendaValidationError('invalid_call')
     if re.search(r'\bno (?:lo hagas|la pongas|lo pongas|la crees|lo crees|programes)\b', normalized(raw)):
         raise AgendaValidationError('invalid_request')
-    candidates = parts(kind, raw)
-    matches = []
-    for when, body in candidates:
+    for when, body in parts(kind, raw):
         if notation(when) != notation(when_text) or normalized(body) != normalized(reminder_text): continue
-        if kind == 'REMINDER' and (not 0 < len(body) <= 160 or re.search(
-                r'[;.!?]|(?:\b(?:y|ademas|tambien|despues|luego)\b|,)\s+(?:andromeda[, ]+)?(?:por favor )?'
-                r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
-                r'|\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\b', normalized(body))):
-            continue
-        if alarm_lifecycle:
-            from alarm_schedule import schedule
-            time = schedule(kind, when, anchor_ms)
-        else:
-            due, delay = calendar_due(when, anchor_ms); time = dict(due_ms=due, delay_ms=delay)
-        matches.append(dict(event_kind=kind, text=body, zone='America/Bogota', **time))
-    if len(matches) != 1: raise AgendaValidationError('invalid_request')
-    return matches[0]
+        try: return _value(kind, when, body, anchor_ms, alarm_lifecycle)
+        except (ValueError, OverflowError): continue
+    raise AgendaValidationError('invalid_request')
 
 
 def current_event(kind, human, anchor_ms, alarm_lifecycle=False):
-    """Validate literal data only AFTER the model selects this exact calendar kind.
+    """First literal interpretation of the current request that passes every guard.
 
     Native calendar tools have no data arguments: neither the model's history
     nor rewritten dates/content can supply authorization or event fields.
     """
     if kind not in {'ALARM', 'REMINDER'}: raise AgendaValidationError('invalid_call')
-    matches = []
     for when, body in parts(kind, clean(human)):
-        try: value = request(kind, human, when, body, anchor_ms, alarm_lifecycle)
+        try: return dict(request(kind, human, when, body, anchor_ms, alarm_lifecycle), when_text=when)
         except (ValueError, OverflowError): continue
-        matches.append(dict(value, when_text=when))
-    if len(matches) != 1: raise AgendaValidationError('invalid_request')
-    return matches[0]
+    raise AgendaValidationError('invalid_request')
 
 
 def selected_event(human, proposed_request, anchor_ms):

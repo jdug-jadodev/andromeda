@@ -41,10 +41,14 @@ class ConversationFlow:
 
     @classmethod
     def with_offer(cls, answer, maximum=700):
-        """Explicit UX footer, not another generation or a replacement answer."""
+        """Explicit UX footer, not another generation or a replacement answer.
+
+        Never after a question: "¿De cuánto tiempo…? ¿Necesitas algo más?" corta
+        al humano a mitad de la orden. El pie solo cierra respuestas o acciones.
+        """
         if len(answer.encode('utf-16-le')) // 2 > maximum: raise ValueError('Oversized speech')
-        if cls.direct_offer(answer): return answer
-        separator = ' ' if answer.endswith(('.', '!', '?', '…')) else '. '
+        if cls.direct_offer(answer) or answer.rstrip().endswith('?'): return answer
+        separator = ' ' if answer.endswith(('.', '!', '…')) else '. '
         result = answer + separator + cls.QUESTION
         if len(result.encode('utf-16-le')) // 2 > maximum:
             raise ValueError('Reply plus follow-up exceeds speech limit')

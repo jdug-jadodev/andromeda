@@ -58,7 +58,10 @@ class AlarmLifecycleTests(unittest.TestCase):
                      'hoy dentro de dos minutos','hoy a las 23:59','2026-12-24 a las 23:00']:
             value=current_event('ALARM','pon una alarma '+when,WALL,True)
             self.assertEqual((value['weekday'],value['minute_of_day']),(0,-1))
-        with self.assertRaises(ValueError): schedule('REMINDER','lunes a las 17:00',WALL)
+        # Un recordatorio no se repite: "el lunes…" es una sola vez, nunca
+        # una serie semanal; la alarma semanal exige el ciclo de vida de alarma.
+        once = schedule('REMINDER','lunes a las 17:00',WALL)
+        self.assertEqual((once['weekday'],once['minute_of_day'],once['delay_ms']),(0,-1,0))
 
     def test_current_natural_time_first_Tuesday_20h_requires_native_selection_and_matching_receipt(self):
         for human in ('una alarma a las 8pm los martes','pon una alarma a las ocho de la noche los martes'):

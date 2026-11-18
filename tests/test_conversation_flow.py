@@ -42,6 +42,14 @@ class ConversationFlowTests(unittest.TestCase):
             self.assertEqual(ConversationFlow.with_offer(text), text)
         self.assertEqual(ConversationFlow.with_offer('Hola'), 'Hola. ¿Necesitas algo más?')
 
+    def test_offer_never_follows_a_question_that_awaits_the_human(self):
+        # "¿De cuánto tiempo…? ¿Necesitas algo más?" corta la orden a la mitad.
+        for text in ['¿De cuánto tiempo quieres el temporizador?', '¿Para qué es el recordatorio?',
+                     '¿Cuándo quieres que te lo recuerde?', '¿Quieres crear un recordatorio?']:
+            with self.subTest(text=text): self.assertEqual(ConversationFlow.with_offer(text), text)
+        self.assertEqual(ConversationFlow.with_offer('¿Sabías que la luz es azul? Claro que sí.'),
+                         '¿Sabías que la luz es azul? Claro que sí. ¿Necesitas algo más?')
+
     def test_appended_offer_is_recognized_even_when_answer_contains_quotes(self):
         flow = ConversationFlow(); answer = flow.with_offer('Se llama «luz».')
         flow.spoken(answer, offered_more=True)

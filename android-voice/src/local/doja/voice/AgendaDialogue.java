@@ -89,9 +89,9 @@ final class AgendaDialogue {
         if (tail == null) return "";
         if (kind == AgendaEntry.Kind.ALARM) throw new IllegalArgumentException("Incomplete/ambiguous alarm time");
         // Reject time-shaped tails instead of treating date/clock as reminder content.
-        if (!AgendaRequestGuard.parts(kind,raw).isEmpty())
+        if (AgendaRequestGuard.opensWithTime(tail))
             throw new IllegalArgumentException("Incomplete/ambiguous reminder time");
-        return subject(tail.replaceFirst("(?iu)^para ", ""));
+        return subject(tail.replaceFirst("(?iu)^(?:para|de) ", ""));
     }
     static boolean mayClarifyReminder(String human) {
         String plain=TimerRequestGuard.normalize(AgendaRequestGuard.clean(human));
@@ -119,19 +119,24 @@ final class AgendaDialogue {
         return "¿A qué hora quieres el recordatorio para el " + day.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu",java.util.Locale.ROOT))
             + "? Indica mañana o tarde, o usa formato de 24 horas.";
     }
+    /** Quita el reloj de una expresion para reconocer solo el dia ya dicho. */
+    private static String dayText(String when) {
+        return when.replaceFirst("(?iu) a (?:las? )?.+$", "");
+    }
     Decision begin(AgendaEntry.Kind kind, Human human) {
         if (active() || human.sequence > maximumSequence) throw new IllegalArgumentException("Agenda form already active/invalid sequence");
         // Independently recognize only a date-only partial request, with the WHOLE request guard.
-        String content = null; java.time.LocalDate partialDay = null; int matches = 0;
+        // La primera interpretacion literal valida gana; no se inventa ni se repara nada.
+        String content = null; java.time.LocalDate partialDay = null;
         if (kind == AgendaEntry.Kind.REMINDER) {
             for (String[] candidate : AgendaRequestGuard.parts(kind,AgendaRequestGuard.clean(human.text))) {
                 try {
-                    String literalBody = subject(candidate[1]);java.time.LocalDate literalDay = AgendaRequestGuard.day(candidate[0],human.wall);
-                    content=literalBody;partialDay=literalDay;matches++;
+                    String literalBody = subject(candidate[1]);java.time.LocalDate literalDay = AgendaRequestGuard.day(dayText(candidate[0]),human.wall);
+                    content=literalBody;partialDay=literalDay;break;
                 } catch (RuntimeException invalid) { /* A malformed/ambiguous date grants nothing. */ }
             }
         }
-        if (matches!=1) { content=opening(kind,human.text,reminderClarification);partialDay=null; }
+        if (content==null) { content=opening(kind,human.text,reminderClarification);partialDay=null; }
         this.kind = kind; body = content==null ? "" : content; needsIntent=content==null; origin = human.id; created = human.boot; lastSequence = human.sequence;
         day=partialDay;
         return question(human, null);

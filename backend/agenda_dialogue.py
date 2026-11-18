@@ -7,7 +7,8 @@ from dataclasses import dataclass
 import re
 import time as _time
 
-from agenda_requests import AgendaValidationError, calendar_day, calendar_due, day_due, clean, parts
+from agenda_requests import (AgendaValidationError, calendar_day, calendar_due, day_due, clean,
+    opens_with_time, parts)
 from cancel_phrases import is_cancel
 from doja_intents import normalized
 from affirmation import is_negative, is_affirmative
@@ -57,8 +58,7 @@ def _literal_opening(kind, human):
     if not tail: return ''
     if kind == 'ALARM': raise ValueError('Incomplete/ambiguous alarm time')
     # A full but ambiguous time is not silently kept as reminder content.
-    candidates = parts(kind, raw)
-    if candidates: raise ValueError('Incomplete/ambiguous reminder time')
+    if opens_with_time(tail): raise ValueError('Incomplete/ambiguous reminder time')
     return subject(re.sub(r'^(?:para|de) ', '', tail, flags=re.I))
 
 
@@ -81,9 +81,11 @@ def dated_opening(kind, human, anchor_ms):
     if kind != 'REMINDER': return None
     matches = []
     for when, body in parts(kind, clean(human)):
-        try: matches.append((subject(body), calendar_day(when, anchor_ms)))
+        # La hora (aunque sea ambigua) no impide reconocer el día ya dicho.
+        day_text = re.sub(r' a (?:las? )?.+$', '', when, flags=re.I)
+        try: matches.append((subject(body), calendar_day(day_text, anchor_ms)))
         except (ValueError, OverflowError): continue
-    return matches[0] if len(matches) == 1 else None
+    return matches[0] if matches else None
 
 
 def hour_question(day):

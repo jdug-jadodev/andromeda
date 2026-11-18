@@ -102,6 +102,34 @@ class CalendarDatesTests(unittest.TestCase):
                 self.assertIsNone(draft.day)
                 with self.assertRaises(ValueError): draft.claim(proposal,last,last['calendar_boot_ms'])
 
+    def test_weekday_and_bare_day_requests_keep_subject_and_resolve_literally(self):
+        # "el martes", "para el martes", "el 24": fecha hablada normal, sin año
+        # ni nombre de mes. Nunca se confunde el tema con la fecha.
+        for human, text, due in (
+                ('recuérdame comprar pan el martes a las 3 de la tarde', 'comprar pan', 1793131200000),
+                ('recuérdame comprar pan para el martes a las 3 de la tarde', 'comprar pan', 1793131200000),
+                ('recuérdame pagar el arriendo el 24 a las 5 de la tarde', 'pagar el arriendo', 1792879200000),
+                ('recuérdame ver el partido de champions el martes diecisiete de noviembre del dos mil veintiséis a las 3:55 de la tarde',
+                 'ver el partido de champions', 1794948900000)):
+            with self.subTest(human=human):
+                value = current_event('REMINDER', human, WALL)
+                self.assertEqual(value['text'], text)
+                self.assertEqual(value['due_ms'], due)
+        # El día de la semana explícito debe coincidir con la fecha resuelta.
+        with self.assertRaises(ValueError):
+            current_event('REMINDER', 'recuérdame llamar el martes dieciocho de noviembre de 2026 a las 3 de la tarde', WALL)
+
+    def test_weekday_without_hour_asks_only_the_hour(self):
+        draft = AgendaDialogue(64, False, True)
+        first = turn(1, 'recuérdame comprar pan el martes')
+        self.assertEqual(draft.begin('REMINDER', first, 100000)['text'], hour_question(date(2026,10,27)))
+        self.heard(draft, first)
+        last = turn(2, 'a las 3 de la tarde')
+        proposal = self.answer(draft, last)
+        self.assertEqual(proposal['kind'], 'guided_agenda_proposal')
+        self.assertEqual(proposal['text'], 'comprar pan')
+        self.assertEqual(proposal['due_ms'], 1793131200000)
+
     def test_date_only_whole_request_opens_hour_question_after_native_selection(self):
         model = tools_fixture.AssistantToolsTests().model();model.anchor_wall=WALL
         model.enable_alarm_lifecycle();model.enable_basic_assistant()
