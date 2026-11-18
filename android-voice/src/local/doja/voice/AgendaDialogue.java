@@ -17,6 +17,12 @@ final class AgendaDialogue {
         "si quiero crear un recordatorio","quiero un recordatorio","quiero crear un recordatorio",
         "correcto","de acuerdo","claro","claro que si","vale","confirmo"));
     static final long MAX_AGE_MS = 300000;
+    /** Palabras de orden: si aparecen, la frase no es una respuesta de tema suelta. */
+    static final java.util.regex.Pattern COMMAND_WORDS = java.util.regex.Pattern.compile(
+        "\\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|pon|ponme|crea|programa|temporizador|timer|cuenta atras)\\b");
+    /** Cortesia que acompaña a un si y no es tema. */
+    static final java.util.regex.Pattern POLITE = java.util.regex.Pattern.compile(
+        "^(?:por favor|porfa|porfavor|gracias|muchas gracias|si|claro|vale|dale|correcto|de acuerdo|confirmo|obvio)$");
     static final class Human {
         final String id, text;
         final long sequence, speechEnd, wall, boot;
@@ -149,6 +155,22 @@ final class AgendaDialogue {
         if (completed && (!reminderClarification || kind!=AgendaEntry.Kind.REMINDER || now>=questionSpeechEnd)) { armed=true; heardAt=now; }
         else clear();
     }
+    /** Tema (y dia, si vino junto) de una respuesta suelta. */
+    private boolean subjectAnswer(Human human, String text) {
+        for (String[] candidate : AgendaRequestGuard.bareParts(AgendaRequestGuard.clean(text))) {
+            try {
+                String candidateBody = subject(candidate[1]);
+                if (candidateBody.isEmpty()) continue;
+                java.time.LocalDate candidateDay = AgendaRequestGuard.day(dayText(candidate[0]), human.wall);
+                body = candidateBody; day = candidateDay; return true;
+            } catch (RuntimeException invalid) { /* A malformed date grants nothing. */ }
+        }
+        String correction = text.replaceFirst("(?iu)^(?:no|mejor|perdon|era|digamos)\\b[, ]*", "");
+        for (String candidate : new String[]{text, correction}) {
+            try { body = subject(candidate); return true; } catch (RuntimeException invalid) { }
+        }
+        return false;
+    }
     Decision answer(Human human, long now) {
         if (!active()) return null;
         if (!armed || human.sequence <= lastSequence || human.sequence > maximumSequence || now - created >= MAX_AGE_MS
@@ -165,13 +187,23 @@ final class AgendaDialogue {
         if(needsIntent) {
             String confirmation=plain.replaceAll("\\s*,\\s*"," ").replaceAll("^[ .,!¡?¿]+|[ .,!¡?¿]+$","");
             if(confirmation.matches("no gracias|no quiero|no quiero un recordatorio")) { clear(); return new Decision("cancelled",CANCELLED,"","",human,null,null); }
-            if(!REMINDER_YES.contains(confirmation)) return question(human,null);
-            needsIntent=false;origin=human.id;return question(human,null);
+            // «si, comprar crema dental»: el si abre la puerta y el resto ya es el
+            // tema. Un si a secas sigue preguntando que recordar.
+            Matcher head = Pattern.compile("^(?:si|claro|dale|vale|correcto|de acuerdo|confirmo|obvio)\\b[, ]*(.*)$").matcher(confirmation);
+            boolean prefixed = head.matches();
+            if(!REMINDER_YES.contains(confirmation) && !prefixed) return question(human,null);
+            String remainder = prefixed ? head.group(1).trim() : "";
+            if(!remainder.isEmpty() && COMMAND_WORDS.matcher(TimerRequestGuard.normalize(remainder)).find())
+                return question(human,null);  // «si y borra la alarma»: no aporta tema.
+            needsIntent=false;origin=human.id;
+            if(!remainder.isEmpty() && !POLITE.matcher(TimerRequestGuard.normalize(remainder)).matches()
+                    && !subjectAnswer(human,remainder)) return question(human,SUBJECT);
+            return question(human,null);
         }
         if (Pattern.compile("\\b(?:busca|consulta|investiga|pon|ponme|crea|programa|recuerdame|enciende|apaga|elimina|volumen)\\b").matcher(plain).find())
             return question(human, OTHER_REQUEST);
         if (kind == AgendaEntry.Kind.REMINDER && body.isEmpty()) {
-            try { body = subject(human.text); } catch (IllegalArgumentException error) { return question(human, SUBJECT); }
+            if (!subjectAnswer(human, human.text)) return question(human, SUBJECT);
             return question(human, null);
         }
         if (plain.matches("todos los dias|cada dia|diario|diariamente")) {

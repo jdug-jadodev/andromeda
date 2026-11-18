@@ -223,6 +223,32 @@ def weekly_day(when):
         or re.fullmatch(r'(?:el |la )?(?:proximo|proxima|siguiente) (?:' + names + r')', day))
 
 
+def _tail_candidates(tail):
+    """Candidatos (cuándo, contenido) del cuerpo de una frase, sin el prefijo."""
+    candidates = []
+    tail = re.sub(r'^que ', '', tail, flags=re.I)
+    front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
+    if front: candidates.append((re.sub(r'^(?:para|de) ', '', front[1], flags=re.I), front[2]))
+    for start in _WHEN_BOUNDARY.finditer(tail):
+        body = tail[:start.start()]
+        # "para", "de" o un artículo suelto a la izquierda no son contenido.
+        if _BODY_TAIL.search(body): continue
+        when = re.sub(r'^para ', '', tail[start.end():], flags=re.I)
+        candidates.append((when, re.sub(r'^(?:para|de) ', '', body, flags=re.I)))
+    # Solo la hora, sin contenido: la casa preguntará qué recordar.
+    if _WHEN_START.match(tail): candidates.append((re.sub(r'^para ', '', tail, flags=re.I), ''))
+    return list(dict.fromkeys(candidates))
+
+
+def bare_parts(text):
+    """Candidatos (cuándo, contenido) para una respuesta suelta, sin la orden.
+
+    «comprar crema dental para mañana» no es una orden completa, pero sí un tema
+    y un día: se separan igual que en una orden, sin tirar el tema.
+    """
+    return _tail_candidates(clean(text))
+
+
 def parts(kind, raw):
     """Candidatos (cuándo, contenido) en orden canónico.
 
@@ -237,18 +263,7 @@ def parts(kind, raw):
         if match: candidates.append((match[1], ''))
     else:
         prefix = re.fullmatch(r'(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)', raw, re.I)
-        if prefix:
-            tail = re.sub(r'^que ', '', prefix[1], flags=re.I)
-            front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
-            if front: candidates.append((re.sub(r'^(?:para|de) ', '', front[1], flags=re.I), front[2]))
-            for start in _WHEN_BOUNDARY.finditer(tail):
-                body = tail[:start.start()]
-                # "para", "de" o un artículo suelto a la izquierda no son contenido.
-                if _BODY_TAIL.search(body): continue
-                when = re.sub(r'^para ', '', tail[start.end():], flags=re.I)
-                candidates.append((when, re.sub(r'^(?:para|de) ', '', body, flags=re.I)))
-            # Solo la hora, sin contenido: la casa preguntará qué recordar.
-            if _WHEN_START.match(tail): candidates.append((re.sub(r'^para ', '', tail, flags=re.I), ''))
+        if prefix: candidates.extend(_tail_candidates(prefix[1]))
     return list(dict.fromkeys(candidates))
 
 

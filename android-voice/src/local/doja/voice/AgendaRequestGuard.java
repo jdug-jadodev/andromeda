@@ -225,6 +225,25 @@ final class AgendaRequestGuard {
         day(plain, anchor);
         throw new IllegalArgumentException("Hour required");
     }
+    /** Candidatos (cuando, contenido) del cuerpo de una frase, sin el prefijo. */
+    static List<String[]> tailParts(String tail) {
+        List<String[]> candidates = new ArrayList<>();
+        tail = tail.replaceFirst("(?iu)^que ", "");
+        Matcher front = Pattern.compile("(.+?) (?:que|para) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
+        if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^(?:para|de) ", ""), front.group(2)});
+        Matcher positions = WHEN_BOUNDARY.matcher(tail);
+        while (positions.find()) {
+            String body = tail.substring(0, positions.start());
+            // "para", "de" o un articulo suelto a la izquierda no son contenido.
+            if (BODY_TAIL.matcher(body).find()) continue;
+            candidates.add(new String[]{tail.substring(positions.end()).replaceFirst("(?iu)^para ", ""), body.replaceFirst("(?iu)^(?:para|de) ", "")});
+        }
+        // Solo la hora, sin contenido: la casa preguntara que recordar.
+        if (opensWithTime(tail)) candidates.add(new String[]{tail.replaceFirst("(?iu)^para ", ""), ""});
+        return candidates;
+    }
+    /** Candidatos para una respuesta suelta («comprar crema dental para mañana»). */
+    static List<String[]> bareParts(String raw) { return tailParts(clean(raw)); }
     static List<String[]> parts(AgendaEntry.Kind kind, String raw) {
         List<String[]> candidates = new ArrayList<>();
         if (kind == AgendaEntry.Kind.ALARM) {
@@ -232,20 +251,7 @@ final class AgendaRequestGuard {
             if (match.matches()) candidates.add(new String[]{match.group(1), ""});
         } else {
             Matcher prefix = Pattern.compile("(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(raw);
-            if (prefix.matches()) {
-                String tail = prefix.group(1).replaceFirst("(?iu)^que ", "");
-                Matcher front = Pattern.compile("(.+?) (?:que|para) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
-                if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^(?:para|de) ", ""), front.group(2)});
-                Matcher positions = WHEN_BOUNDARY.matcher(tail);
-                while (positions.find()) {
-                    String body = tail.substring(0, positions.start());
-                    // "para", "de" o un articulo suelto a la izquierda no son contenido.
-                    if (BODY_TAIL.matcher(body).find()) continue;
-                    candidates.add(new String[]{tail.substring(positions.end()).replaceFirst("(?iu)^para ", ""), body.replaceFirst("(?iu)^(?:para|de) ", "")});
-                }
-                // Solo la hora, sin contenido: la casa preguntara que recordar.
-                if (opensWithTime(tail)) candidates.add(new String[]{tail.replaceFirst("(?iu)^para ", ""), ""});
-            }
+            if (prefix.matches()) candidates.addAll(tailParts(prefix.group(1)));
         }
         List<String[]> unique = new ArrayList<>();
         Set<List<String>> seen = new HashSet<>();

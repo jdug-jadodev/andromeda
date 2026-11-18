@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import re
 import time as _time
 
-from agenda_requests import (AgendaValidationError, calendar_day, calendar_due, day_due, clean,
-    opens_with_time, parts)
+from agenda_requests import (AgendaValidationError, bare_parts, calendar_day, calendar_due,
+    day_due, clean, opens_with_time, parts)
 from cancel_phrases import is_cancel
 from doja_intents import normalized
 from affirmation import is_negative, is_affirmative
@@ -33,6 +33,12 @@ REMINDER_YES = {'si', 'si por favor', 'si gracias', 'si quiero', 'si quiero hace
     'si quiero un recordatorio', 'si quiero crear un recordatorio', 'quiero un recordatorio',
     'quiero crear un recordatorio', 'correcto', 'de acuerdo', 'claro', 'claro que si', 'vale', 'confirmo'}
 MAX_AGE_MS = 300000
+# Palabras de orden: si aparecen, la frase no es una respuesta de tema suelta.
+_COMMAND_WORDS = re.compile(r'\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|'
+    r'pon|ponme|crea|programa|temporizador|timer|cuenta atras)\b')
+# Cortesía que acompaña a un sí y no es tema.
+_POLITE = re.compile(r'^(?:por favor|porfa|porfavor|gracias|muchas gracias|'
+    r'si|claro|vale|dale|correcto|de acuerdo|confirmo|obvio)$')
 
 
 def subject(text):
@@ -79,8 +85,15 @@ def may_clarify_reminder(human):
 def dated_opening(kind, human, anchor_ms):
     """One literal subject and date, still missing an hour. No action or ASR repair."""
     if kind != 'REMINDER': return None
+    raw = clean(human)
+    candidates = parts(kind, raw)
+    # Una respuesta suelta («comprar crema dental para mañana») no trae la orden,
+    # pero sí tema y día. Solo se aplica si no hay palabras de orden: «con un
+    # recordatorio …» no es una respuesta de tema.
+    if not candidates and not _COMMAND_WORDS.search(normalized(raw)):
+        candidates = bare_parts(raw)
     matches = []
-    for when, body in parts(kind, clean(human)):
+    for when, body in candidates:
         # La hora (aunque sea ambigua) no impide reconocer el día ya dicho.
         day_text = re.sub(r' a (?:las? )?.+$', '', when, flags=re.I)
         try: matches.append((subject(body), calendar_day(day_text, anchor_ms)))
@@ -167,6 +180,25 @@ class AgendaDialogue:
             self.armed = True; self.heard_at = now or 0
         else: self.clear()
 
+    def _subject_answer(self, human, text):
+        """Tema (y día, si vino junto) de una respuesta suelta. False si no sirve.
+
+        «comprar crema dental para mañana» no se tira por traer hora: se separa
+        el tema del día y se pregunta solo lo que falta.
+        """
+        partial = dated_opening('REMINDER', text, human.wall)
+        if partial is not None:
+            self.body, self.day = partial
+            return True
+        correction = re.sub(r'^(?:no|mejor|perdon|era|digamos)\b[, ]*', '', text, flags=re.I)
+        for candidate in (text, correction):
+            try:
+                self.body = subject(candidate)
+                return True
+            except ValueError:
+                continue
+        return False
+
     def answer(self, turn, now):
         if not self.active: return None
         human = Human.from_turn(turn, now, maximum_sequence=self.maximum_sequence)
@@ -185,14 +217,21 @@ class AgendaDialogue:
             confirmation = re.sub(r'\s*,\s*',' ',plain).strip(' .,!¡?¿')
             if is_negative(confirmation):
                 self.clear(); return {'kind':'agenda_cancelled','text':CANCELLED}
-            if not is_affirmative(confirmation): return self.question(human)
+            # «sí, comprar crema dental»: el sí abre la puerta y el resto ya es el
+            # tema. Un sí a secas sigue preguntando qué recordar.
+            head = re.match(r'^(?:si|claro|dale|vale|correcto|de acuerdo|confirmo|obvio)\b[, ]*(.*)$', confirmation)
+            if not is_affirmative(confirmation) and not head: return self.question(human)
+            remainder = head[1].strip() if head else ''
+            if remainder and _COMMAND_WORDS.search(normalized(remainder)):
+                return self.question(human)  # «sí y borra la alarma»: no aporta tema.
             self.needs_intent = False; self.origin = human.id
+            if remainder and not _POLITE.match(normalized(remainder)):
+                if not self._subject_answer(human, remainder): return self.question(human, SUBJECT)
             return self.question(human)  # Affirmation supplies intent ONLY, never content/time.
         if re.search(r'\b(?:busca|consulta|investiga|pon|ponme|crea|programa|recuerdame|enciende|apaga|elimina|volumen)\b', plain):
             return self.question(human, OTHER_REQUEST)
         if self.kind == 'REMINDER' and not self.body:
-            try: self.body = subject(human.text)
-            except ValueError: return self.question(human, SUBJECT)
+            if not self._subject_answer(human, human.text): return self.question(human, SUBJECT)
             return self.question(human)
         if plain in {'todos los dias', 'cada dia', 'diario', 'diariamente'}:
             self.daily = True

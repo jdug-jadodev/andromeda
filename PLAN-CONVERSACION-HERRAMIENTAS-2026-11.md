@@ -355,3 +355,18 @@ minutos se trata como cliente incompatible y apaga el motor (`ProtocolWindow` en
 Sigue pendiente el auto-reinicio del residente si sale por otra causa (hoy, si el
 proceso termina, nadie lo levanta hasta un `restart-all.sh` o un reinicio con
 `BootReceiver` exitoso).
+
+### 13.9 El tema ya no se tira cuando la respuesta trae la hora
+
+Reproducido con el código desplegado: «recuérdame» → «¿Para qué es el
+recordatorio?» → «comprar crema dental para mañana» volvía a preguntar «¿Para qué
+es el recordatorio?». `subject()` rechaza cualquier frase con «mañana», «hoy» o
+«no», así que se perdía el tema entero.
+
+Ahora la respuesta se separa con el mismo parser (`bare_parts`): se guardan tema y
+día, y se pregunta solo la hora que falta. «sí, comprar crema dental» y «no,
+comprar crema dental» también conservan el tema; un «sí y borra la alarma» o un
+«por favor» no se convierten en tema. Python y Java comparten las pruebas en
+`tests/agenda_dialogue_cases.tsv` (18 aserciones nuevas).
+
+Pendiente: backend + APK juntos, porque la app revalida la frase.
