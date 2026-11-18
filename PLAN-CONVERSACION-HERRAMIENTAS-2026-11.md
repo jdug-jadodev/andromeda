@@ -235,3 +235,105 @@ no preguntar cosas que no aplican.
 - **Repetición:** incluir «todos los martes»/«cada día» desde la primera versión.
 - **Tono:** una pregunta por turno; oferta solo al cerrar.
 - **Expansión:** bloqueada hasta cerrar P0/P1; TV puede ir aparte si se decide.
+
+## 13. Anexo — estado pendiente y contrato v14 (preparado 2026-11-18)
+
+**Estado:** `backend/pending_action.py` escrito y probado (`tests/test_pending_action.py`,
+18 pruebas, todas verdes). **No está cableado ni desplegado**: nada lo importa
+todavía, así que el teléfono sigue igual. La app actual (106) no cambia.
+
+### 13.1 Qué hace ya el módulo
+
+Un aviso pendiente es un dict serializable (JSON/SQLite) con `tool`, `slots`,
+`origin_turn`, `nonce`, `created_ms`, `updated_ms` y `asked`.
+
+- Herramientas P0: `REMINDER` (qué + cuándo), `ALARM` (cuándo, semanal o única) y
+  `TIMER` (duración, sin confirmación por ser inmediato y reversible).
+- `merge(pending, texto, reloj_ms, ahora_ms)` fusiona el turno y devuelve
+  `pending_question`, `pending_ready`, `pending_other_topic`,
+  `pending_cancelled`, `pending_stale` o `pending_invalid`.
+- Una pregunta por turno y solo por lo que falta (`missing()`).
+- «el martes», «para el martes», «el 24», «este sábado», «el próximo martes»,
+  «mañana», «en cinco minutos», «todos los martes», «cada día».
+- Correcciones: «no, el 24» cambia la fecha; «mejor a las 4» cambia la hora.
+  Lo que no se dijo se conserva.
+- Hora ambigua («a las 3») → «¿3 de la mañana o de la tarde?» y conserva el día;
+  la respuesta puede ser solo «de la tarde».
+- Fecha imposible o ya pasada, y día de la semana que no cuadra: se dice, no se
+  disfraza de tema.
+- El resumen siempre dice la fecha absoluta **con año** y termina en
+  «¿Lo guardo?» / «¿La guardo?». Nada de «¿Necesitas algo más?» tras preguntas.
+- Cambio de tema (`pending_other_topic`): el aviso sigue esperando; no secuestra.
+- Caducidad de 10 minutos (`TTL_MS`) y `resolve_confirmation()` para sí/no/cancela.
+- `load()` valida el aviso guardado antes de usarlo (esquema, tipo, relojes).
+
+### 13.2 Contrato de eventos (protocolo 14)
+
+Backend → app, por el mismo canal de conversación:
+
+| `action` | Campos | Qué hace la app |
+|---|---|---|
+| `pending_question` | `tool`, `slot`, `text`, `expires_ms` | Dice `text` y espera el turno humano. No interpreta nada. |
+| `pending_ready` | `tool`, `text`, `confirm`, `value` | Si `confirm`, dice `text` y espera sí/no. Si no, propone y ejecuta. |
+| `pending_cancelled` | `text` | Dice `text`. No ejecuta. |
+| `pending_stale` | `text` | Dice `text`. No ejecuta. |
+| `pending_invalid` | `text` | Dice `text` y sigue esperando (el aviso no se pierde). |
+
+`value` es la única fuente para ejecutar: `tool`, `due_ms` o `duration_ms`,
+`weekly` (`weekday` 1-7, `minute_of_day`) y `text` (el tema literal). La app
+**deja de comparar textos exactos** y deja de reconstruir el formulario; sigue
+pasando por `AgendaPermit`/`AgendaActionChannel` para nonce, permiso,
+idempotencia y límites. Si `due_ms` no pasa la guarda, se rechaza como hoy.
+
+`pending` (el dict completo) **nunca** viaja a la app: vive en el backend.
+
+### 13.3 Persistencia y reconexión
+
+- Tabla nueva en `conversation_store` (misma base SQLite de memoria):
+  `pending_action(conversation_id TEXT PRIMARY KEY, payload TEXT, expires_ms INTEGER)`.
+- Se escribe en cada turno y se borra al guardar, cancelar o vencer.
+- Al reconectar o tras un relevo de contexto, el backend busca por la identidad
+  de la conversación (la misma que ya usa la memoria) y retoma el aviso.
+- Sin identidad no se inventa: se responde «no sé de qué aviso hablas».
+
+### 13.4 Cableado backend (siguiente paso)
+
+1. `assistant_tools_model.interpret_result` / `deterministic_router._dispatch`:
+   cuando la herramienta elegida es recordatorio/alarma y `current_event` falla,
+   abrir `pending_action.new()` en vez de `agenda_dialogue.start`.
+2. `conversation_voice`: si hay aviso pendiente para esa conversación, el turno
+   humano va a `merge()` **antes** del router; si el resultado es
+   `pending_other_topic`, se responde al tema nuevo con el router y el aviso se
+   conserva.
+3. `pending_ready` → `agenda_proposal` (o `timer_proposal`) con `value`, para que
+   los canales Android actuales sigan recibiendo la misma forma.
+4. La confirmación («sí») se resuelve con `resolve_confirmation()` y ejecuta por
+   el camino actual de `AgendaPermit`.
+5. `agenda_dialogue` queda solo como respaldo para clientes con protocolo < 14.
+
+### 13.5 App (APK 107, junto con el backend)
+
+- `AgendaDialogue.java` deja de reconstruir el formulario y de exigir textos
+  exactos; acepta `pending_question`/`pending_ready` y habla `text`.
+- `AgendaActionChannel` ejecuta `value` (mismos nonce/idempotencia).
+- Al reconectar, pide el pendiente al backend y lo retoma.
+- Sin cambios en memoria, wake, audio, vigilante ni ciclo de vida de alarmas.
+
+### 13.6 Compatibilidad y despliegue
+
+- El backend anuncia `protocol: 14`; si la app reporta menos, usa el camino
+  actual (texto exacto). Así un despliegue parcial no rompe: la app vieja ignora
+  los eventos nuevos y el backend sigue hablando su idioma.
+- Despliegue conjunto backend + APK cuando se apruebe, con la misma secuencia ya
+  usada: copiar archivos, `chown 10218:10218`, `chmod 640`, `adb install -r`,
+  `restart-all.sh`, y verificación en el teléfono de los cuatro diálogos.
+- Respaldo: los `.bak-20261118` de `agenda_requests.py`, `agenda_dialogue.py` y
+  `conversation_flow.py`, y el APK 106 anterior.
+
+### 13.7 Lo que sigue sin decidirse
+
+- Si la app debe mostrar el resumen en pantalla además de decirlo.
+- Si «el martes» con hoy martes pregunta «¿hoy o el próximo?» o resuelve y
+  confirma (hoy: resuelve y confirma, porque el resumen dice la fecha absoluta).
+- Si el aviso pendiente sobrevive a un cambio de chat (hoy: solo dentro de la
+  misma conversación).
