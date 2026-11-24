@@ -396,6 +396,41 @@ es hoy.
 Desplegado y verificado en el teléfono (backend 2026-11-24 + APK 107 /
 `0.13.79-natural`). Changelog en `HERRAMIENTAS-DEEPSEEK-2026-11.md`.
 
+### 13.12 «Andrómeda natural»: DeepSeek lleva la conversación (en marcha)
+
+Objetivo del usuario: quitar los validadores de la casa y que DeepSeek maneje todo,
+para que Andrómeda hable como asistente y no como un bot de formulario. Alcance
+aprobado: **solo recordatorios y alarmas**, conservando **confirmación + nonce**.
+
+Diseño (tool-loop): cada turno DeepSeek ve el historial y las herramientas con
+esquema de datos (`tool_arguments`). Extrae tema/hora; si falta algo, **DeepSeek
+genera la pregunta natural**; cuando está completo, **confirma** («¿lo guardo?»)
+y el «sí» programa con nonce. La casa queda como ejecutor delgado.
+
+Barreras a quitar:
+1. El formulario `AgendaDialogue` (preguntas fijas).
+2. La re-validación byte por byte de la app (`AgendaActionChannel`).
+3. La prueba de origen literal (`tool_arguments._quoted`).
+4. El re-parseo del valor en `assistant_tools_trial.model_result` y
+   `AgendaPermit.validated` (la app deja de re-derivar el dato).
+
+Se conserva: el modelo nunca ejecuta directo; hora futura y válida; confirmación
+antes de guardar; nonce de un solo uso atado al turno.
+
+Pasos: (1) backend `tool_arguments` en modo relajado; (2) `cloud_model` genera
+pregunta/confirmación naturales; (3) cableado en `assistant_tools_model` +
+`assistant_tools_trial` (estado `pending_confirm`); (4) app: `AgendaPermit` deja de
+re-parsear y `AgendaActionChannel` deja de comparar texto; (5) build APK + deploy
+junto y verificación en vivo.
+
+**Hecho (APK 109 / `0.13.81-natural`):** `tool_arguments.propose(lenient=True)`,
+`cloud_model.natural_system()`, `deterministic_router._dispatch → reminder_ready`,
+estado `pending_confirm` + confirmación en `assistant_tools_trial`, y en la app
+`AgendaPermit.trusted()` + rama `natural` en `AgendaActionChannel`. Desplegado con
+`ANDROMEDA_NATURAL=1` en el supervisor. Pruebas `tests/test_natural_reminder.py`.
+Pendiente de este mismo tramo: confirmar el flujo hablado en vivo y decidir si la
+confirmación extra («¿Lo guardo?») se mantiene o se suaviza según la prueba real.
+
 ### 13.11 «recuerda» sin pronombre ya abre recordatorio (APK 108)
 
 La frase que fallaba en vivo era «recuerda el diez de diciembre que el once nos

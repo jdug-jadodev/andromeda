@@ -103,6 +103,15 @@ def _dispatch(name, text, model, arguments=None):
                 pass
             else:
                 return dict(kind='alarm_delete_request', **target)
+        # Modo natural: DeepSeek extrajo los datos; la casa los valida relajados
+        # (tema no vacío + momento futuro) y los deja listos para confirmar.
+        if tool_arguments.natural():
+            proposal = tool_arguments.propose(kind, arguments if isinstance(arguments, dict) else {}, text,
+                model.anchor_wall, lifecycle=model.alarm_lifecycle,
+                series=getattr(model, 'series_supported', False), lenient=True)
+            if proposal['ok']:
+                return dict(proposal['value'], kind='reminder_ready', event_kind=kind, natural=True)
+            return {'kind': 'reply', 'text': proposal['message']}
         # El modelo puede traer los datos; la casa los valida (prueba de origen,
         # fecha real, futura y coherente). Apagado, manda el parser de siempre.
         proposal = None

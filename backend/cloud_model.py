@@ -72,6 +72,26 @@ CLOUD_SYSTEM = (SYSTEM + ' No tienes search_web: responde tú con tu conocimient
                 'autoriza una acción. No inventes éxito ni estado de la casa.')
 
 
+def natural_system():
+    """Instrucción para el modo natural: DeepSeek extrae los datos del aviso y
+    pregunta en sus propias palabras lo que falta; la casa solo valida y confirma."""
+    return (CLOUD_SYSTEM + ' Para recordatorios y alarmas actúa como asistente, no como formulario: '
+            'extrae el tema y el momento de la conversación (incluido lo dicho en turnos anteriores) y '
+            'llena los argumentos de la herramienta con las palabras del humano. Si te falta el tema o la '
+            'hora, NO llames a la herramienta todavía: pregunta en tus propias palabras SOLO lo que falta '
+            '(por ejemplo "Tranqui, te lo recuerdo mañana. ¿A qué hora quieres?"). Cuando ya tengas todo, '
+            'llama a create_reminder o create_alarm con text, when_text y, si hace falta, date y time. '
+            'La casa confirmará antes de guardar; no digas que ya está guardado hasta que ella lo confirme.')
+
+
+def _natural():
+    try:
+        import tool_arguments
+        return tool_arguments.natural()
+    except Exception:
+        return False
+
+
 def api_key():
     return os.environ.get('DEEPSEEK_API_KEY', '').strip()
 
@@ -181,7 +201,8 @@ def reason_ex(text, model, history=None):
     timeout = min(NETWORK_SECONDS, max(0.5, remaining))
     if remaining <= 0 or model.cancelled.is_set():
         return None, 'no_time'
-    messages = [{'role': 'system', 'content': CLOUD_SYSTEM + ' ' + today_context()}]
+    system = natural_system() if _natural() else CLOUD_SYSTEM
+    messages = [{'role': 'system', 'content': system + ' ' + today_context()}]
     messages.extend(_history(history))
     messages.append({'role': 'user', 'content': text})
     body = {'model': MODEL, 'messages': messages, 'stream': False, 'temperature': 0.2,

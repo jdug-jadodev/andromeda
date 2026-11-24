@@ -30,7 +30,14 @@ from alarm_schedule import weekly
 from doja_intents import normalized, number
 
 FLAG = 'ANDROMEDA_TOOL_ARGUMENTS'
+NATURAL_FLAG = 'ANDROMEDA_NATURAL'
 SCHEMA_VERSION = 1
+
+
+def natural():
+    """Modo natural: DeepSeek extrae los datos y lleva la conversación; la prueba
+    de origen literal se relaja y la seguridad pasa a la confirmación + nonce."""
+    return os.environ.get(NATURAL_FLAG, '').strip() in {'1', 'true', 'yes'}
 
 WEEKDAYS = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')
 
@@ -59,8 +66,11 @@ MESSAGES = {
 
 
 def enabled():
-    """Interruptor único. Apagado = comportamiento actual, sin cambios."""
-    return os.environ.get(FLAG, '').strip() in {'1', 'true', 'yes'}
+    """Interruptor único. Apagado = comportamiento actual, sin cambios.
+
+    El modo natural (`ANDROMEDA_NATURAL=1`) también activa el esquema con datos,
+    porque DeepSeek necesita los argumentos para extraer tema y hora."""
+    return os.environ.get(FLAG, '').strip() in {'1', 'true', 'yes'} or natural()
 
 
 def schemas():
@@ -197,11 +207,16 @@ def _model_instant(arguments, span, anchor_ms):
     return due, instant
 
 
-def propose(kind, arguments, transcript, anchor_ms, lifecycle=False, series=False):
+def propose(kind, arguments, transcript, anchor_ms, lifecycle=False, series=False, lenient=False):
     """Valida los datos del modelo y devuelve la propuesta o un rechazo hablado.
 
     `ok=False` nunca ejecuta ni guarda: trae `reason` y `message` para que el
     llamador pregunte lo que falta en vez de rendirse.
+
+    `lenient=True` (modo natural) quita la prueba de origen literal: el modelo
+    puede extraer/parafrasear el tema y el momento sin que aparezcan palabra por
+    palabra en la frase. La seguridad pasa a la confirmación («¿lo guardo?») y
+    al nonce; aquí solo se exige tema no vacío y momento futuro y válido.
     """
     if kind not in ('REMINDER', 'ALARM'):
         raise ValueError('Herramienta sin validación de datos')
@@ -214,13 +229,19 @@ def propose(kind, arguments, transcript, anchor_ms, lifecycle=False, series=Fals
 
     subject = arguments.get('text', '') if isinstance(arguments.get('text'), str) else ''
     span = arguments.get('when_text', '') if isinstance(arguments.get('when_text'), str) else ''
-    if kind == 'REMINDER':
-        if not subject.strip() or not _quoted(subject, transcript):
+    if lenient:
+        if kind == 'REMINDER' and not subject.strip():
             return reject('no_evidence')
-    elif subject and not _quoted(subject, transcript):
-        return reject('no_evidence')
-    if not _quoted(span, transcript):
-        return reject('no_evidence')
+        if not span.strip():
+            return reject('no_evidence')
+    else:
+        if kind == 'REMINDER':
+            if not subject.strip() or not _quoted(subject, transcript):
+                return reject('no_evidence')
+        elif subject and not _quoted(subject, transcript):
+            return reject('no_evidence')
+        if not _quoted(span, transcript):
+            return reject('no_evidence')
 
     wanted = arguments.get('repeat') or None
     if wanted not in (None, 'once', 'daily', 'weekly'):

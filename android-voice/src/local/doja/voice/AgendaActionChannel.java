@@ -90,7 +90,12 @@ final class AgendaActionChannel {
             throw new IOException("Agenda grant outside deadline");
         AgendaEntry.Kind kind = AgendaEntry.Kind.valueOf(text(event, "event_kind"));
         AgendaPermit permit;
-        if (event.has("dialogue_origin_turn_id")) {
+        if (event.optBoolean("natural", false)) {
+            // Modo natural: el backend ya validó (momento futuro + confirmación).
+            // La app conserva reloj, futuro y nonce; no re-deriva la frase.
+            permit = AgendaPermit.trusted(id, kind, text(event, "text"), integer(event, "due_ms"), integer(event, "delay_ms"),
+                before, wall, boot, now, nowWall, lifecycle, event.optInt("weekday", 0), event.optInt("minute_of_day", -1));
+        } else if (event.has("dialogue_origin_turn_id")) {
             if (!guided || dialogueDecision == null || !"proposal".equals(dialogueDecision.kind)) throw new IOException("No current guided agenda fields");
             permit = AgendaPermit.validatedDialogue(id, kind, dialogue, text(event, "dialogue_origin_turn_id"), turn, sequence,
                 text(event, "when_text"), text(event, "text"), integer(event, "due_ms"), integer(event, "delay_ms"), before, wall, boot, now, nowWall);

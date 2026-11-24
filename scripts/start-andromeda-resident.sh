@@ -26,7 +26,7 @@ ROOT=/data/local/linux/debian-final
 LOCK=/data/local/tmp/andromeda-resident.lock
 debian_user() {
   chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
-    /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin ANDROMEDA_MODEL=lfm \
+    /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin ANDROMEDA_MODEL=lfm ANDROMEDA_NATURAL=1 \
     TV_API_BASE=http://127.0.0.1:8770 \
     TV_API_TOKEN="$(cat "$ROOT/opt/doha-voice/tv/api_token.txt" 2>/dev/null || true)" \
     DEEPSEEK_API_KEY="$(cat "$ROOT/opt/doha-voice/deepseek/api_key.txt" 2>/dev/null || true)" \

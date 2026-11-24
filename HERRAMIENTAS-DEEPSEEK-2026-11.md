@@ -205,3 +205,21 @@ mezclar la retirada con el cambio de validación.
   en `agenda_dialogue_cases.tsv` (recuerda/acuérdate). Suites sin regresiones
   (45 fallos preexistentes idénticos). Desplegado backend + APK 108 y verificado
   en el chroot con la frase exacta.
+
+- **2026-11-24 — «Andrómeda natural»: DeepSeek lleva la conversación (APK 109 / `0.13.81-natural`).**
+  Primer paso de la migración a asistente: DeepSeek extrae el tema y la hora del
+  recordatorio/alarma (no el parser) y habla en sus propias palabras; la casa queda
+  como ejecutor delgado. Cambios:
+  1. `tool_arguments.natural()` + `propose(lenient=True)`: se quita la prueba de
+     origen literal; se conserva tema no vacío + momento futuro y válido.
+  2. `cloud_model.natural_system()`: instruye a DeepSeek a preguntar naturalmente
+     lo que falta y a llenar los argumentos con lo dicho en turnos anteriores.
+  3. `deterministic_router._dispatch` → `reminder_ready` (completo y validado).
+  4. `assistant_tools_trial`: estado `pending_confirm`; «¿Lo guardo?» natural y el
+     «sí» programa con nonce (`natural=True` en el grant).
+  5. App: `AgendaPermit.trusted()` y `AgendaActionChannel` dejan de re-derivar la
+     frase; conservan reloj, futuro y nonce. Alcance: solo recordatorios y alarmas.
+  Se conserva: el modelo nunca ejecuta directo, confirmación antes de guardar y
+  nonce de un solo uso. Pruebas nuevas en `tests/test_natural_reminder.py`.
+  Desplegado backend + APK 109 + `ANDROMEDA_NATURAL=1`; falta confirmar el flujo
+  hablado en vivo.
