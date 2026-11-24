@@ -49,8 +49,8 @@ TOOL_ORDER = (
 # piece instead of degrading the whole planner with the breaker.
 CLARIFY = {
     'create_timer': '¿De cuánto tiempo quieres el temporizador?',
-    'create_alarm': '¿Para qué hora quieres la alarma?',
-    'create_reminder': '¿Qué quieres recordar y a qué hora?',
+    'create_alarm': '¿Para qué día y a qué hora te pongo la alarma?',
+    'create_reminder': '¿Qué te recuerdo y para cuándo?',
     'delete_reminder': 'Dime cuál recordatorio quieres borrar.',
     'control_lights': '¿Qué luz quieres controlar y cómo?',
     'set_phone_volume': '¿A qué volumen quieres el teléfono?',

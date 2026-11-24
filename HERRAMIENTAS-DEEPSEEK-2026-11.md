@@ -190,3 +190,18 @@ mezclar la retirada con el cambio de validación.
   fixtures `agenda_dialogue_cases.tsv` y `WebAnswerPolicyTest`. Suites completas
   sin regresiones (los mismos 45 fallos preexistentes). Desplegado en el teléfono
   (backend 2026-11-24 + APK 107) y verificado en el chroot con la frase real.
+
+- **2026-11-24 — «recuerda» ya abre recordatorio (APK 108 / `0.13.80-natural`).**
+  La frase real que fallaba era «recuerda el diez de diciembre que el once nos
+  vamos a viajar»: el router y DeepSeek sí la reconocían como recordatorio, pero
+  el parser (`agenda_requests.parts` y `AgendaDialogue.literalOpening` /
+  `AgendaRequestGuard.parts`) solo aceptaba «recuérdame», no el imperativo
+  «recuerda» sin pronombre. Se amplió el prefijo de orden a `recu[eé]rda(?:me)?`,
+  `acu[eé]rdate(?: de)?` y `recordarme`, en Python y Java, y se añadió «recuerda»
+  a las listas de palabras de orden. Ahora esa frase deja tema «el once nos vamos
+  a viajar» y fecha «10 de diciembre», y pregunta la hora. Además el fallback de
+  aclaración (`deterministic_router.CLARIFY`) habla «¿Qué te recuerdo y para
+  cuándo?» en vez del viejo «¿Qué quieres recordar y a qué hora?». Casos nuevos
+  en `agenda_dialogue_cases.tsv` (recuerda/acuérdate). Suites sin regresiones
+  (45 fallos preexistentes idénticos). Desplegado backend + APK 108 y verificado
+  en el chroot con la frase exacta.

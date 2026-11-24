@@ -30,3 +30,6 @@ subject_yes_topic	1	REMINDER	recuérdame	1	question	SUBJECT
 subject_yes_topic	2	REMINDER	sí, comprar crema dental	1	question	WHEN
 subject_no_topic	1	REMINDER	recuérdame	1	question	SUBJECT
 subject_no_topic	2	REMINDER	no, comprar crema dental	1	question	WHEN
+recuerda_bare	1	REMINDER	recuerda el diez de diciembre que el once nos vamos a viajar	1	question	¿A qué hora te lo recuerdo el jueves 10 de diciembre?
+recuerda_bare	2	REMINDER	a las nueve de la mañana	-	proposal	el once nos vamos a viajar
+acuerdate_de	1	REMINDER	acuérdate de comprar crema dental para mañana	1	question	¿A qué hora te lo recuerdo el lunes 19 de octubre?

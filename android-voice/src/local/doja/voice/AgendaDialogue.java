@@ -19,7 +19,7 @@ final class AgendaDialogue {
     static final long MAX_AGE_MS = 300000;
     /** Palabras de orden: si aparecen, la frase no es una respuesta de tema suelta. */
     static final java.util.regex.Pattern COMMAND_WORDS = java.util.regex.Pattern.compile(
-        "\\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|pon|ponme|crea|programa|temporizador|timer|cuenta atras)\\b");
+        "\\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|recuerda|pon|ponme|crea|programa|temporizador|timer|cuenta atras)\\b");
     /** Cortesia que acompaña a un si y no es tema. */
     static final java.util.regex.Pattern POLITE = java.util.regex.Pattern.compile(
         "^(?:por favor|porfa|porfavor|gracias|muchas gracias|si|claro|vale|dale|correcto|de acuerdo|confirmo|obvio)$");
@@ -79,14 +79,14 @@ final class AgendaDialogue {
     static String subject(String text) {
         String value = AgendaRequestGuard.clean(text), plain = TimerRequestGuard.normalize(value);
         if (value.isEmpty() || value.length() > 160 || Pattern.compile("[;.!?]|\\b(?:no|hoy|manana|pasado manana)\\b|\\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\\b").matcher(plain).find()
-                || Pattern.compile("\\b(?:pon|ponme|crea|programa|inicia|recuerdame|busca|consulta|investiga|cancela|elimina|enciende|apaga|volumen)\\b").matcher(plain).find()
+                || Pattern.compile("\\b(?:pon|ponme|crea|programa|inicia|recuerdame|recuerda|busca|consulta|investiga|cancela|elimina|enciende|apaga|volumen)\\b").matcher(plain).find()
                 || plain.matches("si|no|hazlo|eso|lo mismo")) throw new IllegalArgumentException("Invalid agenda subject");
         return value;
     }
     private static String literalOpening(AgendaEntry.Kind kind, String human) {
         String raw = AgendaRequestGuard.clean(human);
         String expression = kind == AgendaEntry.Kind.REMINDER
-            ? "(?:(?:pon|ponme|crea|programa) (?:un |el )?recordatorio|recu[eé]rdame)(?: (.+))?"
+            ? "(?:(?:pon|ponme|crea|programa) (?:un |el )?recordatorio|recu[eé]rda(?:me)?|acu[eé]rdate(?: de)?|recordarme)(?: (.+))?"
             : "(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|alarma)(?: (.+))?";
         if (kind == null) throw new IllegalArgumentException("Invalid agenda kind");
         Matcher match = Pattern.compile(expression, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(raw);
@@ -105,7 +105,7 @@ final class AgendaDialogue {
             +"busca|buscar|consulta|internet|web|google|whatsapp|alarma|alarmas|temporizador|volumen|"
             +"cancela|cancelar|borra|elimina|apaga|enciende|lista|listar|listame|muestra|muestrame|lee|leeme|leer)\\b").matcher(plain).find()
             && !Pattern.compile("^(?:que|cuales|cuantos)\\b").matcher(plain).find()
-            && Pattern.compile("\\b(?:recordatorios?|recordar(?:me|lo)?|recuerdame|recuerdes|avisame|avisarme|avises)\\b").matcher(plain).find();
+            && Pattern.compile("\\b(?:recordatorios?|recordar(?:me|lo)?|recuerdame|recuerda|recuerdes|avisame|avisarme|avises)\\b").matcher(plain).find();
     }
     static String opening(AgendaEntry.Kind kind,String human) { return opening(kind,human,false); }
     static String opening(AgendaEntry.Kind kind,String human,boolean clarification) {

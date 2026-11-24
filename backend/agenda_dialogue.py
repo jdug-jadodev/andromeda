@@ -34,7 +34,7 @@ REMINDER_YES = {'si', 'si por favor', 'si gracias', 'si quiero', 'si quiero hace
     'quiero crear un recordatorio', 'correcto', 'de acuerdo', 'claro', 'claro que si', 'vale', 'confirmo'}
 MAX_AGE_MS = 300000
 # Palabras de orden: si aparecen, la frase no es una respuesta de tema suelta.
-_COMMAND_WORDS = re.compile(r'\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|'
+_COMMAND_WORDS = re.compile(r'\b(?:recordatorio|recordatorios|alarma|alarmas|recuerdame|recuerda|'
     r'pon|ponme|crea|programa|temporizador|timer|cuenta atras)\b')
 # Cortesía que acompaña a un sí y no es tema.
 _POLITE = re.compile(r'^(?:por favor|porfa|porfavor|gracias|muchas gracias|'
@@ -45,7 +45,7 @@ def subject(text):
     value = clean(text)
     plain = normalized(value)
     if (not 0 < len(value.encode('utf-16-le')) // 2 <= 160 or re.search(r'[;.!?]|\b(?:no|hoy|manana|pasado manana)\b|\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\b', plain)
-            or re.search(r'\b(?:pon|ponme|crea|programa|inicia|recuerdame|busca|consulta|investiga|cancela|elimina|enciende|apaga|volumen)\b', plain)
+            or re.search(r'\b(?:pon|ponme|crea|programa|inicia|recuerdame|recuerda|busca|consulta|investiga|cancela|elimina|enciende|apaga|volumen)\b', plain)
             or plain in {'si', 'no', 'hazlo', 'eso', 'lo mismo'}):
         raise ValueError('Invalid agenda subject')
     return value
@@ -55,7 +55,7 @@ def _literal_opening(kind, human):
     """Validate only AFTER this agenda kind was selected natively."""
     raw = clean(human)
     if kind == 'REMINDER':
-        match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:un |el )?recordatorio|recu[eé]rdame)(?: (.+))?', raw, re.I)
+        match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:un |el )?recordatorio|recu[eé]rda(?:me)?|acu[eé]rdate(?: de)?|recordarme)(?: (.+))?', raw, re.I)
     elif kind == 'ALARM':
         match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|alarma)(?: (.+))?', raw, re.I)
     else: raise ValueError('Invalid agenda kind')
@@ -79,7 +79,7 @@ def may_clarify_reminder(human):
         r'busca|buscar|consulta|internet|web|google|whatsapp|alarma|alarmas|temporizador|volumen|'
         r'cancela|cancelar|borra|elimina|apaga|enciende|lista|listar|listame|muestra|muestrame|lee|leeme|leer)\b', plain)
         and not re.match(r'^(?:que|cuales|cuantos)\b', plain)
-        and bool(re.search(r'\b(?:recordatorios?|recordar(?:me|lo)?|recuerdame|recuerdes|avisame|avisarme|avises)\b',plain)))
+        and bool(re.search(r'\b(?:recordatorios?|recordar(?:me|lo)?|recuerdame|recuerda|recuerdes|avisame|avisarme|avises)\b',plain)))
 
 
 def dated_opening(kind, human, anchor_ms):

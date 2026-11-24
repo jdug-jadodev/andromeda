@@ -283,7 +283,7 @@ final class AgendaRequestGuard {
             Matcher match = Pattern.compile("(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|(?:una |la )?alarma) (?:para )?(.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(raw);
             if (match.matches()) candidates.add(new String[]{match.group(1), ""});
         } else {
-            Matcher prefix = Pattern.compile("(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(raw);
+            Matcher prefix = Pattern.compile("(?:recu[eé]rda(?:me)?|acu[eé]rdate(?: de)?|recordarme|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(raw);
             if (prefix.matches()) candidates.addAll(tailParts(prefix.group(1)));
         }
         List<String[]> unique = new ArrayList<>();

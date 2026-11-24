@@ -395,3 +395,14 @@ es hoy.
 
 Desplegado y verificado en el teléfono (backend 2026-11-24 + APK 107 /
 `0.13.79-natural`). Changelog en `HERRAMIENTAS-DEEPSEEK-2026-11.md`.
+
+### 13.11 «recuerda» sin pronombre ya abre recordatorio (APK 108)
+
+La frase que fallaba en vivo era «recuerda el diez de diciembre que el once nos
+vamos a viajar»: el router y DeepSeek la reconocían como recordatorio, pero el
+parser solo aceptaba «recuérdame», así que devolvía el fallback rígido «¿Qué
+quieres recordar y a qué hora?». Se amplió el prefijo de orden en Python y Java
+(`recu[eé]rda(?:me)?`, `acu[eé]rdate(?: de)?`, `recordarme`) y el fallback pasó a
+«¿Qué te recuerdo y para cuándo?». Verificado en el chroot: esa frase deja tema
+«el once nos vamos a viajar» y fecha «10 de diciembre», y pregunta
+«¿A qué hora te lo recuerdo el jueves 10 de diciembre?».

@@ -296,7 +296,7 @@ def parts(kind, raw):
         match = re.fullmatch(r'(?:(?:pon|ponme|crea|programa) (?:una |la )?alarma|(?:una |la )?alarma) (?:para )?(.+)', raw, re.I)
         if match: candidates.append((match[1], ''))
     else:
-        prefix = re.fullmatch(r'(?:recu[eé]rdame|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)', raw, re.I)
+        prefix = re.fullmatch(r'(?:recu[eé]rda(?:me)?|acu[eé]rdate(?: de)?|recordarme|(?:pon|ponme|crea|programa) (?:un |el )?recordatorio) (.+)', raw, re.I)
         if prefix: candidates.extend(_tail_candidates(prefix[1]))
     return list(dict.fromkeys(candidates))
 
@@ -306,7 +306,7 @@ def _value(kind, when, body, anchor_ms, alarm_lifecycle):
         raise AgendaValidationError('invalid_request')
     if kind == 'REMINDER' and (not 0 < len(body) <= 160 or re.search(
             r'[;.!?]|(?:\b(?:y|ademas|tambien|despues|luego)\b|,)\s+(?:andromeda[, ]+)?(?:por favor )?'
-            r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
+            r'(?:pon|ponme|pone|crea|programa|inicia|recuerdame|recuerda|busca|investiga|consulta|dime|cuenta|cancela|no)\b'
             r'|\b(?:en|dentro de) .+ (?:segundos?|minutos?|horas?|dias?)\b', normalized(body))):
         raise AgendaValidationError('invalid_request')
     if alarm_lifecycle:
