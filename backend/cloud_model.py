@@ -81,6 +81,8 @@ def natural_system():
             'hora, NO llames a la herramienta todavía: pregunta en tus propias palabras SOLO lo que falta '
             '(por ejemplo "Tranqui, te lo recuerdo mañana. ¿A qué hora quieres?"). Cuando ya tengas todo, '
             'llama a create_reminder o create_alarm con text, when_text y, si hace falta, date y time. '
+            'IMPORTANTE: si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), conserva el '
+            'tema que ya te dijo en un turno anterior y ponlo en `text`; nunca llames con `text` vacío. '
             'La casa confirmará antes de guardar; no digas que ya está guardado hasta que ella lo confirme.')
 
 

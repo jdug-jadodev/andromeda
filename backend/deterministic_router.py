@@ -111,7 +111,16 @@ def _dispatch(name, text, model, arguments=None):
                 series=getattr(model, 'series_supported', False), lenient=True)
             if proposal['ok']:
                 return dict(proposal['value'], kind='reminder_ready', event_kind=kind, natural=True)
-            return {'kind': 'reply', 'text': proposal['message']}
+            # DeepSeek llamó con datos incompletos: se re-pregunta lo que falta en
+            # lugar de soltar el fallo rígido de la prueba de origen.
+            fallback = {
+                'no_evidence': '¿Qué te recuerdo y para cuándo?',
+                'bad_time': '¿A qué hora te lo recuerdo?',
+                'bad_date': '¿Para qué día te lo recuerdo?',
+                'past': 'Esa fecha u hora ya pasó. ¿Cuál quieres?',
+                'bad_repeat': '¿Es una sola vez o todos los días?',
+            }.get(proposal.get('reason'), proposal.get('message'))
+            return {'kind': 'reply', 'text': fallback}
         # El modelo puede traer los datos; la casa los valida (prueba de origen,
         # fecha real, futura y coherente). Apagado, manda el parser de siempre.
         proposal = None
