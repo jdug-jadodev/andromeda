@@ -77,12 +77,13 @@ def natural_system():
     pregunta en sus propias palabras lo que falta; la casa solo valida y confirma."""
     return (CLOUD_SYSTEM + ' Para recordatorios y alarmas actúa como asistente, no como formulario: '
             'extrae el tema y el momento de la conversación (incluido lo dicho en turnos anteriores) y '
-            'llena los argumentos de la herramienta con las palabras del humano. Si te falta el tema o la '
-            'hora, NO llames a la herramienta todavía: pregunta en tus propias palabras SOLO lo que falta '
-            '(por ejemplo "Tranqui, te lo recuerdo mañana. ¿A qué hora quieres?"). Cuando ya tengas todo, '
-            'llama a create_reminder o create_alarm con text, when_text y, si hace falta, date y time. '
-            'IMPORTANTE: si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), conserva el '
-            'tema que ya te dijo en un turno anterior y ponlo en `text`; nunca llames con `text` vacío. '
+            'llena los argumentos de la herramienta con las palabras del humano. En cuanto conozcas el tema, '
+            'llama a create_reminder o create_alarma con `text` (el tema) y `when_text` (lo que sepas del '
+            'momento), aunque todavía no sepas la hora: la casa guarda el tema y pregunta solo lo que falta. '
+            'Si no tienes ni el tema ni la hora, pregunta en tus propias palabras (por ejemplo "¿Qué te '
+            'recuerdo?"). Cuando ya tengas todo, llama de nuevo con text y when_text completos y, si hace '
+            'falta, date y time. Si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), '
+            'conserva el tema que ya te dijo y ponlo en `text`; nunca llames con `text` vacío. '
             'La casa confirmará antes de guardar; no digas que ya está guardado hasta que ella lo confirme.')
 
 

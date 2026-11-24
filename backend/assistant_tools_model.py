@@ -177,6 +177,9 @@ class AssistantToolsModel(ConversationModel):
     tv_enabled = False
     web_in_progress = False
     anchor_wall = anchor_boot = 0
+    # Modo natural: tema del recordatorio/alarma ya dicho, para no perderlo si
+    # DeepSeek responde solo la hora en el turno siguiente.
+    pending_subject = ''
     # Turn budget. Web search (network fetch + local translation) can exceed 60s,
     # so keep a generous ceiling here; the Android app hard-caps a turn at 60s and
     # the graceful "tardé demasiado" timeout is enforced in the main loop (see

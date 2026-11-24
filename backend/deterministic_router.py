@@ -106,10 +106,18 @@ def _dispatch(name, text, model, arguments=None):
         # Modo natural: DeepSeek extrajo los datos; la casa los valida relajados
         # (tema no vacío + momento futuro) y los deja listos para confirmar.
         if tool_arguments.natural():
-            proposal = tool_arguments.propose(kind, arguments if isinstance(arguments, dict) else {}, text,
+            args = arguments if isinstance(arguments, dict) else {}
+            # Guarda el tema apenas DeepSeek lo da (aunque la hora siga faltando);
+            # si en un turno siguiente lo olvida, se reusa el guardado.
+            if args.get('text'):
+                model.pending_subject = args['text']
+            elif getattr(model, 'pending_subject', ''):
+                args = dict(args, text=model.pending_subject)
+            proposal = tool_arguments.propose(kind, args, text,
                 model.anchor_wall, lifecycle=model.alarm_lifecycle,
                 series=getattr(model, 'series_supported', False), lenient=True)
             if proposal['ok']:
+                model.pending_subject = proposal['value'].get('text', '')
                 return dict(proposal['value'], kind='reminder_ready', event_kind=kind, natural=True)
             # DeepSeek llamó con datos incompletos: se re-pregunta lo que falta en
             # lugar de soltar el fallo rígido de la prueba de origen.
@@ -119,6 +127,7 @@ def _dispatch(name, text, model, arguments=None):
                 'bad_date': '¿Para qué día te lo recuerdo?',
                 'past': 'Esa fecha u hora ya pasó. ¿Cuál quieres?',
                 'bad_repeat': '¿Es una sola vez o todos los días?',
+                'series_unsupported': 'Puedo guardarlo una sola vez. Las series llegan con la próxima actualización del teléfono.',
             }.get(proposal.get('reason'), proposal.get('message'))
             return {'kind': 'reply', 'text': fallback}
         # El modelo puede traer los datos; la casa los valida (prueba de origen,
