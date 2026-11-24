@@ -72,7 +72,7 @@ public final class AgendaInstrumentation extends Instrumentation {
             }
             stage = "web_guard";
             JSONObject web = new JSONObject().put("sources", new JSONArray().put(new JSONObject().put("url", "https://example.org/public").put("title", "Fuente pública").put("excerpt", "Extracto público.")))
-                .put("text", "Un extracto de example.org dice: Extracto público. Es un resultado de búsqueda, no una verificación completa de la página. ¿Necesitas algo más?");
+                .put("text", "Un extracto de example.org dice: Extracto público. Es un resultado de búsqueda, no una verificación completa de la página.");
             check(WebSources.validate("busca en Internet nebulosas", web).contains("https://example.org/public"), "Public source guard rejected fixture");
             String evidence = "A nebula is a cloud of gas and dust in space.";
             String translated = "Una nebulosa es una nube de gas y polvo en el espacio.";
@@ -80,7 +80,7 @@ public final class AgendaInstrumentation extends Instrumentation {
                 .put("evidence", evidence).put("answer_es", translated);
             JSONObject qualified = new JSONObject().put("sources", new JSONArray().put(new JSONObject().put("url", "https://example.org/public")
                 .put("title", "Nebula").put("excerpt", evidence))).put("web_answer", binding)
-                .put("text", "Según el extracto de example.org: " + translated + " ¿Necesitas algo más?");
+                .put("text", "Según el extracto de example.org: " + translated);
             check(WebSources.validate("busca en Internet nebulosas", qualified).contains("https://example.org/public"), "Typed translated source rejected");
             for (Object invalid : new Object[]{"1", true, 2}) {
                 JSONObject corrupt = new JSONObject(qualified.toString()); corrupt.getJSONObject("web_answer").put("version", invalid);
@@ -102,7 +102,7 @@ public final class AgendaInstrumentation extends Instrumentation {
             JSONObject synthesis = new JSONObject(qualified.toString());
             synthesis.getJSONObject("web_answer").put("mode", "service_summary").put("source_index", -1).put("evidence", "");
             synthesis.getJSONArray("sources").getJSONObject(0).put("excerpt", "");
-            synthesis.put("text", "Según la síntesis web: " + translated + " Fuentes en Opciones. ¿Necesitas algo más?");
+            synthesis.put("text", "Según la síntesis web: " + translated + " Fuentes en Opciones.");
             check(WebSources.validate("busca en Internet nebulosas", synthesis).contains("https://example.org/public"), "Service synthesis rejected");
             JSONObject falseQuote = new JSONObject(synthesis.toString()); falseQuote.getJSONObject("web_answer").put("mode", "quoted");
             boolean falseQuoteRejected = false;
@@ -111,7 +111,7 @@ public final class AgendaInstrumentation extends Instrumentation {
             result.putBoolean("service_summary_web_guard", true);
             JSONObject worker = new JSONObject(synthesis.toString());
             worker.getJSONObject("web_answer").put("mode", "service_answer");
-            worker.put("text", "El servicio web responde: " + translated + " Fuentes en Opciones. ¿Necesitas algo más?");
+            worker.put("text", "El servicio web responde: " + translated + " Fuentes en Opciones.");
             check(WebSources.validate("busca en Internet nebulosas", worker).contains("https://example.org/public"), "Direct Worker answer rejected");
             JSONObject forged = new JSONObject(worker.toString()); forged.getJSONObject("web_answer").put("mode", "quoted");
             boolean forgedRejected = false;
@@ -122,7 +122,7 @@ public final class AgendaInstrumentation extends Instrumentation {
             String mediumService = String.join(" ", Collections.nCopies(3, translated));
             JSONObject medium = new JSONObject(worker.toString());
             medium.getJSONObject("web_answer").put("mode", "service_excerpt").put("evidence", fullService).put("answer_es", mediumService);
-            medium.put("text", "Un extracto del servicio web: " + mediumService + "… Fuentes en Opciones. ¿Necesitas algo más?");
+            medium.put("text", "Un extracto del servicio web: " + mediumService + "… Fuentes en Opciones.");
             check(WebSources.validate("busca en Internet nebulosas", medium).contains("https://example.org/public"), "Declared medium service excerpt rejected");
             result.putBoolean("medium_worker_excerpt_guard", true);
             stage = "volume_fake_media_wire";

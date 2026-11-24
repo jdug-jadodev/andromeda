@@ -148,7 +148,7 @@ class AlarmLifecycleTests(unittest.TestCase):
         packet.update(action='agenda_result',status='CREATED',session_id=SESSION,context_id=CONTEXT)
         with self.assertRaises(ValueError): trial.result(dict(packet,weekday=2),SESSION,CONTEXT)
         response=trial.result(packet,SESSION,CONTEXT)
-        self.assertEqual(response['text'],'Listo, alarma los lunes a las 17. ¿Necesitas algo más?')
+        self.assertEqual(response['text'],'Listo, alarma los lunes a las 17.')
         self.assertEqual(response['actions_executed'],1); self.assertFalse(response['close_reason'])
 
     def test_plain_model_output_cannot_claim_deletion_or_snooze_without_receipt(self):

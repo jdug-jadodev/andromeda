@@ -69,7 +69,7 @@ public final class CalendarDatesTest {
                 "recuérdame "+body+" para "+when.replace("noviembre","nobiembre")})
             reject(()->AgendaRequestGuard.parse(AgendaEntry.Kind.REMINDER,invalid,when,body,WALL,true));
         String question=AgendaDialogue.hourQuestion(LocalDate.of(2026,10,24));
-        check(question.equals("¿A qué hora quieres el recordatorio para el 24/10/2026? Indica mañana o tarde, o usa formato de 24 horas."));
+        check(question.equals("¿A qué hora te lo recuerdo el sábado 24 de octubre?"));
         for(boolean lifecycle:new boolean[]{false,true}) {
             for(String date:new String[]{"en tres días","para el veinticuatro de octubre del dos mil veintiséis"}) {
                 AgendaDialogue draft=new AgendaDialogue(64,lifecycle,true);AgendaDialogue.Human first=human(1,"recuérdame "+body);

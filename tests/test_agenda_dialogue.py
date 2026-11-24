@@ -100,7 +100,7 @@ class AgendaDialogueTests(unittest.TestCase):
         self.assertIsNotNone(trial.inflight)
         result = trial.result(packet, 'a'*32, 'b'*32)
         self.assertEqual(result['actions_executed'], 1); self.assertEqual(result['close_reason'], '')
-        self.assertTrue(result['offered_more']); self.assertTrue(result['text'].endswith('¿Necesitas algo más?'))
+        self.assertTrue(result['offered_more']); self.assertNotIn('¿Necesitas algo más?', result['text'])
         self.assertIn('Listo, te aviso en 5 minutos.', result['text']); self.assertNotIn('hora de Bogotá', result['text'])
         self.assertIsNone(trial.result(packet, 'a'*32, 'b'*32))
 

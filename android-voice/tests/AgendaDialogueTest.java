@@ -45,7 +45,7 @@ public final class AgendaDialogueTest {
         for (boolean continuing : new boolean[]{false,true}) {
             check(ActionCompletionPolicy.valid(continuing,continuing ? "" : "action_result",continuing));
             check(!ActionCompletionPolicy.valid(continuing,continuing ? "action_result" : "",!continuing));
-            check(ActionCompletionPolicy.text("Recibo real.",continuing).endsWith(continuing ? ActionCompletionPolicy.OFFER : "real."));
+            check(ActionCompletionPolicy.text("Recibo real.",continuing).equals("Recibo real."));
         }
         lines = Files.readAllLines(Paths.get(args[1]), StandardCharsets.UTF_8);
         for (String line : lines.subList(1,lines.size())) {

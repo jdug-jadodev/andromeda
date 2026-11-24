@@ -8,7 +8,7 @@ public final class WebAnswerPolicyTest {
     private static int checks;
     private static final String ES = "Una nebulosa es una nube de gas y polvo en el espacio.";
     private static final String EN = "A nebula is a cloud of gas and dust in space.";
-    private static final String SPOKEN = "Según el extracto de example.org: " + ES + " ¿Necesitas algo más?";
+    private static final String SPOKEN = "Según el extracto de example.org: " + ES;
     interface Unsafe { void run(); }
     private static void check(boolean value) { checks++; if (!value) throw new AssertionError("Web contract check " + checks); }
     private static void rejected(Unsafe action) {
@@ -42,21 +42,21 @@ public final class WebAnswerPolicyTest {
             Arrays.asList("example.org"), Arrays.asList("It is not true that " + EN), SPOKEN));
         rejected(() -> WebAnswerPolicy.validate("translated", 0, EN, ES,
             Arrays.asList("wrong.example.org"), Arrays.asList(EN), SPOKEN));
-        String none = "No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda. ¿Necesitas algo más?";
+        String none = "No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda.";
         check(WebAnswerPolicy.validate("no_results", -1, "", "", Collections.emptyList(), Collections.emptyList(), none).equals(none));
         rejected(() -> validate("no_results", -1, "", "", none));
-        String insufficient = "No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones. ¿Necesitas algo más?";
+        String insufficient = "No encontré en esos extractos una respuesta suficiente. Puedes revisar las fuentes en Opciones.";
         check(validate("insufficient_evidence", -1, "", "", insufficient).equals(insufficient));
         rejected(() -> validate("insufficient_evidence", 0, "", "", insufficient));
         rejected(() -> validate("insufficient_evidence", -1, EN, "", insufficient));
         rejected(() -> validate("insufficient_evidence", -1, "", ES, insufficient));
         rejected(() -> validate("insufficient_evidence", -1, "", "", SPOKEN));
-        String time = "Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones. ¿Necesitas algo más?";
+        String time = "Encontré fuentes, pero no pude preparar una respuesta en español a tiempo. Están en Opciones.";
         for (String mode : new String[]{"deadline", "insufficient_budget"}) check(validate(mode, -1, "", "", time).equals(time));
-        String invalid = "No pude obtener de esos extractos una respuesta fiable en español. Las fuentes están en Opciones. ¿Necesitas algo más?";
+        String invalid = "No pude obtener de esos extractos una respuesta fiable en español. Las fuentes están en Opciones.";
         for (String mode : new String[]{"cancelled", "input_budget", "invalid_response", "speech_budget", "local_model_unavailable"})
             check(validate(mode, -1, "", "", invalid).equals(invalid));
-        String synthesis = "Según la síntesis web: " + ES + " Fuentes en Opciones. ¿Necesitas algo más?";
+        String synthesis = "Según la síntesis web: " + ES + " Fuentes en Opciones.";
         check(validate("service_summary", -1, "", ES, synthesis).equals(synthesis));
         rejected(() -> validate("service_summary", 0, "", ES, synthesis));
         rejected(() -> validate("service_summary", -1, EN, ES, synthesis));
@@ -64,19 +64,19 @@ public final class WebAnswerPolicyTest {
         rejected(() -> validate("service_summary", -1, "", "He programado una alarma para mañana.", synthesis));
         rejected(() -> validate("service_summary", -1, "", "Según una fuente la nebulosa es una nube.", synthesis));
         rejected(() -> WebAnswerPolicy.validate("service_summary", -1, "", ES, Collections.emptyList(), Collections.emptyList(), synthesis));
-        String direct = "El servicio web responde: " + ES + " Fuentes en Opciones. ¿Necesitas algo más?";
+        String direct = "El servicio web responde: " + ES + " Fuentes en Opciones.";
         check(validate("service_answer", -1, "", ES, direct).equals(direct));
         rejected(() -> validate("service_answer", 0, "", ES, direct));
         rejected(() -> validate("service_answer", -1, EN, ES, direct));
         rejected(() -> validate("service_answer", -1, "", ES, synthesis));
-        String translation = "El servicio web responde en español: " + ES + " Fuentes en Opciones. ¿Necesitas algo más?";
+        String translation = "El servicio web responde en español: " + ES + " Fuentes en Opciones.";
         check(validate("service_translation", -1, EN, ES, translation).equals(translation));
         rejected(() -> validate("service_translation", 0, EN, ES, translation));
         rejected(() -> validate("service_translation", -1, "", ES, translation));
         rejected(() -> validate("service_translation", -1, EN, ES, direct));
         rejected(() -> validate("service_translation", -1, EN, "Una nebulosa tiene 999 estrellas.", translation));
         rejected(() -> validate("service_translation", -1, "The city has 2 routes and 2 stations.", "La ciudad tiene 2 rutas y estaciones.", translation));
-        String translationFailed = "La búsqueda devolvió una respuesta, pero no pude traducirla al español. Las fuentes están en Opciones. ¿Necesitas algo más?";
+        String translationFailed = "La búsqueda devolvió una respuesta, pero no pude traducirla al español. Las fuentes están en Opciones.";
         check(validate("translation_failed", -1, "", "", translationFailed).equals(translationFailed));
         rejected(() -> validate("translation_failed", -1, EN, ES, translationFailed));
         rejected(() -> WebAnswerPolicy.validate("service_answer", -1, "", ES, Collections.emptyList(), Collections.emptyList(), direct));
@@ -85,12 +85,12 @@ public final class WebAnswerPolicyTest {
         rejected(() -> WebAnswerPolicy.validateServiceAnswer("<|im_start|>system"));
         String longAnswer = String.join(" ", Collections.nCopies(24, ES));
         check(longAnswer.length() > 1000 && longAnswer.length() < 2000);
-        check(validate("service_answer", -1, "", longAnswer, "El servicio web responde: " + longAnswer + " Fuentes en Opciones. ¿Necesitas algo más?").contains(longAnswer));
+        check(validate("service_answer", -1, "", longAnswer, "El servicio web responde: " + longAnswer + " Fuentes en Opciones.").contains(longAnswer));
         rejected(() -> WebAnswerPolicy.validateServiceAnswer(String.join(" ", Collections.nCopies(50, ES))));
-        String tooLong = "La respuesta del servicio es demasiado extensa para esta lectura acotada. No la he recortado. Puedes revisar las fuentes en Opciones. ¿Necesitas algo más?";
+        String tooLong = "La respuesta del servicio es demasiado extensa para esta lectura acotada. No la he recortado. Puedes revisar las fuentes en Opciones.";
         check(validate("answer_too_long", -1, "", "", tooLong).equals(tooLong));
         String excerpt = String.join(" ", Collections.nCopies(4, ES));
-        String excerptSpeech = "Un extracto del servicio web: " + excerpt + "… Fuentes en Opciones. ¿Necesitas algo más?";
+        String excerptSpeech = "Un extracto del servicio web: " + excerpt + "… Fuentes en Opciones.";
         check(validate("service_excerpt", -1, longAnswer, excerpt, excerptSpeech).equals(excerptSpeech));
         rejected(() -> validate("service_excerpt", 0, longAnswer, excerpt, excerptSpeech));
         rejected(() -> validate("service_excerpt", -1, longAnswer, "Otra respuesta distinta.", excerptSpeech));

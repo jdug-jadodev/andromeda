@@ -24,6 +24,11 @@ _WHEN_START = re.compile(_TIME_OPENING, re.I)
 _WHEN_BOUNDARY = re.compile(r' (?=' + _TIME_OPENING + r')', re.I)
 _BODY_TAIL = re.compile(
     r'\b(?:para|de|el|la|los|las|este|esta|pr[oó]xim[oa]|siguiente)$', re.I)
+# «para mañana porque me acordé que tengo que comprar pan»: la explicación no es
+# ni la fecha ni el tema; el tema es lo que queda tras quitar el relleno.
+_EXPLANATION = re.compile(r'\b(?:porque|por\s+qu[eé]|ya\s+que|pues)\b', re.I)
+_FILLER = re.compile(r'^(?:me\s+acord[eé](?:\s+de)?(?:\s+que)?|tengo\s+que|tenemos\s+que|'
+    r'hay\s+que|debo|debemos|necesito|necesitamos|quiero|queremos|toca|me\s+toca)\s+', re.I)
 
 
 class AgendaValidationError(ValueError):
@@ -223,10 +228,39 @@ def weekly_day(when):
         or re.fullmatch(r'(?:el |la )?(?:proximo|proxima|siguiente) (?:' + names + r')', day))
 
 
+def _drop_filler(text):
+    """Quita el relleno hablado («me acordé que tengo que…») sin tocar el tema."""
+    body = text.strip()
+    while body:
+        trimmed = _FILLER.sub('', body, count=1)
+        if trimmed == body: break
+        body = trimmed
+    return body
+
+
+def _explanation_candidates(tail):
+    """Separa una explicación del tema o de la fecha, según cuál venga primero.
+
+    «para mañana porque me acordé que tengo que comprar pan» → (mañana, comprar pan)
+    «comprar pan porque mañana no abren» → (mañana no abren, comprar pan)
+    """
+    pieces = _EXPLANATION.split(tail, maxsplit=1)
+    if len(pieces) != 2: return []
+    head, why = pieces[0].strip(), pieces[1].strip()
+    if not head or not why: return []
+    candidates = []
+    if _WHEN_START.match(head):
+        candidates.append((re.sub(r'^para ', '', head, flags=re.I), _drop_filler(why)))
+    if _WHEN_START.match(why):
+        candidates.append((re.sub(r'^para ', '', why, flags=re.I), _drop_filler(head)))
+    return candidates
+
+
 def _tail_candidates(tail):
     """Candidatos (cuándo, contenido) del cuerpo de una frase, sin el prefijo."""
     candidates = []
     tail = re.sub(r'^que ', '', tail, flags=re.I)
+    candidates.extend(_explanation_candidates(tail))
     front = re.fullmatch(r'(.+?) (?:que|para) (.+)', tail, re.I)
     if front: candidates.append((re.sub(r'^(?:para|de) ', '', front[1], flags=re.I), front[2]))
     for start in _WHEN_BOUNDARY.finditer(tail):

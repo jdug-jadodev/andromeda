@@ -21,8 +21,28 @@ import json
 import os
 import re
 import ssl
+import time
+from datetime import datetime, timedelta, timezone
 
 from assistant_tools_model import SYSTEM, TOOLS, TV_TOOLS, READ_TOOL, DELETE_REMINDER_TOOL
+
+BOGOTA = timezone(timedelta(hours=-5))
+_WEEKDAYS = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')
+_MONTHS = ('enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+           'septiembre', 'octubre', 'noviembre', 'diciembre')
+
+
+def today_context(now_ms=None):
+    """Fecha y hora locales para que el modelo no invente qué día es hoy.
+
+    Sin esto, «¿cuántos días faltan para el 11 de diciembre?» no se puede
+    contestar: el modelo no tiene reloj. Se calcula en cada turno, no se cachea.
+    """
+    if now_ms is None: now_ms = int(time.time() * 1000)
+    now = datetime.fromtimestamp(now_ms / 1000, BOGOTA)
+    return (f'Hoy es {_WEEKDAYS[now.weekday()]}, {now.day} de {_MONTHS[now.month - 1]} de {now.year}, '
+            f'{now.hour:02d}:{now.minute:02d} en Bogotá (UTC-5). Usa esta fecha para cualquier cuenta '
+            'de días o de fechas; no supongas otro día.')
 
 API_BASE = os.environ.get('DEEPSEEK_API_BASE', 'api.deepseek.com')
 # DeepSeek-V4.1-Flash-1017: el alias actual del modelo "Flash". El nombre
@@ -41,7 +61,8 @@ CLOUD_SYSTEM = (SYSTEM + ' No tienes search_web: responde tú con tu conocimient
                 'create_alarm; si piden un recordatorio o dicen «recuérdame», create_reminder. Selecciona la '
                 'herramienta aunque falte la duración, la hora o el contenido: la casa preguntará lo que falta. '
                 'Habla con naturalidad y carácter: cálida, directa, con un toque de humor seco; frases cortas; '
-                'no suenes a formulario ni repitas "¿Necesitas algo más?" después de una pregunta; si el humano '
+                'nunca termines con una muletilla fija como "¿Necesitas algo más?"; si tiene sentido seguir, '
+                'pregúntalo con tus propias palabras o despídete con naturalidad; si el humano '
                 'se corrige, ajústate sin pedirle que empiece de nuevo. Si el humano cambia de tema y su frase '
                 'no aporta el dato que falta de un recordatorio o alarma, responde al tema nuevo; no vuelvas a '
                 'pedir los datos del aviso. '
@@ -160,7 +181,7 @@ def reason_ex(text, model, history=None):
     timeout = min(NETWORK_SECONDS, max(0.5, remaining))
     if remaining <= 0 or model.cancelled.is_set():
         return None, 'no_time'
-    messages = [{'role': 'system', 'content': CLOUD_SYSTEM}]
+    messages = [{'role': 'system', 'content': CLOUD_SYSTEM + ' ' + today_context()}]
     messages.extend(_history(history))
     messages.append({'role': 'user', 'content': text})
     body = {'model': MODEL, 'messages': messages, 'stream': False, 'temperature': 0.2,

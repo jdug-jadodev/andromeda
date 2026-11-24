@@ -158,3 +158,35 @@ mezclar la retirada con el cambio de validación.
   esquema los declara; `_dispatch` y `interpret_result` usan los datos validados
   con la bandera encendida. 13 pruebas nuevas. Apagado y sin desplegar. Suites
   completas sin regresiones (45 fallos preexistentes idénticos al baseline).
+
+- **2026-11-24 — conversación natural (APK 107 / `0.13.79-natural`).** Andrómeda
+  deja de sonar a formulario y ya sabe qué día es hoy:
+  1. **Preguntas naturales** en la agenda. `agenda_dialogue.py` y
+     `AgendaDialogue.java` cambian `SUBJECT`→«¿Qué te recuerdo?»,
+     `WHEN`→«¿Cuándo te lo recuerdo?», `ALARM_WHEN`→«¿Para qué día y a qué hora te
+     pongo la alarma?», `REMINDER_INTENT`→«¿Quieres que te haga un recordatorio?»,
+     `CANCELLED`→«Listo, no guardé nada.», y `hour_question(day)` habla la fecha
+     («¿A qué hora te lo recuerdo el miércoles 25 de noviembre?») en vez del
+     formato `dd/mm/yyyy` con sermón. Ambas caras se validan byte por byte, así que
+     se desplegó backend + APK juntos.
+  2. **Sin muletilla fija.** `ConversationFlow.with_offer()` ya no pega
+     «¿Necesitas algo más?»; solo valida tamaño. `ActionCompletionPolicy.text()`
+     (app) devuelve el recibo tal cual y `WebAnswerPolicy` deja de añadir el pie a
+     las respuestas web. El protocolo `offered_more`/`close_reason` se conserva
+     para cuando el propio modelo haga una oferta; solo desaparece el texto
+     automático.
+  3. **Explicación en la frase.** `agenda_requests.py` y `AgendaRequestGuard.java`
+     separan «porque/por que/ya que/pues» del tema y de la fecha y quitan el
+     relleno («me acordé que tengo que…»), de modo que «pon un recordatorio para
+     mañana porque me acordé que tengo que comprar pan» deja tema `comprar pan` y
+     fecha `mañana`.
+  4. **Fecha real.** `cloud_model.today_context()` inyecta al system prompt
+     «Hoy es martes, 24 de noviembre de 2026… en Bogotá (UTC-5)» por turno, para
+     que «¿cuántos días faltan para el 11 de diciembre?» se conteste con la fecha
+     correcta (el reloj de boot no sirve: se usa `time.time()`).
+  Pruebas actualizadas (Python y Java): `test_conversation_flow`,
+  `test_agenda_dialogue`, `test_calendar_dates`, `test_christmas_days`,
+  `test_alarm_lifecycle`, `test_assistant_tools`, `test_conversation_voice`, los
+  fixtures `agenda_dialogue_cases.tsv` y `WebAnswerPolicyTest`. Suites completas
+  sin regresiones (los mismos 45 fallos preexistentes). Desplegado en el teléfono
+  (backend 2026-11-24 + APK 107) y verificado en el chroot con la frase real.

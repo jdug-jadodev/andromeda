@@ -374,7 +374,7 @@ class AssistantToolsTests(unittest.TestCase):
         self.assertFalse(any(event['type'] in {'agenda_execute', 'timer_execute', 'conversation_closed'} for event in events))
         answer = next(event for event in events if event['type'] == 'say')
         self.assertEqual(answer['sources'], rows); self.assertTrue(answer['offered_more'])
-        self.assertTrue(answer['text'].endswith('¿Necesitas algo más?'))
+        self.assertNotIn('¿Necesitas algo más?', answer['text']); self.assertEqual(answer['text'], speech(rows))
 
     def test_source_binding_survives_model_trial_and_actual_say_packet(self):
         import test_conversation_voice as fixture

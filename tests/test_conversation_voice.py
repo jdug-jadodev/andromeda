@@ -377,7 +377,7 @@ class ConversationVoiceTests(unittest.TestCase):
         self.assertEqual(events[-1]['reason'], 'declined_more'); self.assertEqual(model.start.call_count, 1)
         events, model = self.run_session(steps, transcripts=['hola', 'no'], answer='Una respuesta normal.')
         self.assertEqual(events[-1]['type'], 'conversation_closed'); self.assertEqual(model.start.call_count, 1)
-        self.assertEqual(model.memory.pairs[0][1]['content'], 'Una respuesta normal. ¿Necesitas algo más?')
+        self.assertEqual(model.memory.pairs[0][1]['content'], 'Una respuesta normal.')
 
     def test_no_without_a_current_completed_offer_is_ordinary_conversation(self):
         events, model = self.run_session(self.utterance(), transcripts=['no'])
@@ -397,7 +397,7 @@ class ConversationVoiceTests(unittest.TestCase):
         self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'gracias'}]])
 
     def test_oversized_answer_with_offer_fails_without_cutting_or_speaking(self):
-        events, model = self.run_session(self.utterance(), answer='x' * 700)
+        events, model = self.run_session(self.utterance(), answer='x' * 701)
         self.assertNotIn('say', [e['type'] for e in events]); self.assertEqual(model.memory.pairs, [[{'role': 'user', 'content': 'hola'}]])
 
     def test_failed_offer_cannot_authorize_closing_on_no(self):

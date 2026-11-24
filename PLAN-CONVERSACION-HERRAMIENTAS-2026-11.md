@@ -370,3 +370,28 @@ comprar crema dental» también conservan el tema; un «sí y borra la alarma» 
 `tests/agenda_dialogue_cases.tsv` (18 aserciones nuevas).
 
 Pendiente: backend + APK juntos, porque la app revalida la frase.
+
+### 13.10 Conversación natural: preguntas, sin muletilla y con fecha real (2026-11-24)
+
+Cerrado lo que pedía el usuario: Andrómeda ya no suena a formulario y sabe qué día
+es hoy.
+
+- **Preguntas naturales.** `agenda_dialogue.py` / `AgendaDialogue.java` hablan
+  «¿Qué te recuerdo?», «¿Cuándo te lo recuerdo?», «¿A qué hora te lo recuerdo el
+  miércoles 25 de noviembre?» (fecha dicha, no `dd/mm/yyyy`), y la cancelación
+  cierra con «Listo, no guardé nada.». Como la app valida estas cadenas byte por
+  byte (`AgendaActionChannel`), el cambio es backend + APK juntos.
+- **Sin «¿Necesitas algo más?».** `ConversationFlow.with_offer()` solo valida
+  tamaño; `ActionCompletionPolicy.text()` (app) y `WebAnswerPolicy` dejan de pegar
+  el pie. El protocolo `offered_more`/`close_reason` se conserva para cuando el
+  propio modelo ofrezca seguir.
+- **Explicación en la frase.** `agenda_requests.py` / `AgendaRequestGuard.java`
+  parten por «porque/por que/ya que/pues» y quitan el relleno, así
+  «…para mañana porque me acordé que tengo que comprar pan» deja tema `comprar pan`
+  y fecha `mañana`.
+- **Fecha real.** `cloud_model.today_context()` inyecta por turno «Hoy es martes,
+  24 de noviembre de 2026… (UTC-5)» usando `time.time()` (el reloj de boot no
+  sirve), para responder «¿cuántos días faltan para el 11 de diciembre?».
+
+Desplegado y verificado en el teléfono (backend 2026-11-24 + APK 107 /
+`0.13.79-natural`). Changelog en `HERRAMIENTAS-DEEPSEEK-2026-11.md`.

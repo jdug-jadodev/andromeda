@@ -4,14 +4,14 @@ import java.util.regex.*;
 
 /** Typed RAM-only form, reconstructed from authenticated human turns and TTS onDone. */
 final class AgendaDialogue {
-    static final String SUBJECT = "¿Para qué es el recordatorio?";
-    static final String WHEN = "¿Cuándo quieres que te lo recuerde?";
-    static final String ALARM_WHEN = "¿Para qué día y a qué hora quieres la alarma?";
-    static final String INVALID_TIME = "Necesito un momento inequívoco y futuro. Puedes decir una fecha y hora, o en cuántos minutos.";
-    static final String OTHER_REQUEST = "Hay un aviso pendiente de completar. Di «cancela el aviso» para cambiar de petición.";
-    static final String CANCELLED = "He descartado el aviso pendiente. No he guardado ningún evento.";
+    static final String SUBJECT = "¿Qué te recuerdo?";
+    static final String WHEN = "¿Cuándo te lo recuerdo?";
+    static final String ALARM_WHEN = "¿Para qué día y a qué hora te pongo la alarma?";
+    static final String INVALID_TIME = "No entendí la hora. Dime una hora o una fecha, por ejemplo «mañana a las diez».";
+    static final String OTHER_REQUEST = "Tengo un aviso a medias. Si quieres cambiar de tema, dime «cancela el aviso».";
+    static final String CANCELLED = "Listo, no guardé nada.";
     static final String REMINDER_POLICY = "confirmed_reminder_intent_v1";
-    static final String REMINDER_INTENT = "¿Quieres crear un recordatorio?";
+    static final String REMINDER_INTENT = "¿Quieres que te haga un recordatorio?";
     static final java.util.Set<String> REMINDER_YES = new java.util.HashSet<>(java.util.Arrays.asList(
         "si","si por favor","si gracias","si quiero","si quiero hacerlo","si quiero un recordatorio",
         "si quiero crear un recordatorio","quiero un recordatorio","quiero crear un recordatorio",
@@ -122,8 +122,12 @@ final class AgendaDialogue {
             "", origin, human, kind, null);
     }
     static String hourQuestion(java.time.LocalDate day) {
-        return "¿A qué hora quieres el recordatorio para el " + day.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu",java.util.Locale.ROOT))
-            + "? Indica mañana o tarde, o usa formato de 24 horas.";
+        // Hora que falta, con el dia ya entendido y sin sermon de formato.
+        String[] weekdays = {"lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"};
+        String[] months = {"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+            "septiembre", "octubre", "noviembre", "diciembre"};
+        return "¿A qué hora te lo recuerdo el " + weekdays[day.getDayOfWeek().getValue() - 1] + " "
+            + day.getDayOfMonth() + " de " + months[day.getMonthValue() - 1] + "?";
     }
     /** Quita el reloj de una expresion para reconocer solo el dia ya dicho. */
     private static String dayText(String when) {
@@ -208,7 +212,7 @@ final class AgendaDialogue {
         }
         if (plain.matches("todos los dias|cada dia|diario|diariamente")) {
             daily = true;
-            return question(human, "¿A qué hora quieres que te lo recuerde cada día?");
+            return question(human, "¿A qué hora te lo recuerdo cada día?");
         }
         AgendaRequestGuard.Value value;
         try {

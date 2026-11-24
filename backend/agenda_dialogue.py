@@ -21,14 +21,14 @@ def _debug_dialogue(text, result):
     except Exception:
         pass
 
-SUBJECT = '¿Para qué es el recordatorio?'
-WHEN = '¿Cuándo quieres que te lo recuerde?'
-ALARM_WHEN = '¿Para qué día y a qué hora quieres la alarma?'
-INVALID_TIME = 'Necesito un momento inequívoco y futuro. Puedes decir una fecha y hora, o en cuántos minutos.'
-OTHER_REQUEST = 'Hay un aviso pendiente de completar. Di «cancela el aviso» para cambiar de petición.'
-CANCELLED = 'He descartado el aviso pendiente. No he guardado ningún evento.'
+SUBJECT = '¿Qué te recuerdo?'
+WHEN = '¿Cuándo te lo recuerdo?'
+ALARM_WHEN = '¿Para qué día y a qué hora te pongo la alarma?'
+INVALID_TIME = 'No entendí la hora. Dime una hora o una fecha, por ejemplo «mañana a las diez».'
+OTHER_REQUEST = 'Tengo un aviso a medias. Si quieres cambiar de tema, dime «cancela el aviso».'
+CANCELLED = 'Listo, no guardé nada.'
 REMINDER_POLICY = 'confirmed_reminder_intent_v1'
-REMINDER_INTENT = '¿Quieres crear un recordatorio?'
+REMINDER_INTENT = '¿Quieres que te haga un recordatorio?'
 REMINDER_YES = {'si', 'si por favor', 'si gracias', 'si quiero', 'si quiero hacerlo',
     'si quiero un recordatorio', 'si quiero crear un recordatorio', 'quiero un recordatorio',
     'quiero crear un recordatorio', 'correcto', 'de acuerdo', 'claro', 'claro que si', 'vale', 'confirmo'}
@@ -102,7 +102,11 @@ def dated_opening(kind, human, anchor_ms):
 
 
 def hour_question(day):
-    return f'¿A qué hora quieres el recordatorio para el {day:%d/%m/%Y}? Indica mañana o tarde, o usa formato de 24 horas.'
+    """Hora que falta, con el día ya entendido y sin sermón de formato."""
+    weekday = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')[day.weekday()]
+    month = ('enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+             'septiembre', 'octubre', 'noviembre', 'diciembre')[day.month - 1]
+    return f'¿A qué hora te lo recuerdo el {weekday} {day.day} de {month}?'
 
 
 def opening(kind, human, reminder_clarification=False, anchor_ms=None):
@@ -235,7 +239,7 @@ class AgendaDialogue:
             return self.question(human)
         if plain in {'todos los dias', 'cada dia', 'diario', 'diariamente'}:
             self.daily = True
-            return self.question(human, '¿A qué hora quieres que te lo recuerde cada día?')
+            return self.question(human, '¿A qué hora te lo recuerdo cada día?')
         try:
             if self.alarm_lifecycle:
                 from alarm_schedule import schedule

@@ -56,10 +56,10 @@ final class WebSources {
             WebAnswerPolicy.validate(binding.getString("mode"), binding.getInt("source_index"), binding.getString("evidence"),
                 binding.getString("answer_es"), hosts, excerpts, answer);
         } else if (rows.length() == 0) {
-            if (!(answer.equals("No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda. ¿Necesitas algo más?")
-                    || answer.equals("La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos. ¿Necesitas algo más?")))
+            if (!(answer.equals("No obtuve resultados web utilizables. No tengo una respuesta verificada con esa búsqueda.")
+                    || answer.equals("La búsqueda web no estuvo disponible. No consulté una fuente utilizable ni puedo confirmar esos datos.")))
                 throw new IllegalArgumentException("Unsupported web success claim");
-        } else if (!answer.equals("Un extracto de " + firstHost + " dice: " + firstExcerpt + " Es un resultado de búsqueda, no una verificación completa de la página. ¿Necesitas algo más?"))
+        } else if (!answer.equals("Un extracto de " + firstHost + " dice: " + firstExcerpt + " Es un resultado de búsqueda, no una verificación completa de la página."))
             throw new IllegalArgumentException("Web answer does not match source excerpt");
         return display.length() == 0 ? "No se obtuvo una fuente utilizable en la última consulta." : display.toString();
     }

@@ -6,7 +6,6 @@ import java.util.regex.*;
 
 /** Typed read-only web speech. Service synthesis is not a literal page quotation. */
 final class WebAnswerPolicy {
-    private static final String OFFER = " ¿Necesitas algo más?";
     private static final Set<String> ES = words("el la los las un una de del es son en que y se para por como con su sus puede sin al entre esta estan hay donde");
     private static final Set<String> EN = words("the is are this that with from which and an of it as for to");
     private static String plain(String value) { return Normalizer.normalize(value.toLowerCase(Locale.ROOT), Normalizer.Form.NFD).replaceAll("\\p{M}", ""); }
@@ -121,8 +120,9 @@ final class WebAnswerPolicy {
                 }
             }
         }
-        String separator = body.endsWith(".") || body.endsWith("!") || body.endsWith("?") || body.endsWith("…") ? "" : ".";
-        check(spoken.equals(body + separator + OFFER));
+        // Sin muletilla fija: el texto hablado es exactamente el cuerpo de la
+        // respuesta, tal como lo arma la casa.
+        check(spoken.equals(body));
         return spoken;
     }
 }

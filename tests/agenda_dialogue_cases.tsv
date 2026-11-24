@@ -25,7 +25,7 @@ quoted	1	REMINDER	«pon un recordatorio»	-	INVALID
 mixed	1	REMINDER	pon un recordatorio y busca en internet nebulosas	-	INVALID	
 negated_tail	1	REMINDER	pon un recordatorio no lo hagas	-	INVALID	
 subject_with_day	1	REMINDER	recuérdame	1	question	SUBJECT
-subject_with_day	2	REMINDER	comprar crema dental para mañana	1	question	¿A qué hora quieres el recordatorio para el 19/10/2026? Indica mañana o tarde, o usa formato de 24 horas.
+subject_with_day	2	REMINDER	comprar crema dental para mañana	1	question	¿A qué hora te lo recuerdo el lunes 19 de octubre?
 subject_yes_topic	1	REMINDER	recuérdame	1	question	SUBJECT
 subject_yes_topic	2	REMINDER	sí, comprar crema dental	1	question	WHEN
 subject_no_topic	1	REMINDER	recuérdame	1	question	SUBJECT

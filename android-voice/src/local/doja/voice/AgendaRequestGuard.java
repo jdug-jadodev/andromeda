@@ -49,6 +49,13 @@ final class AgendaRequestGuard {
     private static final Pattern WHEN_BOUNDARY = Pattern.compile(" (?=" + TIME_OPENING + ")", FLAGS);
     private static final Pattern BODY_TAIL = Pattern.compile(
         "\\b(?:para|de|el|la|los|las|este|esta|pr[oó]xim[oa]|siguiente)$", FLAGS);
+    /** «para mañana porque me acordé que tengo que comprar pan»: la explicación
+     *  no es ni la fecha ni el tema; el tema es lo que queda tras quitar el relleno. */
+    private static final Pattern EXPLANATION = Pattern.compile(
+        "\\b(?:porque|por\\s+qu[eé]|ya\\s+que|pues)\\b", FLAGS);
+    private static final Pattern FILLER = Pattern.compile(
+        "^(?:me\\s+acord[eé](?:\\s+de)?(?:\\s+que)?|tengo\\s+que|tenemos\\s+que|hay\\s+que|debo|debemos|"
+        + "necesito|necesitamos|quiero|queremos|toca|me\\s+toca)\\s+", FLAGS);
     /** True si la frase (o su cola) empieza con una expresion de tiempo. */
     static boolean opensWithTime(String text) { return WHEN_START.matcher(text).lookingAt(); }
     private static final String[] DAYS = "lunes martes miercoles jueves viernes sabado domingo".split(" ");
@@ -229,6 +236,7 @@ final class AgendaRequestGuard {
     static List<String[]> tailParts(String tail) {
         List<String[]> candidates = new ArrayList<>();
         tail = tail.replaceFirst("(?iu)^que ", "");
+        candidates.addAll(explanationCandidates(tail));
         Matcher front = Pattern.compile("(.+?) (?:que|para) (.+)", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(tail);
         if (front.matches()) candidates.add(new String[]{front.group(1).replaceFirst("(?iu)^(?:para|de) ", ""), front.group(2)});
         Matcher positions = WHEN_BOUNDARY.matcher(tail);
@@ -240,6 +248,31 @@ final class AgendaRequestGuard {
         }
         // Solo la hora, sin contenido: la casa preguntara que recordar.
         if (opensWithTime(tail)) candidates.add(new String[]{tail.replaceFirst("(?iu)^para ", ""), ""});
+        return candidates;
+    }
+    /** Quita el relleno hablado («me acordé que tengo que…») sin tocar el tema. */
+    private static String dropFiller(String text) {
+        String body = text.trim();
+        while (!body.isEmpty()) {
+            String trimmed = FILLER.matcher(body).replaceFirst("");
+            if (trimmed.equals(body)) break;
+            body = trimmed;
+        }
+        return body;
+    }
+    /** Separa una explicación del tema o de la fecha, según cuál venga primero.
+     *  «para mañana porque me acordé que tengo que comprar pan» → (mañana, comprar pan)
+     *  «comprar pan porque mañana no abren» → (mañana no abren, comprar pan) */
+    private static List<String[]> explanationCandidates(String tail) {
+        List<String[]> candidates = new ArrayList<>();
+        Matcher split = EXPLANATION.matcher(tail);
+        if (!split.find()) return candidates;
+        String head = tail.substring(0, split.start()).trim(), why = tail.substring(split.end()).trim();
+        if (head.isEmpty() || why.isEmpty()) return candidates;
+        if (WHEN_START.matcher(head).lookingAt())
+            candidates.add(new String[]{head.replaceFirst("(?iu)^para ", ""), dropFiller(why)});
+        if (WHEN_START.matcher(why).lookingAt())
+            candidates.add(new String[]{why.replaceFirst("(?iu)^para ", ""), dropFiller(head)});
         return candidates;
     }
     /** Candidatos para una respuesta suelta («comprar crema dental para mañana»). */

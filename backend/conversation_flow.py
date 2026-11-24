@@ -41,18 +41,15 @@ class ConversationFlow:
 
     @classmethod
     def with_offer(cls, answer, maximum=700):
-        """Explicit UX footer, not another generation or a replacement answer.
+        """Solo valida el tamaño: nunca pega una muletilla fija.
 
-        Never after a question: "¿De cuánto tiempo…? ¿Necesitas algo más?" corta
-        al humano a mitad de la orden. El pie solo cierra respuestas o acciones.
+        Antes la casa añadía «¿Necesitas algo más?» al final de casi cualquier
+        respuesta y sonaba a formulario. Ahora cierra el modelo con sus propias
+        palabras; `direct_offer` sigue reconociendo una oferta que él diga, para
+        que un «no» después cierre la charla.
         """
         if len(answer.encode('utf-16-le')) // 2 > maximum: raise ValueError('Oversized speech')
-        if cls.direct_offer(answer) or answer.rstrip().endswith('?'): return answer
-        separator = ' ' if answer.endswith(('.', '!', '…')) else '. '
-        result = answer + separator + cls.QUESTION
-        if len(result.encode('utf-16-le')) // 2 > maximum:
-            raise ValueError('Reply plus follow-up exceeds speech limit')
-        return result
+        return answer
 
     def spoken(self, answer, offered_more=None):
         self.offered_more = self.direct_offer(answer) if offered_more is None else bool(offered_more)

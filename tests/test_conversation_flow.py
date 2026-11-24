@@ -36,29 +36,24 @@ class ConversationFlowTests(unittest.TestCase):
             flow.spoken(text)
             with self.subTest(text=text): self.assertIsNone(flow.closing_reason('no'))
 
-    def test_ux_offer_preserves_answer_and_avoids_duplicate_direct_question(self):
-        self.assertEqual(ConversationFlow.with_offer('Una estrella emite luz.'), 'Una estrella emite luz. ¿Necesitas algo más?')
-        for text in ['¿Necesitas algo más?', 'Bien. ¿Puedo ayudarte en algo más?']:
-            self.assertEqual(ConversationFlow.with_offer(text), text)
-        self.assertEqual(ConversationFlow.with_offer('Hola'), 'Hola. ¿Necesitas algo más?')
-
-    def test_offer_never_follows_a_question_that_awaits_the_human(self):
-        # "¿De cuánto tiempo…? ¿Necesitas algo más?" corta la orden a la mitad.
-        for text in ['¿De cuánto tiempo quieres el temporizador?', '¿Para qué es el recordatorio?',
-                     '¿Cuándo quieres que te lo recuerde?', '¿Quieres crear un recordatorio?']:
+    def test_the_house_never_appends_a_fixed_footer(self):
+        # La muletilla fija sonaba a formulario. with_offer() solo valida tamaño
+        # y devuelve la respuesta del modelo tal cual.
+        for text in ['Una estrella emite luz.', 'Hola', 'Bien.', '¿Necesitas algo más?',
+                     '¿De cuánto tiempo quieres el temporizador?', '¿Qué te recuerdo?']:
             with self.subTest(text=text): self.assertEqual(ConversationFlow.with_offer(text), text)
-        self.assertEqual(ConversationFlow.with_offer('¿Sabías que la luz es azul? Claro que sí.'),
-                         '¿Sabías que la luz es azul? Claro que sí. ¿Necesitas algo más?')
+        self.assertNotIn('¿Necesitas algo más?', ConversationFlow.with_offer('Una estrella emite luz.'))
 
-    def test_appended_offer_is_recognized_even_when_answer_contains_quotes(self):
-        flow = ConversationFlow(); answer = flow.with_offer('Se llama «luz».')
-        flow.spoken(answer, offered_more=True)
+    def test_model_offer_is_still_a_followup_offer(self):
+        # La casa ya no la escribe, pero si el modelo la dice, un «no» cierra.
+        flow = ConversationFlow(); flow.spoken('Se llama «luz». ¿Necesitas algo más?', offered_more=True)
+        self.assertTrue(flow.offered_more)
         self.assertEqual(flow.closing_reason('no'), 'declined_more')
         self.assertNotIn('di Andrómeda', flow.FAREWELL)
 
     def test_followup_never_truncates_a_long_answer_to_fit(self):
-        with self.assertRaises(ValueError): ConversationFlow.with_offer('x' * 700)
-        with self.assertRaises(ValueError): ConversationFlow.with_offer('🚀' * 350)
+        with self.assertRaises(ValueError): ConversationFlow.with_offer('x' * 701)
+        with self.assertRaises(ValueError): ConversationFlow.with_offer('🚀' * 351)
 
 
 if __name__ == '__main__': unittest.main()
