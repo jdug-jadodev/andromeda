@@ -760,10 +760,9 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             scene = 'SANTA'
         text = notice()
         if text is None: return
-        if action == 'huila_notice':
-            # El aviso del viaje también sale en la TV (toast LG WebOS) si está
-            # encendida. En un hilo daemon para no bloquear la voz ni el TTS.
-            _show_tv_toast(text)
+        # El aviso (viaje al Huila o Navidad) también sale en la TV (toast LG
+        # WebOS) si está encendida, en un hilo daemon para no bloquear la voz.
+        _show_tv_toast(text)
         current = now_ms(); sequence += 1; session_end = current + ACTION_WINDOW_MS
         turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': current, 'deadline_ms': current + response_start_ms,
                 'text': QUESTION, 'administrative': True, 'automatic': True, 'face_scene': scene,
