@@ -107,3 +107,28 @@ class ChristmasNotice(unittest.TestCase):
     def test_notice_counts_like_the_question(self):
         self.assertEqual(notice(date(2026, 11, 5)), 'Faltan 49 días para Navidad.')
         self.assertEqual(notice(date(2026, 12, 24)), '¡Es hoy! ¡Feliz Navidad!')
+
+
+class HuilaNotice(unittest.TestCase):
+    """The trip countdown at 10, 12, 17 and 20 h: the Huila scene, no offer, back to the clock."""
+    def test_sentence_counts_down_to_the_trip(self):
+        from huila_trip import notice
+        self.assertEqual(notice(date(2026, 11, 24)), 'Faltan 17 días para el viaje al Huila.')
+        self.assertEqual(notice(date(2026, 12, 10)), 'Falta un día para el viaje al Huila.')
+        self.assertEqual(notice(date(2026, 12, 11)), '¡Hoy es el viaje al Huila!')
+        self.assertIsNone(notice(date(2026, 12, 12)))
+
+    def test_plays_the_huila_scene_and_goes_back_to_the_clock(self):
+        from huila_trip import notice as huila
+        if huila() is None: self.skipTest('the trip has passed')
+        h = fixture.ConversationVoiceTests()
+        events, model = fixture.ConversationVoiceTests().run_session(
+            [(100000, [h.control('huila_notice')]), (101200, h.ack_last)],
+            assistant_tools=True, guided_agenda=True, continuous_voice=True, transcripts=[])
+        said = next(e for e in events if e['type'] == 'say')
+        self.assertEqual(said['face_scene'], 'HUILA')
+        self.assertEqual(said['text'], huila())
+        self.assertIs(said['offered_more'], False)
+        after = events[events.index(said) + 1:]
+        self.assertEqual([e['state'] for e in after if e['type'] == 'state'], ['wake'])
+        model.start.assert_not_called()

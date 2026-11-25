@@ -730,22 +730,30 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
         turn['actions_executed'] = response.get('actions_executed', 0)
         say(response['text'], close_reason=response.get('close_reason', ''), offered_more=response.get('offered_more', False))
 
-    def christmas_notice():
-        # Android sends this at 13:00 and 22:00 while Christmas mode is on. Santa answers the
-        # days-left question by himself; no offer follows and she goes back to the clock.
+    def scheduled_notice(action):
+        # Android sends these on a timer: christmas_notice at 13:00 and 22:00 while Christmas mode is on,
+        # huila_notice at 10:00, 12:00, 17:00 and 20:00 until the trip. The scene answers the days-left
+        # question by itself; no offer follows and she goes back to the clock.
         nonlocal turn, sequence, session_end
         if turn is not None or sequence >= MAX_EPOCH_TURNS: return
-        from christmas_days import QUESTION, notice
+        if action == 'huila_notice':
+            from huila_trip import QUESTION, notice
+            scene = 'HUILA'
+        else:
+            from christmas_days import QUESTION, notice
+            scene = 'SANTA'
+        text = notice()
+        if text is None: return
         current = now_ms(); sequence += 1; session_end = current + ACTION_WINDOW_MS
         turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': current, 'deadline_ms': current + response_start_ms,
-                'text': QUESTION, 'administrative': True, 'automatic': True, 'face_scene': 'SANTA',
+                'text': QUESTION, 'administrative': True, 'automatic': True, 'face_scene': scene,
                 'calendar_anchor_ms': int(time.time() * 1000), 'calendar_boot_ms': current}
         emit({'type': 'thinking', 'text': QUESTION, 'turn_id': turn['id'], 'turn_seq': sequence,
               'speech_end_ms': current, 'deadline_ms': turn['deadline_ms'],
               'calendar_anchor_ms': turn['calendar_anchor_ms'], 'calendar_boot_ms': current,
               'action_window_end_ms': session_end, 'administrative': True})
         preroll.clear(); detector.reset()
-        say(notice(), offered_more=False)
+        say(text, offered_more=False)
 
     def closed():
         emit({'type': 'conversation_closed', 'turn_id': turn['id'], 'turn_seq': turn['seq'],
@@ -1018,7 +1026,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             if action == 'pause': return 'voice_suspended'
                             if action == 'audio_yield': audio_yielded = True; checkpoint_followup = False; continue
                             if action == 'audio_resume' and audio_yielded: audio_yielded = False; continue
-                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate','christmas_notice'}:
+                            if action not in {'heartbeat','tts_started','tts_done','tts_failed','tts_interrupted','timer_result','agenda_result','volume_result','light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result','activate','christmas_notice','huila_notice'}:
                                 raise ValueError('Control during context handoff')
                         elif kind == 6:
                             try: remote_busy(remote_voice.frame(json.loads(data))['id'])
@@ -1053,8 +1061,8 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             pending_remote_audio = None
                             reset(continue_chat=False)
                         continue
-                    if action == 'christmas_notice' and state == 'wake' and continuous_voice and assistant_tools:
-                        christmas_notice(); continue
+                    if action in {'christmas_notice', 'huila_notice'} and state == 'wake' and continuous_voice and assistant_tools:
+                        scheduled_notice(action); continue
                     if action in {'timer_result', 'agenda_result', 'volume_result', 'light_result','alarm_selection','alarm_delete_result','reminder_read_result','reminder_delete_selection','reminder_delete_result'} and timers is not None:
                         if action in {'reminder_delete_selection','reminder_delete_result'} and not reminder_deletion: raise ValueError('Reminder deletion not negotiated')
                         if action=='reminder_read_result' and not reminder_read: raise ValueError('Reminder reading not negotiated')
