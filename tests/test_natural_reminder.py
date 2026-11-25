@@ -101,6 +101,33 @@ class NaturalReminderTests(unittest.TestCase):
         self.assertEqual(response['close_reason'], 'explicit_close')
         self.assertIsNone(trial.pending_confirm)
 
+    def test_natural_grant_includes_weekday_and_minute_for_alarm_lifecycle(self):
+        from assistant_tools_trial import AssistantToolsTrial
+        args = {'text': 'que tengo que cenar', 'when_text': 'en dos minutos', 'date': '2026-11-24', 'time': '15:02'}
+
+        class Model:
+            anchor_wall = _anchor()
+            alarm_lifecycle = True
+            series_supported = False
+            guided_agenda = True
+            reminder_clarification = True
+            reminder_deletion = False
+            pending_subject = ''
+
+        result = self.router._dispatch('create_reminder', 'recuerdame cenar', Model(), args)
+        clock = [100000]
+        trial = AssistantToolsTrial(lambda: clock[0], guided_agenda=True, alarm_lifecycle=True)
+        t1 = {'id': '1' * 32, 'seq': 1, 'text': 'recuerdame cenar', 'speech_end': 99900,
+              'calendar_anchor_ms': _anchor(), 'calendar_boot_ms': 100000}
+        trial.model_result(result, t1, 'a' * 32, 'b' * 32, 400000)
+        clock[0] = 103000
+        t2 = {'id': '2' * 32, 'seq': 2, 'text': 'sí', 'speech_end': 102900,
+              'calendar_anchor_ms': _anchor() + 3000, 'calendar_boot_ms': 103000}
+        grant = trial.human(t2, 'a' * 32, 'b' * 32, 400000)
+        self.assertTrue(grant.get('executing'))
+        self.assertEqual(grant['event'].get('weekday'), 0)
+        self.assertEqual(grant['event'].get('minute_of_day'), -1)
+
 
 if __name__ == '__main__':
     unittest.main()

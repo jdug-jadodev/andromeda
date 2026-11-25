@@ -379,13 +379,13 @@ class AssistantToolsTrial:
             # (momento futuro, tema no vacío). No se re-deriva de la frase; la
             # confirmación del humano y el nonce son la garantía.
             _natural_log(f'model_result natural value={result} turn_seq={turn.get("seq")} now={self.clock()} speech_end={turn.get("speech_end")} boot={turn.get("calendar_boot_ms")}')
+            # En modo alarmas la app exige weekday/minute_of_day en el grant, aunque
+            # el aviso sea de una sola vez; se completan con los valores por defecto.
+            if self.alarm_lifecycle:
+                result.setdefault('weekday', 0)
+                result.setdefault('minute_of_day', -1)
             value = {key: result[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone')
                      + (('weekday', 'minute_of_day') if self.alarm_lifecycle else ()) if key in result}
-            # En modo alarmas la app exige weekday/minute_of_day en el grant, aunque
-            # el aviso sea de una sola vez; se envían con los valores por defecto.
-            if self.alarm_lifecycle:
-                value.setdefault('weekday', 0)
-                value.setdefault('minute_of_day', -1)
             if not value.get('text') or type(value['due_ms']) is not int or value['due_ms'] <= turn['calendar_anchor_ms'] + 1000:
                 raise ValueError('Natural agenda payload invalid/past')
         elif guided:
