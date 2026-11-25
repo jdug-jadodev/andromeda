@@ -24,7 +24,7 @@ import ssl
 import time
 from datetime import datetime, timedelta, timezone
 
-from assistant_tools_model import SYSTEM, TOOLS, TV_TOOLS, READ_TOOL, DELETE_REMINDER_TOOL
+from assistant_tools_model import SYSTEM, TOOLS, TV_TOOLS, READ_TOOL, DELETE_REMINDER_TOOL, tool
 
 BOGOTA = timezone(timedelta(hours=-5))
 _WEEKDAYS = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')
@@ -85,10 +85,10 @@ def natural_system():
             'falta, date y time. Si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), '
             'conserva el tema que ya te dijo y ponlo en `text`; nunca llames con `text` vacío. '
             'Cuando el humano diga "eso era todo", "ya con eso", "no necesito nada más" u otra frase de cierre '
-            'similar, interpreta que terminó y responde con una despedida breve y natural; no insistas en '
-            'recordatorios ni preguntes nada más. Si en la misma frase pide además otra cosa (por ejemplo '
-            '"eso era todo, pero enciende las luces"), atiende esa otra cosa en vez de despedirte; no trates '
-            '"eso era todo" como cierre cuando va seguido de otra petición. '
+            'similar, llama a close_chat para terminar; no insistas en recordatorios ni preguntes nada más. '
+            'Si en la misma frase pide además otra cosa (por ejemplo "eso era todo, pero enciende las luces"), '
+            'atiende esa otra cosa (con su herramienta) en vez de close_chat; no trates "eso era todo" como '
+            'cierre cuando va seguido de otra petición. '
             'La casa confirmará antes de guardar; no digas que ya está guardado hasta que ella lo confirme.')
 
 
@@ -108,12 +108,18 @@ def enabled():
     return bool(api_key())
 
 
+CLOSE_TOOL = tool('close_chat',
+    'El humano terminó y no pide nada más (ej. «eso era todo», «no necesito nada más», «solo eso», '
+    '«nada más», «ya con eso»). Cierra la conversación con una despedida breve. No la uses si en la '
+    'misma frase pide otra acción. Sin argumentos.')
+
+
 def _tools():
     """Catálogo de tools ofrecido a DeepSeek: los mismos del sistema, sin search_web
     (DeepSeek responde con su propio conocimiento). Los parsers deterministas
     re-leen la frase original, así que se omiten los campos `required`."""
     catalog = []
-    for item in TOOLS + TV_TOOLS + [READ_TOOL, DELETE_REMINDER_TOOL]:
+    for item in TOOLS + TV_TOOLS + [READ_TOOL, DELETE_REMINDER_TOOL, CLOSE_TOOL]:
         if item['function']['name'] == 'search_web':
             continue
         clone = copy.deepcopy(item)

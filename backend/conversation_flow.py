@@ -11,7 +11,15 @@ class ConversationFlow:
     QUESTION = '¿Necesitas algo más?'
     FAREWELL = 'Está bien, aquí estaré cuando me necesites.'
     CLOSE = {'cierra la conversacion', 'cierra esta conversacion', 'cierra el chat',
-             'termina la conversacion', 'gracias', 'muchas gracias', 'gracias andromeda'}
+             'termina la conversacion', 'gracias', 'muchas gracias', 'gracias andromeda',
+             # Frases de cierre naturales: la coincidencia es exacta, así que una
+             # petición compuesta («eso era todo, pero enciende las luces») NO
+             # cierra aquí y cae en el motor (DeepSeek) para atenderse completa.
+             'eso era todo', 'eso es todo', 'eso era todo gracias', 'eso es todo gracias',
+             'ya con eso', 'con eso basta', 'no necesito nada', 'no necesito nada mas',
+             'ya no necesito nada', 'ya no necesito nada mas', 'no quiero nada mas',
+             'nada mas gracias', 'solo eso', 'solo necesitaba eso', 'solo necesitaba esto',
+             'solo era eso', 'eso es todo por hoy', 'ya esta todo', 'no quiero mas'}
     OFFERS = {'necesitas algo mas', 'necesitas alguna cosa mas',
               'te puedo ayudar en algo mas', 'puedo ayudarte en algo mas'}
 

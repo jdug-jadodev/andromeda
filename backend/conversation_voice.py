@@ -956,7 +956,11 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                                 if response.get('timer_control') or response.get('executing') or response.get('face_scene'):
                                     timer_response(response); continue
                                 result = response['text']
-                            else: result = model.result
+                                close_reason = response.get('close_reason', '')
+                                offered_more = response.get('offered_more')
+                            else:
+                                result = model.result
+                                close_reason = ''; offered_more = None
                             answer = flow.with_offer(result)
                             conversational_reply({'content': answer}, 'stop')
                         except ValueError:
@@ -967,7 +971,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
                             emit({'type': 'error', 'reason': 'generation_failed', 'turn_id': turn['id'],
                                   **({'recoverable':True,'actions_executed':0} if continuous_voice else {})})
                             flow.reset(); completed_turn(continuous_voice); continue
-                        say(answer)
+                        say(answer, close_reason=close_reason, offered_more=offered_more)
                     else: return
                 elif state == 'executing':
                     response = timers.timed_out()

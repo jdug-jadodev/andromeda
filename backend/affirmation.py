@@ -20,6 +20,9 @@ NEGATIVE = {
     'nada', 'nada mas', 'ya esta', 'ya', 'asi esta bien', 'asi esta perfecto',
     'eso es todo', 'no necesito nada', 'no necesito nada mas', 'no quiero nada',
     'no quiero nada mas', 'no mas', 'no gracias ya', 'estamos bien', 'tranquilo',
+    'ya no necesito nada', 'ya no necesito nada mas', 'nada mas gracias', 'solo eso',
+    'solo necesitaba eso', 'solo necesitaba esto', 'ya con eso', 'con eso basta',
+    'no quiero mas', 'eso era todo',
 }
 
 AFFIRMATIVE = {
