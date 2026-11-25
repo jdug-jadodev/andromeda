@@ -123,24 +123,22 @@ def toast_if_on(message, timeout=2):
 
 
 def announce(message, timeout=4):
-    """Muestra el aviso en la TV pasando primero al inicio y volviendo después a
-    la app/entrada anterior. Sirve para que el aviso se vea aunque la TV esté en
-    una entrada HDMI (donde los toast de webOS no se superponen). Nunca lanza;
-    el sleep total ronda los 9-11 s, así que debe llamarse en un hilo aparte."""
+    """Muestra el aviso completo (animación) en la TV abriendo el navegador a la
+    página servida por el teléfono, y vuelve a la app/entrada anterior al acabar.
+    Nunca lanza; el sleep total ronda los 20 s, así que debe llamarse en un hilo."""
     try:
         st = status(timeout=timeout)
         if not st.get('reachable'):
             return False
         previous = st.get('app')
-        switched = bool(previous) and previous != 'com.webos.app.home'
-        if switched:
-            open_app(app_id='com.webos.app.home')
-            time.sleep(2.5)
-        toast(message, timeout=timeout)
-        time.sleep(6.0)
-        if switched:
-            _restore(previous)
-            time.sleep(1.0)
+        host = st.get('host') or '192.168.1.86'
+        url = 'http://%s:8770/huila' % host
+        # Abre la animación en el navegador de la TV (a pantalla completa).
+        open_app(app_id='browser', url=url)
+        # La animación dura ~16 s; espera a que termine y vuelve a lo anterior.
+        time.sleep(19.0)
+        _restore(previous)
+        time.sleep(1.0)
         return True
     except TVError:
         return False

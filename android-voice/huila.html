@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Viaje al Huila</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,"Segoe UI",Roboto,sans-serif}
+  #stage{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas{width:100vw;height:calc(100vw*1080/2280);max-height:100vh;max-width:calc(100vh*2280/1080);display:block}
+  #bar{display:none}
+  #bar button,#bar input{font:inherit}
+  #start{display:none}
+  #start span{background:#f4b63e;color:#2b1a05;font-weight:800;font-size:28px;padding:18px 34px;border-radius:999px;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="2280" height="1080"></canvas></div>
+<div id="start"><span>▶ Ver el viaje al Huila</span></div>
+<div id="bar">
+  <button id="replay">↻ Repetir</button>
+  <label>Simular hoy <input type="date" id="today"></label>
+  <label><input type="checkbox" id="sound" checked> Sonido</label>
+</div>
+<script>
+'use strict';
+// Prototype only: Moto G landscape 2280x1080. Countdown to 11 December (Bogotá), the trip to Huila.
+// Story: a chiva arrives with five chubby travellers, men in camouflage pop up and fire into the sky,
+// the five jump out and run, everybody leaves, then the empty chiva blows up. Cartoon, nobody hurt.
+const W = 2280, H = 1080;
+const cv = document.getElementById('c');
+let g = cv.getContext('2d');
+
+// ---------- timeline (seconds) ----------
+// The chiva arrives with the five inside, men in camouflage pop up and fire into the sky, the five jump out
+// and run, everybody leaves, then the empty chiva blows up.
+const T = { BUS_IN: 0.2, BUS_STOP: 2.6, COUNT: 3.0, SCARE: 3.95, DOOR: 4.25, EXIT: 4.4, EXIT_GAP: .3, DUCK: 6.9, BOOM: 8.6, END: 16 };
+const GAP = .085;
+
+// ---------- layout ----------
+const HORIZON = 560, VERGE = 690, ROAD_TOP = 800, ROAD_BOT = 955;
+const BUS_X = 700, BUS_Y = 888;             // wheel centre line
+const DOOR_X = 215;                          // door, bus-local
+
+// The men in camouflage: back row small, front row big. rise = when they pop up; aim = rifle tilt to the sky.
+const SOLDIERS = [
+  { x: 1690, y: 700, s: .6, rise: 3.52, aim: 1.2 },
+  { x: 1960, y: 705, s: .6, rise: 3.32, aim: .92 },
+  { x: 2200, y: 718, s: .64, rise: 3.6, aim: 1.15 },
+  { x: 1560, y: 742, s: .74, rise: 3.4, aim: 1.02 },
+  { x: 1810, y: 800, s: 1, rise: 3.3, aim: .95 },
+  { x: 2090, y: 800, s: 1, rise: 3.45, aim: 1.12 },
+];
+const SHOTS = [];   // { t, who, k }
+SOLDIERS.forEach((sd, who) => { for (let b = 0; b < 3; b++) for (let i = 0; i < 5; i++)
+  SHOTS.push({ t: sd.rise + .45 + b * .8 + (who % 3) * .1 + i * GAP, who, k: who * 100 + b * 10 + i }); });
+SHOTS.sort((a, b) => a.t - b.t);
+
+// The five travellers: three men and two women, all round. seat = their window, 0 at the back.
+const PEOPLE = [
+  { y: 912, shirt: '#e74c3c', pants: '#34495e', skin: '#e0ac7e', cap: '#2e6fd1', mustache: true },
+  { y: 896, female: true, dress: '#ff7eb6', skin: '#c68863', hair: '#1d1410' },
+  { y: 918, shirt: '#f9d71c', pants: '#1f4fa3', skin: '#d39a6a', bald: true, number: '10' },
+  { y: 900, female: true, dress: '#8e44ad', skin: '#e8b590', hair: '#6b3a1f', ponytail: true },
+  { y: 914, shirt: '#3498db', pants: '#c8b48a', skin: '#b97a50', vueltiao: true },
+];
+// The one nearest the door gets out first.
+const exitAt = i => T.EXIT + (PEOPLE.length - 1 - i) * T.EXIT_GAP;
+
+// ---------- helpers ----------
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeBack = p => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const rnd = (i, k = 0) => { const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return v - Math.floor(v); };
+function rr(x, y, w, h, r) { g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function poly(pts) { g.beginPath(); g.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]); g.closePath(); }
+function circle(x, y, r, col) { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+
+// ---------- date ----------
+function bogotaToday() { return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }); }
+function daysUntilTrip(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const today = Date.UTC(y, m - 1, d); let target = Date.UTC(y, 11, 11);
+  if (today > target) target = Date.UTC(y + 1, 11, 11);
+  return Math.round((target - today) / 86400000);
+}
+const dateInput = document.getElementById('today');
+dateInput.value = bogotaToday();
+
+// ---------- static background (drawn once) ----------
+const bg = document.createElement('canvas'); bg.width = W; bg.height = H;
+function drawBackground() {
+  const real = g; g = bg.getContext('2d');
+  let s = g.createLinearGradient(0, 0, 0, HORIZON + 120);
+  s.addColorStop(0, '#6fb9e6'); s.addColorStop(.6, '#b9def0'); s.addColorStop(1, '#f7d9a6');
+  g.fillStyle = s; g.fillRect(0, 0, W, H);
+  let sun = g.createRadialGradient(1960, 210, 10, 1960, 210, 260);
+  sun.addColorStop(0, 'rgba(255,246,200,1)'); sun.addColorStop(.25, 'rgba(255,226,140,.9)'); sun.addColorStop(1, 'rgba(255,226,140,0)');
+  g.fillStyle = sun; g.fillRect(1600, 0, 700, 520);
+  circle(1960, 210, 70, '#fff6d0');
+  g.fillStyle = 'rgba(255,255,255,.85)';
+  [[260, 120, 1], [1500, 90, .8], [2150, 380, .6], [880, 210, .55]].forEach(([x, y, k]) => {
+    g.beginPath(); g.ellipse(x, y, 120 * k, 38 * k, 0, 0, 7); g.ellipse(x + 70 * k, y - 22 * k, 80 * k, 40 * k, 0, 0, 7);
+    g.ellipse(x - 80 * k, y + 5 * k, 70 * k, 28 * k, 0, 0, 7); g.fill();
+  });
+  let mt = g.createLinearGradient(0, 230, 0, HORIZON);
+  mt.addColorStop(0, '#8fa3bb'); mt.addColorStop(1, '#6f8499');
+  g.fillStyle = mt; poly([-60, 560, 180, 360, 300, 262, 380, 236, 450, 248, 520, 280, 640, 360, 900, 560]); g.fill();
+  g.fillStyle = '#f4f8fc';
+  poly([216, 330, 300, 262, 380, 236, 450, 248, 520, 280, 588, 326, 540, 318, 505, 300, 470, 326, 430, 296, 392, 330, 350, 300, 300, 332, 262, 312]); g.fill();
+  g.fillStyle = '#86a892';
+  g.beginPath(); g.moveTo(0, 560);
+  for (let x = 0; x <= W; x += 40) g.lineTo(x, 470 + Math.sin(x / 170) * 34 + Math.sin(x / 63) * 12 + (x < 700 ? 40 : 0));
+  g.lineTo(W, 600); g.lineTo(0, 600); g.closePath(); g.fill();
+  g.fillStyle = '#5f9a55';
+  g.beginPath(); g.moveTo(0, 640);
+  for (let x = 0; x <= W; x += 30) g.lineTo(x, 545 + Math.sin(x / 210 + 1) * 26 + Math.sin(x / 90) * 8);
+  g.lineTo(W, 700); g.lineTo(0, 700); g.closePath(); g.fill();
+  g.fillStyle = '#58a6cc';
+  g.beginPath(); g.moveTo(-10, 628);
+  for (let x = 0; x <= 1500; x += 30) g.lineTo(x, 628 + Math.sin(x / 260) * 18);
+  for (let x = 1500; x >= 0; x -= 30) g.lineTo(x, 662 + Math.sin(x / 260) * 18 + x / 120);
+  g.closePath(); g.fill();
+  g.strokeStyle = 'rgba(255,255,255,.45)'; g.lineWidth = 3;
+  for (let i = 0; i < 14; i++) { const x = 60 + i * 100; const y = 645 + Math.sin(x / 260) * 18 + x / 240;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + 40, y); g.stroke(); }
+  [['#d98a52', 585, 0], ['#c9673c', 615, 2], ['#b3542f', 650, 4]].forEach(([col, base, k]) => {
+    g.fillStyle = col; g.beginPath(); g.moveTo(1180, 720);
+    for (let x = 1180; x <= W + 20; x += 22) {
+      const h = 40 + 55 * Math.abs(Math.sin(x / 75 + k)) + 25 * rnd(x, k);
+      g.lineTo(x, base - h * (x < 1300 ? (x - 1180) / 120 : 1));
+    }
+    g.lineTo(W, 720); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(80,30,15,.28)'; g.lineWidth = 3;
+    for (let x = 1220; x < W; x += 34) { g.beginPath(); g.moveTo(x, base - 20 - 40 * rnd(x, k + 9)); g.lineTo(x + 6 * (rnd(x, k) - .5), base + 40); g.stroke(); }
+  });
+  let vg = g.createLinearGradient(0, VERGE, 0, ROAD_TOP);
+  vg.addColorStop(0, '#b9b866'); vg.addColorStop(1, '#949c47');
+  g.fillStyle = vg; g.fillRect(0, VERGE, W, ROAD_TOP - VERGE);
+  g.strokeStyle = '#7d8a3a'; g.lineWidth = 3;
+  for (let i = 0; i < 160; i++) { const x = rnd(i, 3) * W, y = VERGE + 15 + rnd(i, 4) * (ROAD_TOP - VERGE - 20);
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x - 6, y - 16); g.moveTo(x, y); g.lineTo(x + 5, y - 14); g.stroke(); }
+  g.fillStyle = '#4b4b51'; g.fillRect(0, ROAD_TOP, W, ROAD_BOT - ROAD_TOP);
+  g.fillStyle = '#e9e9e9'; g.fillRect(0, ROAD_TOP + 6, W, 6); g.fillRect(0, ROAD_BOT - 12, W, 6);
+  g.fillStyle = '#f2c230'; for (let x = 0; x < W; x += 150) g.fillRect(x, (ROAD_TOP + ROAD_BOT) / 2 - 4, 85, 8);
+  g.fillStyle = '#a2a752'; g.fillRect(0, ROAD_BOT, W, H - ROAD_BOT);
+  g.strokeStyle = '#7f8a3c'; g.lineWidth = 4;
+  for (let i = 0; i < 120; i++) { const x = rnd(i, 7) * W, y = ROAD_BOT + 25 + rnd(i, 8) * 110;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x - 8, y - 24); g.moveTo(x, y); g.lineTo(x + 7, y - 20); g.moveTo(x, y); g.lineTo(x, y - 28); g.stroke(); }
+  g.fillStyle = '#8f8676';
+  [[300, 1010, 40], [1650, 1040, 30], [2000, 995, 46]].forEach(([x, y, r]) => { g.beginPath(); g.ellipse(x, y, r, r * .55, 0, 0, 7); g.fill(); });
+  cactus(1420, 770, 230); cactus(2240, 780, 250); cactus(230, 745, 150);
+  g.fillStyle = '#6b6b6b'; g.fillRect(1222, 600, 14, 195); g.fillRect(1322, 600, 14, 195);
+  g.fillStyle = '#1f7a45'; g.beginPath(); rr(1140, 545, 280, 125, 14); g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 6; g.beginPath(); rr(1150, 555, 260, 105, 9); g.stroke();
+  g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = '600 30px system-ui,Segoe UI,sans-serif';
+  g.fillText('Bienvenidos al', 1280, 598); g.font = '900 52px system-ui,Segoe UI,sans-serif'; g.fillText('HUILA', 1280, 648);
+  g = real;
+}
+function cactus(x, base, h) {
+  g.fillStyle = '#4f7d3b'; g.strokeStyle = '#3c6330'; g.lineWidth = 4;
+  const arm = (ax, ay, dir, len) => { g.beginPath(); rr(ax, ay - len, 30, len, 15); g.fill(); g.stroke();
+    g.beginPath(); rr(dir < 0 ? ax : ax - 40, ay - 10, 70, 30, 15); g.fill(); };
+  g.beginPath(); rr(x - 24, base - h, 48, h, 24); g.fill(); g.stroke();
+  arm(x - 74, base - h * .45, -1, h * .35); arm(x + 44, base - h * .6, 1, h * .3);
+  g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x - 6, base - h + 20); g.lineTo(x - 6, base - 10); g.stroke();
+}
+
+// ---------- the chiva ----------
+function suitcase(cx, cy, w, h, col, ang) {
+  g.save(); g.translate(cx, cy); g.rotate(ang);
+  g.strokeStyle = '#3a2a1a'; g.lineWidth = 6; g.beginPath(); g.moveTo(-w * .18, -h / 2); g.lineTo(-w * .18, -h / 2 - 16);
+  g.lineTo(w * .18, -h / 2 - 16); g.lineTo(w * .18, -h / 2); g.stroke();
+  g.fillStyle = col; g.beginPath(); rr(-w / 2, -h / 2, w, h, 10); g.fill();
+  g.strokeStyle = 'rgba(0,0,0,.25)'; g.lineWidth = 4; g.stroke();
+  g.fillStyle = 'rgba(80,50,25,.75)'; g.fillRect(-w * .3, -h / 2, 9, h); g.fillRect(w * .3 - 9, -h / 2, 9, h);
+  circle(w * .05, h * .05, Math.min(w, h) * .12, 'rgba(255,255,255,.8)');
+  g.restore();
+}
+const ROOF_BAGS = [   // bus-local, on the roof rack
+  { x: -230, y: -357, w: 120, h: 66, c: '#2f7fd1' },
+  { x: -95, y: -352, w: 96, h: 56, c: '#f2b632' },
+  { x: 30, y: -360, w: 130, h: 72, c: '#9b59b6' },
+  { x: 160, y: -350, w: 90, h: 52, c: '#27ae60' },
+];
+const WINDOW_X = k => -300 + k * 95;          // left edge of window k, 80 wide
+function chiva(x, y, burnt, doorOpen, t) {
+  g.save(); g.translate(x, y);
+  g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.ellipse(10, 46, 370, 18, 0, 0, 7); g.fill();
+  if (burnt) { g.translate(190, 0); g.rotate(0.04); g.translate(-190, 8); }   // rear sinks: its wheel flew off
+  const dark = '#2c2826';
+  // roof rack and luggage
+  g.fillStyle = burnt ? '#1c1a19' : '#3b2a1e'; g.fillRect(-310, -322, 560, 9);
+  for (let px = -300; px <= 240; px += 90) g.fillRect(px, -322, 7, 20);
+  if (!burnt) ROOF_BAGS.forEach(b => suitcase(b.x, b.y, b.w, b.h, b.c, 0));
+  // passenger box (blue) with painted bands
+  g.fillStyle = burnt ? dark : '#2e86de'; g.beginPath(); rr(-330, -305, 600, 200, 16); g.fill();
+  if (!burnt) {
+    g.fillStyle = '#e74c3c'; g.fillRect(-330, -305, 600, 14);
+    for (let zx = -326; zx < 266; zx += 24) { g.fillStyle = '#f9d71c'; g.beginPath(); g.moveTo(zx, -291); g.lineTo(zx + 12, -281); g.lineTo(zx + 24, -291); g.fill(); }
+  }
+  // windows with the travellers inside
+  for (let k = 0; k < 5; k++) {
+    const wx = WINDOW_X(k);
+    g.fillStyle = burnt ? '#111' : '#3b2a1e'; g.beginPath(); rr(wx, -272, 80, 104, 10); g.fill();
+    const p = PEOPLE[k];
+    if (!burnt && t < exitAt(k)) {
+      g.save(); g.beginPath(); rr(wx, -272, 80, 104, 10); g.clip();
+      g.fillStyle = p.female ? p.dress : p.shirt; g.beginPath(); g.ellipse(wx + 40, -170, 40, 30, 0, 0, 7); g.fill();
+      const hop = t > T.SCARE ? Math.abs(Math.sin(t * 22 + k)) * 6 : Math.abs(Math.sin(t * 9 + k)) * 2;
+      g.save(); g.translate(wx + 36, -42 - hop); g.scale(.78, .78); head(p, t >= T.SCARE + k * .04, t); g.restore();
+      g.restore();
+    }
+  }
+  // door: slides open when they get out
+  const open = doorOpen ? clamp((t - T.DOOR) / .2) : 0;
+  g.fillStyle = '#1e140d'; g.beginPath(); rr(DOOR_X - 35, -272, 72, 250, 8); g.fill();
+  if (!burnt) { g.fillStyle = '#f39c12'; g.beginPath(); rr(DOOR_X - 35 - open * 62, -272, 72, 250, 8); g.fill();
+    g.fillStyle = '#a6d8ee'; g.beginPath(); rr(DOOR_X - 25 - open * 62, -260, 52, 80, 6); g.fill(); }
+  // lower body (yellow) with stripes and the route painted on
+  g.fillStyle = burnt ? dark : '#f2c230'; g.beginPath(); rr(-330, -118, 610, 100, 16); g.fill();
+  if (!burnt) {
+    g.fillStyle = '#e74c3c'; g.fillRect(-330, -104, 540, 12);
+    g.fillStyle = '#1f6fd1'; g.fillRect(-330, -86, 540, 10);
+    g.fillStyle = '#27ae60'; g.fillRect(-330, -70, 540, 8);
+    g.fillStyle = '#7a2a12'; g.font = '900 30px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText('NEIVA · GARZÓN', 0, -32);
+  }
+  // front: hood, windscreen, bumper, light
+  g.fillStyle = burnt ? dark : '#d63a2f'; g.beginPath(); rr(262, -175, 100, 160, 22); g.fill();
+  g.fillStyle = burnt ? dark : '#d63a2f'; g.beginPath(); rr(256, -302, 78, 140, 14); g.fill();   // driver's cab
+  g.fillStyle = burnt ? '#111' : '#a6d8ee'; g.beginPath(); rr(266, -290, 58, 100, 10); g.fill();
+  g.fillStyle = '#2a2a2a'; g.fillRect(255, -30, 115, 16); g.fillRect(-338, -30, 30, 16);
+  circle(350, -95, 14, burnt ? '#222' : '#ffe9a8');
+  if (!burnt) { g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 4; for (let gy = -150; gy < -110; gy += 10) { g.beginPath(); g.moveTo(300, gy); g.lineTo(355, gy); g.stroke(); } }
+  // wheels
+  const roll = (x + 700) / 56;
+  (burnt ? [190] : [-210, 190]).forEach(wx => {
+    circle(wx, 0, 56, '#151515'); circle(wx, 0, 27, burnt ? '#3a3533' : '#c9ccd1');
+    g.strokeStyle = burnt ? '#222' : '#7b7f86'; g.lineWidth = 5;
+    for (let k = 0; k < 5; k++) { const a = roll + k * 1.2566; g.beginPath(); g.moveTo(wx, 0); g.lineTo(wx + Math.cos(a) * 27, Math.sin(a) * 27); g.stroke(); }
+  });
+  if (burnt) { g.fillStyle = '#151515'; g.beginPath(); g.ellipse(-230, 22, 44, 12, 0, 0, 7); g.fill(); }
+  g.restore();
+}
+
+// ---------- the men in camouflage ----------
+function camo(pathFn, seed) {
+  g.save(); g.beginPath(); pathFn(); g.clip();
+  g.fillStyle = '#6b7a3a'; g.fillRect(-400, -500, 800, 600);
+  const cols = ['#4a5926', '#8c7b4b', '#2f3a1e', '#a39a68'];
+  for (let i = 0; i < 70; i++) { g.fillStyle = cols[i % 4]; g.beginPath();
+    g.ellipse(-260 + rnd(i, seed) * 520, -360 + rnd(i, seed + 1) * 380, 10 + rnd(i, seed + 2) * 22, 7 + rnd(i, seed + 3) * 12, rnd(i, seed + 4) * 3, 0, 7); g.fill(); }
+  g.restore();
+}
+function limb(x1, y1, x2, y2, w) {
+  const a = Math.atan2(y2 - y1, x2 - x1), dx = Math.sin(a) * w / 2, dy = -Math.cos(a) * w / 2;
+  g.moveTo(x1 + dx, y1 + dy); g.lineTo(x2 + dx, y2 + dy); g.lineTo(x2 - dx, y2 - dy); g.lineTo(x1 - dx, y1 - dy); g.closePath();
+}
+const MUZZLE = [-212, -224], PIVOT = [0, -240];
+function muzzleOf(sd, kick) { // world position of the barrel tip, rifle tilted up by sd.aim
+  const vx = MUZZLE[0] - PIVOT[0], vy = MUZZLE[1] - PIVOT[1], c = Math.cos(sd.aim), s = Math.sin(sd.aim);
+  return [sd.x + kick + sd.s * (PIVOT[0] + vx * c - vy * s), sd.y + sd.s * (PIVOT[1] + vx * s + vy * c)];
+}
+function soldier(x, y, s, aim, kick) {
+  g.save(); g.translate(x + kick, y); g.scale(s, s);
+  g.fillStyle = '#3b2a1d'; g.beginPath(); rr(-46, -24, 42, 24, 6); g.fill(); g.beginPath(); rr(4, -24, 42, 24, 6); g.fill();
+  camo(() => { rr(-36, -150, 32, 130, 8); rr(8, -150, 32, 130, 8); }, 11);
+  camo(() => rr(-50, -282, 100, 148, 22), 21);
+  g.fillStyle = '#2b2b22'; g.fillRect(-50, -150, 100, 14);
+  g.fillStyle = 'rgba(30,35,15,.45)'; g.fillRect(-38, -225, 30, 30); g.fillRect(4, -225, 30, 30);
+  // arms and rifle, tilted to the sky around the shoulder
+  g.save(); g.translate(PIVOT[0], PIVOT[1]); g.rotate(aim); g.translate(-PIVOT[0], -PIVOT[1]);
+  camo(() => limb(18, -255, -40, -214, 24), 31);
+  g.fillStyle = '#5a3a22'; g.beginPath(); rr(0, -236, 74, 26, 8); g.fill();
+  g.fillStyle = '#2d2d2d'; g.fillRect(-96, -238, 104, 28); g.fillRect(-68, -252, 34, 12);
+  g.save(); g.translate(-64, -212); g.rotate(-0.18); g.fillStyle = '#262626'; g.fillRect(0, 0, 22, 46); g.restore();
+  g.fillStyle = '#3d3d3d'; g.fillRect(-158, -234, 64, 20);
+  g.fillStyle = '#1b1b1b'; g.fillRect(-208, -228, 52, 8);
+  circle(-42, -214, 13, '#c98b5e');
+  camo(() => limb(-12, -258, -126, -228, 26), 41);
+  circle(-128, -226, 13, '#c98b5e');
+  g.restore();
+  circle(-6, -312, 33, '#c98b5e');
+  g.fillStyle = '#1a1a1a'; g.beginPath(); rr(-44, -322, 36, 12, 5); g.fill();
+  g.strokeStyle = '#3b2413'; g.lineWidth = 6; g.beginPath(); g.moveTo(-40, -294); g.lineTo(-18, -296); g.stroke();
+  camo(() => { g.arc(-4, -318, 42, Math.PI, 0); g.lineTo(46, -316); g.lineTo(-54, -316); }, 51);
+  g.fillStyle = '#3c4721'; g.fillRect(-56, -320, 104, 7);
+  g.restore();
+}
+function bush(x, y, s = 1) {
+  const blobs = [[-120, -40, 70], [-50, -80, 85], [40, -70, 90], [120, -40, 70], [0, -30, 90], [-150, -10, 50], [150, -10, 55]];
+  g.save(); g.translate(x, y); g.scale(s, s);
+  blobs.forEach(([bx, by, r]) => circle(bx, by, r, '#3f6b2f'));
+  blobs.forEach(([bx, by, r]) => circle(bx - r * .2, by - r * .25, r * .6, '#4f8139'));
+  g.restore();
+}
+function star(x, y, r1, r2, n, rot) {
+  g.beginPath(); for (let i = 0; i < n * 2; i++) { const r = i % 2 ? r2 : r1, a = rot + i * Math.PI / n;
+    g.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } g.closePath();
+}
+
+// ---------- the travellers ----------
+// Head and face only: used in the windows and on the running bodies. Origin: feet of a standing person.
+function head(p, scared, t) {
+  if (p.female && p.hair) { g.fillStyle = p.hair; g.beginPath(); g.ellipse(-6, -178, 36, 44, 0, 0, 7); g.fill();
+    if (p.ponytail) { g.beginPath(); g.ellipse(-36, -190, 14, 26, .5, 0, 7); g.fill(); } }
+  circle(4, -188, 31, p.skin);
+  g.fillStyle = 'rgba(230,90,90,.35)'; g.beginPath(); g.arc(24, -178, 8, 0, 7); g.fill();
+  if (p.female && p.hair) { g.fillStyle = p.hair; g.beginPath(); g.arc(4, -194, 31, Math.PI * 1.05, Math.PI * 1.95); g.fill(); }
+  if (p.cap) { g.fillStyle = p.cap; g.beginPath(); g.arc(4, -200, 31, Math.PI, 0); g.fill(); g.fillRect(4, -204, 46, 9); }
+  if (p.bald) { g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(-6, -208, 10, 5, -.3, 0, 7); g.fill();
+    g.fillStyle = '#2b1d14'; g.fillRect(-26, -196, 8, 18); }
+  if (p.vueltiao) {
+    g.fillStyle = '#f4ecd8'; g.beginPath(); g.ellipse(4, -210, 56, 12, 0, 0, 7); g.fill();
+    g.beginPath(); rr(-20, -246, 48, 38, 12); g.fill();
+    g.fillStyle = '#1b1b1b'; g.fillRect(-20, -232, 48, 5); g.fillRect(-20, -222, 48, 5); g.fillRect(-44, -212, 96, 3);
+  }
+  if (scared) {
+    circle(14, -192, 9, '#fff'); circle(30, -192, 9, '#fff'); circle(16, -191, 4, '#111'); circle(32, -191, 4, '#111');
+    circle(24, -170, 7, '#5a1f1f');
+  } else {
+    circle(16, -192, 4, '#111'); circle(30, -192, 4, '#111');
+    g.strokeStyle = '#5a1f1f'; g.lineWidth = 3; g.beginPath(); g.arc(24, -178, 9, .2, Math.PI - .2); g.stroke();
+  }
+  if (p.mustache) { g.fillStyle = '#2b1d14'; g.beginPath(); g.ellipse(26, -176, 13, 5, 0, 0, 7); g.fill(); }
+}
+// Out of the door and running to the left, faster and faster.
+function personX(i, t, busX) { const r = t - exitAt(i); return busX + DOOR_X - 260 * r * r - 750 * r; }
+function person(p, i, t, busX) {
+  const r = t - exitAt(i); if (r < 0) return;
+  const x = personX(i, t, busX); if (x < -200) return;
+  const w = t * 19 + i;
+  const drop = r < .18 ? (1 - r / .18) * 60 : 0;            // jumping down from the door
+  const bob = Math.abs(Math.sin(w)) * 14;
+  g.save(); g.translate(x, p.y - drop - bob);
+  g.fillStyle = 'rgba(0,0,0,.22)'; g.beginPath(); g.ellipse(0, drop + bob, 62, 12, 0, 0, 7); g.fill();
+  g.scale(-1, 1); g.rotate(.14);
+  const swing = Math.sin(w) * .95;
+  [[-17, swing], [17, -swing]].forEach(([hx, a]) => {
+    g.save(); g.translate(hx, -58); g.rotate(a);
+    g.fillStyle = p.female ? p.skin : p.pants; g.beginPath(); rr(-13, 0, 26, 56, 12); g.fill();
+    g.fillStyle = '#2b2b2b'; g.beginPath(); g.ellipse(8, 56, 20, 10, 0, 0, 7); g.fill(); g.restore();
+  });
+  if (p.female) {
+    g.fillStyle = p.dress; g.beginPath(); g.moveTo(-58, -40); g.quadraticCurveTo(-70, -120, -40, -150); g.lineTo(40, -150);
+    g.quadraticCurveTo(72, -120, 60, -40); g.closePath(); g.fill();
+    g.beginPath(); g.ellipse(0, -110, 54, 52, 0, 0, 7); g.fill();
+  } else {
+    g.fillStyle = p.shirt; g.beginPath(); g.ellipse(0, -108, 56, 60, 0, 0, 7); g.fill();
+    if (p.number) { g.save(); g.scale(-1, 1);   // the shirt number never reads backwards
+      g.fillStyle = '#1f4fa3'; g.font = '900 34px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(p.number, -4, -98); g.restore(); }
+  }
+  g.fillStyle = 'rgba(255,255,255,.18)'; g.beginPath(); g.ellipse(-16, -128, 18, 26, -.4, 0, 7); g.fill();
+  [[-46, 1], [46, -1]].forEach(([sx, side]) => {   // arms up in panic
+    const a = (side > 0 ? -2.6 : 2.6) + Math.sin(t * 30 + sx) * .15;
+    g.save(); g.translate(sx, -140); g.rotate(a);
+    g.fillStyle = p.female ? p.skin : p.shirt; g.beginPath(); rr(-11, 0, 22, 52, 11); g.fill();
+    circle(0, 54, 11, p.skin); g.restore();
+  });
+  head(p, true, t);
+  g.fillStyle = 'rgba(120,190,255,.9)'; g.beginPath(); g.ellipse(-22, -214 - (t * 120 % 30), 5, 8, 0, 0, 7); g.fill();
+  g.restore();
+  for (let k = 0; k < 4; k++) {   // dust behind their feet
+    const age = (t * 3 + k * .25) % 1;
+    g.fillStyle = `rgba(200,190,160,${.5 * (1 - age)})`; g.beginPath(); g.arc(x + 40 + age * 70, p.y - 6 - age * 20, 10 + age * 18, 0, 7); g.fill();
+  }
+}
+// "!" over each window when the shooting starts
+function scareMarks(t, busX) {
+  PEOPLE.forEach((p, k) => {
+    const ex = t - (T.SCARE + k * .04); if (ex <= 0 || ex >= .9 || t >= exitAt(k)) return;
+    const s = ex < .15 ? easeBack(ex / .15) : 1;
+    g.save(); g.translate(busX + WINDOW_X(k) + 40, BUS_Y - 292); g.scale(s, s);
+    circle(0, 0, 28, '#fff'); g.strokeStyle = '#e63b1f'; g.lineWidth = 4; g.stroke();
+    g.fillStyle = '#e63b1f'; g.font = '900 42px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', 0, 2);
+    g.restore(); g.textBaseline = 'alphabetic';
+  });
+}
+
+// ---------- explosion pieces (seeded) ----------
+const DEBRIS = Array.from({ length: 60 }, (_, i) => {
+  const a = -Math.PI / 2 + (rnd(i, 1) - .5) * 2.6, sp = 700 + rnd(i, 2) * 1100;
+  return { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, s: 8 + rnd(i, 3) * 26, rot: rnd(i, 4) * 12 - 6,
+    col: ['#2e86de', '#262626', '#f2c230', '#a6d8ee', '#e74c3c'][i % 5], ground: 850 + rnd(i, 5) * 150 };
+});
+const FLYING_BAGS = ROOF_BAGS.map((b, i) => ({ ...b, vx: [-460, -150, 260, 520][i], vy: [-1100, -1500, -1350, -1050][i],
+  spin: [-6, 8, 7, -9][i], ground: [905, 930, 880, 915][i] }));
+function ballistic(x0, y0, vx, vy, dt, ground, grav = 1900) {
+  const tl = (-vy + Math.sqrt(vy * vy + 2 * grav * (ground - y0))) / grav;
+  const d = Math.min(dt, tl);
+  return { x: x0 + vx * d, y: y0 + vy * d + .5 * grav * d * d, landed: dt >= tl, tl };
+}
+
+// ---------- frame ----------
+let days = daysUntilTrip(dateInput.value);
+function draw(t) {
+  let amp = 0;
+  SHOTS.forEach(sh => { if (t >= sh.t && t < sh.t + .05) amp = Math.max(amp, 3); });
+  const db = t - T.BOOM; if (db >= 0 && db < 2.2) amp = Math.max(amp, 42 * Math.exp(-db * 2.3));
+  const fr = Math.floor(t * 60), sx = (rnd(fr, 1) - .5) * 2 * amp, sy = (rnd(fr, 2) - .5) * 2 * amp;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(bg, 0, 0);
+  g.setTransform(1, 0, 0, 1, sx, sy); g.drawImage(bg, 0, 0);
+
+  // the men in camouflage, back row first; each behind his own bush; gone before the blast
+  SOLDIERS.forEach((sd, who) => {
+    const up = clamp((t - sd.rise) / .45), down = clamp((t - T.DUCK - who * .08) / .5), rise = easeOut(up) * (1 - easeOut(down));
+    let kick = 0; SHOTS.forEach(sh => { if (sh.who === who && t >= sh.t && t < sh.t + .05) kick = 6 * sd.s; });
+    if (rise > 0) {
+      g.save(); g.beginPath(); g.rect(-100, -100, W + 200, sd.y - 2 + 100); g.clip();
+      soldier(sd.x, sd.y + (1 - rise) * 360 * sd.s, sd.s, sd.aim, kick); g.restore();
+    }
+    bush(sd.x + 10 * sd.s, sd.y + 8 * sd.s, sd.s);
+  });
+
+  // shots into the sky: flash at the barrel and a tracer going up
+  SHOTS.forEach(sh => {
+    const a = t - sh.t; if (a < 0 || a > .35) return;
+    const sd = SOLDIERS[sh.who]; const [mx, my] = muzzleOf(sd, 0);
+    const dir = Math.PI + sd.aim + (rnd(sh.k, 7) - .5) * .18, dx = Math.cos(dir), dy = Math.sin(dir);
+    if (a < .045) {
+      const r = 110 * sd.s;
+      let gl = g.createRadialGradient(mx, my, 0, mx, my, r); gl.addColorStop(0, 'rgba(255,240,180,.8)'); gl.addColorStop(1, 'rgba(255,200,80,0)');
+      g.fillStyle = gl; g.fillRect(mx - r, my - r, 2 * r, 2 * r);
+      g.fillStyle = '#fff6c8'; star(mx + dx * 18 * sd.s, my + dy * 18 * sd.s, (40 + rnd(sh.k, 9) * 26) * sd.s, 12 * sd.s, 7, rnd(sh.k, 10) * 3); g.fill();
+      g.fillStyle = '#ffb02e'; star(mx + dx * 12 * sd.s, my + dy * 12 * sd.s, 22 * sd.s, 8 * sd.s, 7, rnd(sh.k, 11) * 3); g.fill();
+    }
+    const p = a / .35, L = 900;
+    g.strokeStyle = `rgba(255,225,130,${.95 * (1 - p)})`; g.lineWidth = 5 * sd.s; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(mx + dx * L * Math.max(0, p - .15), my + dy * L * Math.max(0, p - .15)); g.lineTo(mx + dx * L * p, my + dy * L * p); g.stroke();
+  });
+  SHOTS.forEach(sh => {   // casings
+    const a = t - sh.t; if (a < 0 || a > .7) return;
+    const sd = SOLDIERS[sh.who], cx = sd.x + (20 + 170 * a) * sd.s, cy = sd.y + (-240 - 380 * a + 1200 * a * a) * sd.s;
+    if (cy < sd.y + 30) { g.save(); g.translate(cx, cy); g.rotate(a * 25); g.fillStyle = '#d9a72e'; g.fillRect(-5 * sd.s, -3 * sd.s, 10 * sd.s, 6 * sd.s); g.restore(); }
+  });
+
+  // the chiva arrives with the five inside
+  const pIn = clamp((t - T.BUS_IN) / (T.BUS_STOP - T.BUS_IN)), busX = lerp(-760, BUS_X, easeOut(pIn)), ds = t - T.BUS_STOP;
+  const bob = t < T.BUS_STOP ? Math.sin(t * 26) * 2 : 6 * Math.exp(-ds * 5) * Math.sin(ds * 22);
+  if (t < T.BOOM) chiva(busX, BUS_Y + bob, false, t >= T.DOOR, t);
+  else if (db > .12) chiva(BUS_X, BUS_Y, true, false, t);
+  if (t < T.BOOM) scareMarks(t, busX);
+
+  // they jump out and run
+  PEOPLE.forEach((p, i) => person(p, i, t, BUS_X));
+
+  // explosion, once nobody is left
+  if (db >= 0) {
+    const cx = BUS_X, cy = BUS_Y - 120;
+    for (let i = 0; i < 110; i++) {
+      const born = .12 + i * .05, age = db - born; if (age < 0 || age > 4.5) continue;
+      const spread = i < 30 ? 380 : 120;
+      const px = cx + (rnd(i, 31) - .5) * spread + age * 45, py = cy - 20 - age * (120 + rnd(i, 32) * 80);
+      const r = 60 + age * 60 + (i < 30 ? 70 : 0), al = .55 * (1 - age / 4.5);
+      g.fillStyle = `rgba(${i < 30 ? '52,48,46' : '96,90,86'},${al})`; g.beginPath(); g.arc(px, py, r, 0, 7); g.fill();
+    }
+    if (db > .3) for (let k = 0; k < 10; k++) {
+      const fx = cx - 270 + k * 58, fh = 55 + 40 * Math.abs(Math.sin(t * 9 + k * 1.7)) + 22 * rnd(Math.floor(t * 14), k);
+      const base = cy - 90;
+      const fg = g.createLinearGradient(0, base - 30 - fh, 0, base);
+      fg.addColorStop(0, 'rgba(255,220,90,0)'); fg.addColorStop(.4, 'rgba(255,170,40,.95)'); fg.addColorStop(1, 'rgba(230,70,20,.95)');
+      g.fillStyle = fg; g.beginPath(); g.moveTo(fx - 26, base); g.quadraticCurveTo(fx - 20, base - 10 - fh * .6, fx, base - 10 - fh);
+      g.quadraticCurveTo(fx + 20, base - 10 - fh * .6, fx + 26, base); g.closePath(); g.fill();
+    }
+    DEBRIS.forEach(d => {
+      const p = ballistic(cx, cy, d.vx, d.vy, db, d.ground);
+      g.save(); g.translate(p.x, p.y); g.rotate(d.rot * Math.min(db, p.tl)); g.fillStyle = d.col; g.fillRect(-d.s / 2, -d.s / 3, d.s, d.s * .66); g.restore();
+    });
+    { const w = ballistic(cx - 210, BUS_Y, -560, -900, db, BUS_Y + 10); let wx = w.x;
+      if (w.landed) { const r = db - w.tl; wx = w.x - 560 * (1 - Math.exp(-r * 1.2)) / 1.2; }
+      g.save(); g.translate(wx, w.y); g.rotate(-db * 9); circle(0, 0, 56, '#151515'); circle(0, 0, 27, '#9a9da3');
+      g.fillStyle = '#151515'; g.fillRect(-4, -27, 8, 54); g.restore(); }
+    FLYING_BAGS.forEach(b => {
+      const p = ballistic(cx + b.x, BUS_Y + b.y, b.vx, b.vy, db, b.ground);
+      let ang = b.spin * Math.min(db, p.tl); if (p.landed) ang = Math.round(ang / (Math.PI / 2)) * (Math.PI / 2);
+      suitcase(p.x, p.y - (p.landed ? b.h / 2 - 20 : 0), b.w, b.h, b.c, ang);
+    });
+    if (db < 1.9) {
+      const R = 500 * (1 - Math.exp(-db * 5)), al = db < .5 ? 1 : Math.max(0, 1 - (db - .5) / 1.4);
+      for (let k = 0; k < 8; k++) {
+        const ox = (rnd(k, 41) - .5) * R * 1.1, oy = (rnd(k, 42) - .5) * R * .6 - db * 90, r = R * (.45 + rnd(k, 43) * .45);
+        if (r < 1) continue;
+        const fb = g.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, r);
+        fb.addColorStop(0, `rgba(255,250,215,${al})`); fb.addColorStop(.35, `rgba(255,190,60,${al})`);
+        fb.addColorStop(.7, `rgba(225,70,25,${al * .85})`); fb.addColorStop(1, 'rgba(120,30,10,0)');
+        g.fillStyle = fb; g.beginPath(); g.arc(cx + ox, cy + oy, r, 0, 7); g.fill();
+      }
+    }
+    if (db < .5) { g.strokeStyle = `rgba(255,255,255,${.6 * (1 - db / .5)})`; g.lineWidth = 30; g.beginPath(); g.arc(cx, cy, 140 + db * 1800, 0, 7); g.stroke(); }
+  }
+
+  drawCount(t);
+
+  if (db > .08 && db < 2.8) {
+    const s = db < .33 ? easeBack(clamp(db / .33)) : 1, al = db > 2.3 ? 1 - (db - 2.3) / .5 : 1;
+    g.save(); g.globalAlpha = clamp(al); g.translate(BUS_X - 260, 700); g.rotate(-.12); g.scale(s, s);
+    g.fillStyle = '#ffd23f'; g.strokeStyle = '#c0392b'; g.lineWidth = 12; star(0, 0, 230, 150, 14, .2); g.fill(); g.stroke();
+    g.font = '900 120px system-ui,Segoe UI,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.lineWidth = 14; g.strokeStyle = '#fff'; g.strokeText('¡BUUM!', 0, 6); g.fillStyle = '#e63b1f'; g.fillText('¡BUUM!', 0, 6);
+    g.restore(); g.textBaseline = 'alphabetic';
+  }
+  if (db >= 0 && db < .36) { g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = `rgba(255,252,235,${.95 - db * 2.6})`; g.fillRect(0, 0, W, H); }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function drawCount(t) {
+  const a = t - T.COUNT; if (a < 0) return;
+  const appear = clamp(a / .4);
+  g.save(); g.globalAlpha = appear; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 22; g.shadowOffsetY = 4;
+  g.fillStyle = '#fff';
+  if (days === 0) {
+    g.font = '900 150px system-ui,Segoe UI,sans-serif'; g.fillText('¡Es hoy!', 1140, 260);
+    g.font = '800 72px system-ui,Segoe UI,sans-serif'; g.fillText('¡Nos vamos para el Huila!', 1140, 380);
+    g.restore(); return;
+  }
+  g.font = '800 72px system-ui,Segoe UI,sans-serif'; g.fillText(days === 1 ? 'Falta' : 'Faltan', 1140, 120);
+  const roll = clamp(a / .9), shown = Math.max(days, Math.round(days + 15 * (1 - easeOut(roll))));
+  const pop = a < .9 ? 1 : 1 + .12 * Math.exp(-(a - .9) * 7) * Math.sin((a - .9) * 18);
+  g.save(); g.translate(1140, 340); g.scale(pop, pop);
+  const ng = g.createLinearGradient(0, -200, 0, 0); ng.addColorStop(0, '#fff1b8'); ng.addColorStop(1, '#ffb52e');
+  g.fillStyle = ng; g.font = '900 240px system-ui,Segoe UI,sans-serif'; g.fillText(String(shown), 0, 0); g.restore();
+  g.fillStyle = '#fff'; g.font = '800 66px system-ui,Segoe UI,sans-serif';
+  g.fillText((days === 1 ? 'día' : 'días') + ' para el viaje al Huila', 1140, 445);
+  g.restore();
+}
+
+// ---------- sound (synthesised; baked into a WAV for the phone) ----------
+let AC = null, master = null;
+function noiseBuffer(ac, sec) { const b = ac.createBuffer(1, ac.sampleRate * sec, ac.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; }
+function env(ac, node, t, peak, attack, decay) { const gn = ac.createGain(); gn.gain.setValueAtTime(.0001, t);
+  gn.gain.exponentialRampToValueAtTime(peak, t + attack); gn.gain.exponentialRampToValueAtTime(.0001, t + attack + decay); node.connect(gn); return gn; }
+function schedule(ac, out, start) {
+  const nb = noiseBuffer(ac, 4);
+  const wet = ac.createGain(); wet.gain.value = .35; const dl = ac.createDelay(1); dl.delayTime.value = .24;
+  const fb = ac.createGain(); fb.gain.value = .3; const dlp = ac.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 1600;
+  wet.connect(dl); dl.connect(dlp); dlp.connect(fb); fb.connect(dl); dlp.connect(out);
+  const hiss = (at, freq, peak, decay) => { const c = ac.createBufferSource(); c.buffer = nb; const f = ac.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = freq; c.connect(f); env(ac, f, start + at, peak, .01, decay).connect(out); c.start(start + at, 1.5, decay + .2); };
+  const thump = (at, peak) => { const o = ac.createOscillator(); o.frequency.setValueAtTime(90, at); o.frequency.exponentialRampToValueAtTime(45, at + .06);
+    env(ac, o, at, peak, .004, .07).connect(out); o.start(at); o.stop(at + .1); };
+  // the chiva's diesel, air brakes, a honk, the door
+  const eng = ac.createOscillator(); eng.type = 'sawtooth';
+  eng.frequency.setValueAtTime(30, start + T.BUS_IN); eng.frequency.linearRampToValueAtTime(48, start + 1.4); eng.frequency.linearRampToValueAtTime(22, start + T.BUS_STOP);
+  const elp = ac.createBiquadFilter(); elp.type = 'lowpass'; elp.frequency.value = 220; eng.connect(elp);
+  const eg = ac.createGain(); eg.gain.setValueAtTime(0, start + T.BUS_IN); eg.gain.linearRampToValueAtTime(.28, start + T.BUS_IN + .4);
+  eg.gain.setValueAtTime(.28, start + T.BUS_STOP - .3); eg.gain.linearRampToValueAtTime(0, start + T.BUS_STOP + .2);
+  elp.connect(eg); eg.connect(out); eng.start(start + T.BUS_IN); eng.stop(start + T.BUS_STOP + .3);
+  hiss(T.BUS_STOP, 1800, .35, .5);
+  [T.BUS_STOP + .25, T.BUS_STOP + .5].forEach(h => [300, 380].forEach(f => { const o = ac.createOscillator(); o.type = 'square'; o.frequency.value = f;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200; o.connect(lp);
+    env(ac, lp, start + h, .1, .01, .16).connect(out); o.start(start + h); o.stop(start + h + .2); }));
+  hiss(T.DOOR, 2500, .25, .35);
+  // running feet out of the door
+  for (let at = T.EXIT; at < exitAt(0) + 1.8; at += .07) thump(start + at, .16);
+  // bursts into the air from every rifle; the far ones are quieter
+  SHOTS.forEach((sh, i) => {
+    const t = start + sh.t, far = SOLDIERS[sh.who].s, src = ac.createBufferSource(); src.buffer = nb;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1100 + (i % 5) * 140; bp.Q.value = .8; src.connect(bp);
+    const crack = env(ac, bp, t, .75 * far, .002, .1); crack.connect(out); crack.connect(wet);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; src.connect(lp);
+    const body = env(ac, lp, t, .65 * far, .003, .17); body.connect(out); body.connect(wet);
+    src.start(t, Math.random() * 3, .3);
+    const o = ac.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(45, t + .09);
+    env(ac, o, t, .5 * far, .002, .12).connect(out); o.start(t); o.stop(t + .16);
+  });
+  // explosion
+  const t = start + T.BOOM;
+  const src = ac.createBufferSource(); src.buffer = nb; src.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(4200, t); lp.frequency.exponentialRampToValueAtTime(100, t + 2.8);
+  const shaper = ac.createWaveShaper(); const curve = new Float32Array(1024);
+  for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 3); } shaper.curve = curve;
+  src.connect(lp); lp.connect(shaper); env(ac, shaper, t, 1.7, .008, 4.2).connect(out); src.start(t); src.stop(t + 4.6);
+  const sub = ac.createOscillator(); sub.frequency.setValueAtTime(80, t); sub.frequency.exponentialRampToValueAtTime(20, t + 1.4);
+  env(ac, sub, t, 1.6, .006, 1.8).connect(out); sub.start(t); sub.stop(t + 2.1);
+  const hs = ac.createBufferSource(); hs.buffer = nb; const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2400;
+  hs.connect(hp); env(ac, hp, t, .7, .003, .45).connect(out); hs.start(t, 1, .6);
+  for (let k = 0; k < 12; k++) { const at = t + 1.0 + rnd(k, 61) * 1.6, c = ac.createBufferSource(); c.buffer = nb;
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 600 + rnd(k, 62) * 2200; f.Q.value = 4; c.connect(f);
+    env(ac, f, at, .25, .002, .09).connect(out); c.start(at, rnd(k, 63) * 3, .15); }
+}
+
+// ---------- play control ----------
+let playId = 0, clockFn = () => 0;
+function play() {
+  document.getElementById('start').style.display = 'none';
+  days = daysUntilTrip(dateInput.value);
+  const id = ++playId;
+  if (master) { try { master.gain.setValueAtTime(0, AC.currentTime); master.disconnect(); } catch (e) {} master = null; }
+  if (false) {   // sonido desactivado en la TV (el teléfono ya lo da)
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)(); AC.resume();
+    const comp = AC.createDynamicsCompressor(); comp.connect(AC.destination);
+    master = AC.createGain(); master.gain.value = .8; master.connect(comp);
+    const start = AC.currentTime + .15; schedule(AC, master, start); clockFn = () => AC.currentTime - start;
+  } else { const p = performance.now(); clockFn = () => (performance.now() - p) / 1000; }
+  const loop = () => { if (id !== playId) return; const t = Math.min(clockFn(), T.END); draw(Math.max(0, t)); if (t < T.END) requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}
+document.getElementById('start').onclick = play;
+document.getElementById('replay').onclick = play;
+document.getElementById('sound').onchange = e => { if (master) master.gain.value = e.target.checked ? .8 : 0; };
+dateInput.onchange = () => { days = daysUntilTrip(dateInput.value); };
+
+// En la TV: arranca solo en cuanto carga la página.
+play();
+
+drawBackground();
+// Preview a single moment: andromeda-huila-preview.html#t=8.7
+const still = /t=([\d.]+)/.exec(location.hash);
+if (still) { document.getElementById('start').style.display = 'none'; draw(+still[1]); } else draw(0);
+// Bake the sound into a WAV for the phone: andromeda-huila-preview.html#render-audio (scene time = file time).
+async function renderAudio() {
+  const sr = 44100, ac = new OfflineAudioContext(1, sr * T.END, sr);
+  const comp = ac.createDynamicsCompressor(); comp.connect(ac.destination);
+  const m = ac.createGain(); m.gain.value = .8; m.connect(comp); schedule(ac, m, 0);
+  const pcm = (await ac.startRendering()).getChannelData(0), n = pcm.length;
+  const out = new DataView(new ArrayBuffer(44 + n * 2)), str = (o, v) => [...v].forEach((ch, i) => out.setUint8(o + i, ch.charCodeAt(0)));
+  str(0, 'RIFF'); out.setUint32(4, 36 + n * 2, true); str(8, 'WAVEfmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true);
+  out.setUint16(22, 1, true); out.setUint32(24, sr, true); out.setUint32(28, sr * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+  str(36, 'data'); out.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) out.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i])) * 32767, true);
+  let bin = ''; const bytes = new Uint8Array(out.buffer); for (let i = 0; i < bytes.length; i += 32768) bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+  document.body.innerHTML = '<pre id="wav">' + btoa(bin) + '</pre>';
+}
+if (location.hash === '#render-audio') renderAudio();
+</script>
+</body>
+</html>

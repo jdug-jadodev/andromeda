@@ -62,6 +62,22 @@ TV_MAC = TV_MACS[0]
 API_HOST = os.environ.get("TV_API_HOST", "0.0.0.0")
 API_PORT = int(os.environ.get("TV_API_PORT", "8770"))
 TOKEN_FILE = Path(__file__).resolve().parent / "api_token.txt"
+HUILA_HTML_PATH = Path(__file__).resolve().parent / "huila.html"
+
+
+def _lan_ip():
+    """IP de este equipo en la LAN (la que la TV debe usar para abrir el aviso)."""
+    for target in TV_IPS:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect((target, 9))
+            ip = s.getsockname()[0]
+            s.close()
+            if ip:
+                return ip
+        except OSError:
+            continue
+    return ""
 
 
 def _load_token():
@@ -239,7 +255,7 @@ def normalize_output(value):
 
 
 def status():
-    info = {"reachable": False, "ip": TV_IP, "mac": TV_MAC}
+    info = {"reachable": False, "ip": TV_IP, "mac": TV_MAC, "host": _lan_ip()}
     if not is_reachable():
         info["power"] = "off/standby"
         return info
@@ -611,6 +627,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_file(self, path, content_type):
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return self._send(404, {"error": "no disponible"})
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _authed(self):
         if not API_TOKEN:
             return True
@@ -628,7 +655,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         path = urlparse(self.path).path.rstrip("/") or "/"
         if path == "/health":
-            return self._send(200, {"ok": True, "tv": TV_IP, "reachable": is_reachable()})
+            return self._send(200, {"ok": True, "tv": TV_IP, "reachable": is_reachable(), "host": _lan_ip()})
+        if path == "/huila":
+            return self._send_file(HUILA_HTML_PATH, "text/html; charset=utf-8")
         if not self._authed():
             return self._send(401, {"error": "token requerido"})
         try:
