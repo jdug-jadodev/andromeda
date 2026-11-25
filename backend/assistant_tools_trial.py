@@ -79,6 +79,14 @@ def result_text(status, kind, due, reminder_text='', delay_ms=0, detailed=False,
             'UNKNOWN': 'No pude confirmar el resultado. Revisa Alarmas o Recordatorios antes de pedirlo otra vez.'}[status]
 
 
+def _natural_log(message):
+    try:
+        with open('/tmp/andromeda_natural.log', 'a', encoding='utf-8') as stream:
+            stream.write(message + '\n')
+    except Exception:
+        pass
+
+
 class AssistantToolsTrial:
     def __init__(self, clock, guided_agenda=False, maximum_sequence=24, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False):
         self.clock, self.timer, self.inflight = clock, TimerTrial(clock), None
@@ -122,6 +130,7 @@ class AssistantToolsTrial:
 
     def human(self, turn, session, context, session_end):
         if self.pending_confirm is not None:
+            _natural_log(f'human pending_confirm={self.pending_confirm} text={turn.get("text")!r} seq={turn.get("seq")}')
             pending = self.pending_confirm
             self.pending_confirm = None
             from affirmation import is_affirmative, is_negative
@@ -130,7 +139,13 @@ class AssistantToolsTrial:
                 return {'text': 'Vale, no guardé nada.', 'offered_more': False, 'close_reason': 'explicit_close'}
             if is_affirmative(turn['text']):
                 result = dict(pending, kind='agenda_proposal', natural=True)
-                return self.model_result(result, turn, session, context, session_end)
+                try:
+                    response = self.model_result(result, turn, session, context, session_end)
+                except Exception as error:
+                    _natural_log(f'model_result ERROR {type(error).__name__}: {error}')
+                    raise
+                _natural_log(f'human -> executing={response.get("executing")} type={response.get("event",{}).get("type")} natural={response.get("event",{}).get("natural")}')
+                return response
             # Ni sí ni no claro: se conserva el pendiente y se vuelve a preguntar.
             self.pending_confirm = pending
             return {'text': '¿Lo guardo? Dime sí o no.', 'offered_more': False}
@@ -333,6 +348,7 @@ class AssistantToolsTrial:
             if self.alarm_lifecycle and 'weekday' in result:
                 value['weekday'] = int(result['weekday']); value['minute_of_day'] = int(result.get('minute_of_day', 0))
             self.pending_confirm = value
+            _natural_log(f'reminder_ready stored pending_confirm={value}')
             return {'text': _confirm_line(result['event_kind'], result), 'offered_more': False}
         mutation = result['kind'] in {'timer_proposal', 'agenda_proposal', 'guided_agenda_proposal', 'volume_proposal'}
         if mutation and (self.inflight is not None or self.timer.inflight is not None or self.volume.inflight is not None or self.deletion.grant is not None
@@ -362,6 +378,7 @@ class AssistantToolsTrial:
             # Modo natural: el valor ya fue validado por tool_arguments.propose
             # (momento futuro, tema no vacío). No se re-deriva de la frase; la
             # confirmación del humano y el nonce son la garantía.
+            _natural_log(f'model_result natural value={result} turn_seq={turn.get("seq")} now={self.clock()} speech_end={turn.get("speech_end")} boot={turn.get("calendar_boot_ms")}')
             value = {key: result[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone')
                      + (('weekday', 'minute_of_day') if self.alarm_lifecycle else ()) if key in result}
             if not value.get('text') or type(value['due_ms']) is not int or value['due_ms'] <= turn['calendar_anchor_ms'] + 1000:
