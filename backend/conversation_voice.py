@@ -1439,7 +1439,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             admin = hello.get('memory_admin')
                             if admin is not None:
                                 if not isinstance(admin, dict) or set(admin) - {'action', 'id'}:
-                                    raise ValueError('Invalid memory administration request')
+                                    continue  # Cliente mal formado: se rechaza la conexión sin tumbar el motor.
                                 if admin.get('action') == 'list' and set(admin) == {'action'}:
                                     send_event(conn, {'type': 'memory_catalog', 'memory_store': 'sqlite_debian_v1',
                                                       'catalog': _client_catalog(conversation_store)})
@@ -1450,7 +1450,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                     send_event(conn, {'type': 'memory_forgotten', 'memory_store': 'sqlite_debian_v1',
                                                       'id': admin['id'], 'removed': removed})
                                 else:
-                                    raise ValueError('Invalid memory administration operation')
+                                    continue  # Operación de memoria inválida: se rechaza sin tumbar el motor.
                                 continue
                             remote_store = hello.get('memory_store') == 'sqlite_debian_v1'
                             if not remote_store:
@@ -1460,7 +1460,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 if ('context' in hello or 'catalog' in hello
                                         or not isinstance(hello.get('context_id'), str)
                                         or not re.fullmatch('[0-9a-f]{32}', hello['context_id'])):
-                                    raise ValueError('Invalid SQLite memory handshake')
+                                    continue  # Handshake SQLite inválido: se rechaza sin tumbar el motor.
                                 context_id = hello['context_id']
                                 voice_entry = hello.get('voice_entry') is True
                                 if voice_entry:
@@ -1475,7 +1475,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 catalog_meta = conversation_store.list_metadata()
                                 catalog = {item['id']: item for item in catalog_meta}
                                 if context_id in catalog and voice_entry:
-                                    raise ValueError('New identity already exists')
+                                    continue  # Identidad ya existente: se rechaza la conexión sin tumbar el motor.
                                 entry = ConversationEntry(catalog, context_id, now_ms,
                                     loader=lambda identity: _load_stored_memory(conversation_store, identity),
                                     catalog_loader=lambda: {item['id']: item for item in conversation_store.list_metadata()}) if voice_entry else None
@@ -1493,12 +1493,12 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                     if not conversation_store.load(context_id): conversation_store.create(context_id)
                                 entry = None
                                 if legacy_entry:
-                                    if model.memory.pairs: raise ValueError('Voice entry must start unselected')
+                                    if model.memory.pairs: continue  # Entrada de voz debe arrancar sin selección; se rechaza sin tumbar el motor.
                                     for item in hello.get('catalog', []):
                                         conversation_store.import_snapshot(_runtime_to_stored(item))
                                     catalog_meta = conversation_store.list_metadata()
                                     catalog = {item['id']: item for item in catalog_meta}
-                                    if context_id in catalog: raise ValueError('New identity already exists')
+                                    if context_id in catalog: continue  # Identidad ya existente: se rechaza sin tumbar el motor.
                                 entry = ConversationEntry(catalog, context_id, now_ms,
                                         loader=lambda identity: _load_stored_memory(conversation_store, identity),
                                         catalog_loader=lambda: {item['id']: item for item in conversation_store.list_metadata()})
@@ -1506,7 +1506,7 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                 saved = conversation_store.load(context_id)
                                 if saved is not None: model.memory.restore(_stored_to_runtime(saved))
                             if hello.get('voice_entry') is not True and source == 'microphone':
-                                raise ValueError('Microphone requires explicit voice entry')
+                                continue  # Micrófono sin voice entry explícito: se rechaza sin tumbar el motor.
                             print(json.dumps({'event': 'conversation_context_restored', 'source': source,
                                 'restored_turns': len(model.memory.pairs),
                                 'restored_answers': sum(len(g) == 2 for g in model.memory.pairs)}), flush=True)
@@ -1559,6 +1559,16 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                                     with open('/tmp/voice_protocol_error.log','a',encoding='utf-8') as _f:
                                         _f.write(f'{time.time():.0f}|{error!r}\n{_tb.format_exc()}\n')
                                 except Exception: pass
+                                if not protocol_faults.hit(time.monotonic()):
+                                    # Un ValueError de protocolo no apaga Andrómeda de
+                                    # golpe: se libera el modelo y se sigue escuchando;
+                                    # solo una racha apaga (ProtocolWindow), igual que
+                                    # los ContinuousVoiceFault.
+                                    resident.release(model); model = None; entry = None
+                                    detector.reset()
+                                    if not resident.check(): resident.shutdown(); return
+                                    model = make_model()
+                                    continue
                                 if resident.monitor.reason == 'running':
                                     resident.monitor.reason = 'voice_protocol_error'
                                 resident.shutdown(); return
