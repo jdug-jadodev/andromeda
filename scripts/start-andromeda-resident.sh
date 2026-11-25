@@ -98,7 +98,7 @@ if [ -f "$ROOT/opt/doha-voice/tv/tv_api.py" ] && [ -f "$ROOT/opt/doha-voice/tv/a
     TV_API_TOKEN=$(cat "$ROOT/opt/doha-voice/tv/api_token.txt")
     chroot "$ROOT" /usr/bin/setpriv --reuid=10218 --regid=10218 --clear-groups \
       /usr/bin/env -i HOME=/tmp PATH=/usr/bin:/bin \
-      TV_IP=192.168.1.9 TV_MAC=8C:83:94:0D:F9:B4 TV_API_TOKEN="$TV_API_TOKEN" \
+      TV_IP=192.168.1.10 TV_MAC=F8:01:B4:11:D6:32 TV_API_TOKEN="$TV_API_TOKEN" \
       TV_DEFAULT_OUTPUT=external_optical TV_WATCHDOG_SECONDS=120 \
       /opt/doha-voice/bin/python -B /opt/doha-voice/tv/tv_api.py serve \
       >/data/local/tmp/tvapi.log 2>&1 < /dev/null &

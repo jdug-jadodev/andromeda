@@ -583,6 +583,22 @@ class ConversationModel:
         self.cancel_generation()
 
 
+def _show_tv_toast(message):
+    """Muestra un aviso en la TV LG (toast) si está encendida, en un hilo daemon
+    para no bloquear la voz ni el TTS. Nunca lanza: la TV es lo último que debe
+    tumbar al residente."""
+    def run():
+        try:
+            import tv_control
+            tv_control.toast_if_on(message)
+        except Exception:
+            pass
+    try:
+        threading.Thread(target=run, daemon=True, name='tv-toast').start()
+    except Exception:
+        pass
+
+
 def session(conn, detector, model, limit, resource_check, source='microphone', context_id=None, entry=None, timer_trial=False, assistant_tools=False, guided_agenda=False, continuous_voice=False, alarm_lifecycle=False, confirmed_volume=False, reminder_read=False, reminder_clarification=False, reminder_deletion=False, tv_enabled=False, conversation_store=None, remote_memory=False):
     from vosk import KaldiRecognizer, SetLogLevel
     from continuous_voice import (ContextReset, ContinuousVoiceFault, packet as context_packet, ACTION_WINDOW_MS, CHECKPOINT_TURNS,
@@ -744,6 +760,10 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
             scene = 'SANTA'
         text = notice()
         if text is None: return
+        if action == 'huila_notice':
+            # El aviso del viaje también sale en la TV (toast LG WebOS) si está
+            # encendida. En un hilo daemon para no bloquear la voz ni el TTS.
+            _show_tv_toast(text)
         current = now_ms(); sequence += 1; session_end = current + ACTION_WINDOW_MS
         turn = {'id': uuid.uuid4().hex, 'seq': sequence, 'speech_end': current, 'deadline_ms': current + response_start_ms,
                 'text': QUESTION, 'administrative': True, 'automatic': True, 'face_scene': scene,

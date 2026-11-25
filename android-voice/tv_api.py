@@ -45,8 +45,8 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-TV_IP = os.environ.get("TV_IP", "192.168.1.9")
-TV_MAC = os.environ.get("TV_MAC", "8C:83:94:0D:F9:B4")
+TV_IP = os.environ.get("TV_IP", "192.168.1.10")
+TV_MAC = os.environ.get("TV_MAC", "F8:01:B4:11:D6:32")
 API_HOST = os.environ.get("TV_API_HOST", "0.0.0.0")
 API_PORT = int(os.environ.get("TV_API_PORT", "8770"))
 TOKEN_FILE = Path(__file__).resolve().parent / "api_token.txt"

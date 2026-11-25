@@ -50,3 +50,5 @@ adb shell settings put global andromeda_huila 1   # encender
 ```
 
 Con `1`: la escena (llega una chiva con los cinco viajeros, salen camuflados disparando al aire, los viajeros se bajan corriendo, se van todos y la chiva vacía explota) sale sola a las 10:00, 12:00, 17:00 y 20:00, y también al preguntar "¿cuántos días faltan para el viaje?". Ella dice los días después de la explosión. Después del 11 de diciembre se apaga sola. Prototipo: `artifacts/andromeda-huila-preview.html`.
+
+Además, en los horarios programados el aviso también se muestra en la **TV LG** (toast) si está encendida: Andrómeda comprueba el estado por la red y, si está encendida, manda el mensaje (`Faltan X días para el viaje al Huila.`) por `system.notifications/createToast`. Si la TV está apagada o fuera de red, simplemente no la muestra (no la enciende). La TV ahora va por cable (`192.168.1.10`, MAC `F8:01:B4:11:D6:32`).

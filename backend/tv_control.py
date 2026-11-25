@@ -100,3 +100,21 @@ def open_app(name=None, app_id=None, url=None):
 
 def scene(name):
     return _call('POST', '/scene', {'name': name})
+
+
+def toast(message, timeout=5):
+    """Notificación en pantalla (toast LG WebOS)."""
+    return _call('POST', '/toast', {'message': message}, timeout=timeout)
+
+
+def toast_if_on(message, timeout=2):
+    """Muestra un aviso en la TV solo si está encendida. Nunca lanza: devuelve
+    False si la TV está apagada, sin red o el puente no responde, para poder
+    llamarla en un turno programado sin tumbar al residente."""
+    try:
+        if not status(timeout=timeout).get('reachable'):
+            return False
+        toast(message, timeout=timeout)
+        return True
+    except TVError:
+        return False
