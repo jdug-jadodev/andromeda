@@ -64,11 +64,25 @@ final class VoiceConnection implements Closeable {
                 } catch (GeneralSecurityException | IllegalArgumentException error) { throw new CertificateException("No se verificó el servidor local", error); }
             }
         }}, new SecureRandom());
-        SSLSocket socket = (SSLSocket)tls.getSocketFactory().createSocket();
+        SSLSocket socket = null;
+        Exception refused = null;
+        // El motor puede estar reiniciándose justo cuando se activa la voz: se
+        // reintenta la conexión unos segundos antes de rendirse, en vez de dejar
+        // la carita triste a la primera (ConnectException durante el arranque).
+        for (int attempt = 0; attempt < 6; attempt++) {
+            SSLSocket candidate = (SSLSocket)tls.getSocketFactory().createSocket();
+            candidate.setSoTimeout(5000); candidate.setTcpNoDelay(true);
+            try {
+                candidate.connect(new InetSocketAddress("127.0.0.1", 11436), 1500);
+                socket = candidate; refused = null; break;
+            } catch (java.net.ConnectException error) {
+                refused = error;
+                try { candidate.close(); } catch (Exception ignored) {}
+                if (attempt < 5) { try { Thread.sleep(1000); } catch (InterruptedException ignored) {} }
+            }
+        }
+        if (socket == null) throw new IOException("El motor local está apagado. Revisa que esté corriendo y activa de nuevo la voz.", refused);
         try {
-            socket.setSoTimeout(5000); socket.setTcpNoDelay(true);
-            try { socket.connect(new InetSocketAddress("127.0.0.1", 11436), 1500); }
-            catch (java.net.ConnectException error) { throw new IOException("El motor local está apagado. Activar solo conecta la voz; no arranca el motor. No repetiré la conexión automáticamente.", error); }
             socket.startHandshake();
             String token = new String(Files.readAllBytes(new File(context.getFilesDir(), "voice-conversation-token").toPath()), StandardCharsets.UTF_8).trim();
             if (token.length() < 32) throw new IOException("Falta credencial de conversación");
