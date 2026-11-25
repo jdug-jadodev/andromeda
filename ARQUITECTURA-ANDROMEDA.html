@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Andrómeda · Arquitectura</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --card-2: #16202f;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --blue: #38bdf8;
+    --teal: #2dd4bf;
+    --indigo: #818cf8;
+    --cloud: #7dd3fc;
+    --green: #4ade80;
+    --amber: #fbbf24;
+    --purple: #c084fc;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: radial-gradient(1200px 800px at 50% -10%, #1e293b 0%, var(--bg) 55%);
+    color: var(--text);
+    line-height: 1.55;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+  }
+  header { text-align: center; margin-bottom: 40px; }
+  header h1 {
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+  }
+  header p { color: var(--muted); margin: 0; font-size: 1rem; }
+  header .badge {
+    display: inline-block;
+    margin-bottom: 14px;
+    padding: 4px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  /* ── Flujo ── */
+  .flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .step {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px 22px;
+    position: relative;
+  }
+  .step h3 {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .step h3 .num {
+    flex: none;
+    width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    font-size: 0.85rem; font-weight: 700;
+    color: #0f172a;
+  }
+  .step p { margin: 0; color: var(--muted); font-size: 0.94rem; }
+  .step .flowline {
+    margin: 0; padding: 0;
+    text-align: center;
+    color: var(--blue);
+    font-size: 1.2rem;
+    line-height: 1.2;
+  }
+  /* colores de número por etapa */
+  .s1 .num { background: var(--blue); }
+  .s2 .num { background: var(--teal); }
+  .s3 .num { background: var(--indigo); }
+  .s4 .num { background: var(--cloud); }
+  .s5 .num { background: var(--green); }
+  .s6 .num { background: var(--amber); }
+  /* ── rama (texto vs herramienta) ── */
+  .branch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  @media (max-width: 640px) { .branch { grid-template-columns: 1fr; } }
+  .branch .opt {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 0.9rem;
+  }
+  .branch .opt strong { display: block; margin-bottom: 3px; color: var(--text); }
+  .branch .opt span { color: var(--muted); }
+  /* ── herramientas (grid, envuelve sin desbordar) ── */
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .tool {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent, var(--blue));
+    border-radius: 12px;
+    padding: 13px 15px;
+  }
+  .tool h4 { margin: 0 0 4px; font-size: 0.95rem; }
+  .tool p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+  .t-rem { --accent: var(--green); }
+  .t-tim { --accent: var(--green); }
+  .t-luz { --accent: var(--amber); }
+  .t-vol { --accent: var(--amber); }
+  .t-tv  { --accent: var(--amber); }
+  .t-web { --accent: var(--purple); }
+  .t-self{ --accent: var(--red); }
+  .t-noti{ --accent: var(--purple); }
+  /* ── leyenda ── */
+  .legend {
+    margin-top: 28px;
+    padding: 16px 18px;
+    background: var(--card-2);
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .legend strong { color: var(--text); }
+  .legend code {
+    background: #0b1322;
+    padding: 1px 6px;
+    border-radius: 5px;
+    color: var(--blue);
+    font-size: 0.8rem;
+  }
+  .k { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="badge">Mapa de arquitectura · estado actual</span>
+    <h1>¿Cómo funciona Andrómeda?</h1>
+    <p>De tu voz hasta la respuesta, con DeepSeek como cerebro y la casa validando cada acción.</p>
+  </header>
+
+  <div class="flow">
+
+    <!-- 1 -->
+    <div class="step s1">
+      <h3><span class="num">1</span> Entrada · la voz</h3>
+      <p>Dices la palabra clave <strong>«Andrómeda»</strong>. El reconocedor local (<code>Vosk</code>) la despierta y abre el micrófono. Todo lo que sigue se transcribe a texto <strong>en el teléfono</strong>, sin salir a internet.</p>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 2 -->
+    <div class="step s2">
+      <h3><span class="num">2</span> App Android</h3>
+      <p><code>VoiceService</code> recibe el texto y abre un canal cifrado (<strong>TLS con certificado clavado</strong>) hacia el backend local, en el puerto <code>11436</code>. <code>FaceView</code> es la carita (dormida, escuchando, hablando, error).</p>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 3 -->
+    <div class="step s3">
+      <h3><span class="num">3</span> Backend · recibe y decide</h3>
+      <p>El backend (un Debian dentro del teléfono) recibe el turno. Primero <code>ConversationFlow</code> revisa si es una frase de cierre («gracias», «cierra la conversación») → despedida. Si no, va al router.</p>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 4 -->
+    <div class="step s4">
+      <h3><span class="num">4</span> El motor · ¿DeepSeek o local?</h3>
+      <p>El router elige: <strong>DeepSeek en la nube</strong> si hay API key, red y el cortacircuitos está cerrado; si no, el <strong>router determinista</strong> como respaldo (nunca se queda muda).</p>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 5 -->
+    <div class="step s5">
+      <h3><span class="num">5</span> DeepSeek decide qué hacer</h3>
+      <p>DeepSeek ve el historial de la conversación y responde de <strong>dos formas</strong>:</p>
+      <div class="branch">
+        <div class="opt">
+          <strong>✍️ Respuesta con texto</strong>
+          <span>Conversación natural: chistes, historias, preguntas generales. Se habla directo, sin herramientas.</span>
+        </div>
+        <div class="opt">
+          <strong>🔧 Llamada a herramienta</strong>
+          <span>Elige la herramienta y la casa valida los datos antes de ejecutar nada.</span>
+        </div>
+      </div>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 6 -->
+    <div class="step s6">
+      <h3><span class="num">6</span> Herramientas · validación en la casa</h3>
+      <p>Ninguna herramienta se ejecuta directo: la casa valida y confirma. Según la herramienta, la validación cambia.</p>
+      <div class="tools">
+        <div class="tool t-rem">
+          <h4>🔔 Recordatorio / Alarma</h4>
+          <p>Modo natural: DeepSeek extrae tema y hora → pregunta «¿lo guardo?» → tu «sí» → nonce de un solo uso.</p>
+        </div>
+        <div class="tool t-tim">
+          <h4>⏱️ Temporizador</h4>
+          <p>Verifica que la duración salga literal de tu frase (prueba de origen) y lo ejecuta al instante.</p>
+        </div>
+        <div class="tool t-luz">
+          <h4>💡 Luces</h4>
+          <p>Encender/apagar, color, brillo y horario diario (parsers deterministas).</p>
+        </div>
+        <div class="tool t-vol">
+          <h4>🔊 Volumen</h4>
+          <p>Ajusta el volumen multimedia del teléfono al porcentaje pedido.</p>
+        </div>
+        <div class="tool t-tv">
+          <h4>📺 TV (LG WebOS)</h4>
+          <p>Encender/apagar, volumen, entradas y apps, por la red local.</p>
+        </div>
+        <div class="tool t-web">
+          <h4>🌐 Búsqueda web</h4>
+          <p>Consulta explícita al worker; devuelve un extracto con la fuente.</p>
+        </div>
+        <div class="tool t-self">
+          <h4>💥 Autodestrucción</h4>
+          <p>Escena especial si lo pides explícitamente.</p>
+        </div>
+        <div class="tool t-noti">
+          <h4>🎅 Avisos navidad / viaje</h4>
+          <p>Escenas programadas (navidad y viaje al Huila) a ciertas horas.</p>
+        </div>
+      </div>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 7 -->
+    <div class="step s1">
+      <h3><span class="num">7</span> Ejecución en la app</h3>
+      <p>La app ejecuta la acción real a través de sus canales (<code>Timer</code>, <code>Agenda</code>, <code>Volume</code>, <code>Light</code>, <code>TV</code>) y la guarda/programa en sus stores y receivers (<code>AlarmManager</code>).</p>
+    </div>
+    <p class="flowline">↓</p>
+
+    <!-- 8 -->
+    <div class="step s2">
+      <h3><span class="num">8</span> Respuesta</h3>
+      <p>Andrómeda <strong>habla por TTS</strong> y ocurre lo que pediste: suena el temporizador, se enciende la luz, queda guardado el recordatorio…</p>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <strong>Principio de seguridad:</strong> el modelo <strong>nunca ejecuta</strong>. La casa valida cada acción (prueba de origen, tiempo futuro, nonce de un solo uso) y, para recordatorios y alarmas, <strong>confirma antes de guardar</strong>.
+    <br><br>
+    <span class="k" style="background:var(--blue)"></span>Entrada
+    <span class="k" style="background:var(--teal)"></span>App
+    <span class="k" style="background:var(--indigo)"></span>Backend
+    <span class="k" style="background:var(--cloud)"></span>DeepSeek (nube)
+    <span class="k" style="background:var(--green)"></span>Respuesta
+    <span class="k" style="background:var(--amber)"></span>Luces/volumen/TV
+    <span class="k" style="background:var(--purple)"></span>Web / avisos
+    <span class="k" style="background:var(--red)"></span>Autodestrucción
+  </div>
+
+</div>
+</body>
+</html>
