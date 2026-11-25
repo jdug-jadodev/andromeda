@@ -117,7 +117,9 @@ def _dispatch(name, text, model, arguments=None):
                 model.anchor_wall, lifecycle=model.alarm_lifecycle,
                 series=getattr(model, 'series_supported', False), lenient=True)
             if proposal['ok']:
-                model.pending_subject = proposal['value'].get('text', '')
+                # El tema ya quedó en reminder_ready → pending_confirm. No debe
+                # filtrarse a un turno posterior (p. ej. «lista mis recordatorios»).
+                model.pending_subject = ''
                 return dict(proposal['value'], kind='reminder_ready', event_kind=kind, natural=True)
             # DeepSeek llamó con datos incompletos: se re-pregunta lo que falta en
             # lugar de soltar el fallo rígido de la prueba de origen.
