@@ -35,8 +35,12 @@ final class AgendaPermit {
     static AgendaPermit trusted(String id, AgendaEntry.Kind kind, String text, long due, long delay,
             long before, long wall, long boot, long now, long nowWall, boolean lifecycle, int weekday, int minute) {
         if (!AgendaEntry.validId(id) || before <= now || before - now > 4100 || boot <= 0 || boot > now + 100
-                || now - boot > 26500 || Math.abs((nowWall - wall) - (now - boot)) > 1500 || due <= nowWall + 1000)
+                || now - boot > 26500 || Math.abs((nowWall - wall) - (now - boot)) > 1500 || due <= nowWall + 1000) {
+            android.util.Log.e("AndromedaNatural", "trusted rejected: before=" + before + " now=" + now
+                + " boot=" + boot + " wall=" + wall + " nowWall=" + nowWall + " due=" + due
+                + " validId=" + AgendaEntry.validId(id));
             throw new IllegalArgumentException("Invalid agenda clock/grant");
+        }
         if (text == null || text.isEmpty()) throw new IllegalArgumentException("Agenda payload missing");
         AgendaRequestGuard.Value value = lifecycle
             ? new AgendaRequestGuard.Value(kind, text, due, delay, weekday, minute)

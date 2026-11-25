@@ -848,7 +848,13 @@ public class VoiceService extends Service {
     void executeAgenda(JSONObject event) throws Exception {
         if (!running || !assistantTools || agendaChannel == null) throw new IOException("Agenda not enabled");
         AgendaActionChannel channel = agendaChannel;
-        AgendaPermit permit = channel.execution(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
+        AgendaPermit permit;
+        try {
+            permit = channel.execution(event, SystemClock.elapsedRealtime(), System.currentTimeMillis());
+        } catch (Exception failure) {
+            android.util.Log.e("AndromedaNatural", "execution failed: " + failure + " event=" + event);
+            throw failure;
+        }
         if (permit == null) return;
         timerExecutor.execute(() -> {
             if (!running || channel != agendaChannel) return;
