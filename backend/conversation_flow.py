@@ -11,7 +11,10 @@ class ConversationFlow:
     QUESTION = '¿Necesitas algo más?'
     FAREWELL = 'Está bien, aquí estaré cuando me necesites.'
     CLOSE = {'cierra la conversacion', 'cierra esta conversacion', 'cierra el chat',
-             'termina la conversacion', 'gracias', 'muchas gracias', 'gracias andromeda'}
+             'termina la conversacion', 'gracias', 'muchas gracias', 'gracias andromeda',
+             'eso era todo', 'eso es todo', 'ya con eso', 'eso era todo gracias',
+             'eso es todo gracias', 'no necesito nada mas', 'no necesito nada',
+             'era todo', 'solo era eso', 'es todo', 'ya esta', 'con eso basta'}
     OFFERS = {'necesitas algo mas', 'necesitas alguna cosa mas',
               'te puedo ayudar en algo mas', 'puedo ayudarte en algo mas'}
 
