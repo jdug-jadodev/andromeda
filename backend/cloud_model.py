@@ -84,8 +84,10 @@ def natural_system():
             'recuerdo?"). Cuando ya tengas todo, llama de nuevo con text y when_text completos y, si hace '
             'falta, date y time. Si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), '
             'conserva el tema que ya te dijo y ponlo en `text`; nunca llames con `text` vacío. '
-            'Cuando el humano diga "eso era todo", "ya con eso", "no necesito nada más" u otra frase de cierre '
-            'similar, llama a close_chat para terminar; no insistas en recordatorios ni preguntes nada más. '
+            'Cuando el humano diga "eso era todo", "ya con eso", "no necesito nada más", "vale", "ok", '
+            '"gracias", "vale gracias" u otra frase de cierre similar (sobre todo como acuse de una acción '
+            'terminada), llama a close_chat y pon tu despedida breve y natural en `message` (por ejemplo '
+            '"Vale, que te rinda el día"); no insistas en recordatorios ni preguntes nada más. '
             'Si en la misma frase pide además otra cosa (por ejemplo "eso era todo, pero enciende las luces"), '
             'atiende esa otra cosa (con su herramienta) en vez de close_chat; no trates "eso era todo" como '
             'cierre cuando va seguido de otra petición. '
@@ -110,8 +112,8 @@ def enabled():
 
 CLOSE_TOOL = tool('close_chat',
     'El humano terminó y no pide nada más (ej. «eso era todo», «no necesito nada más», «solo eso», '
-    '«nada más», «ya con eso»). Cierra la conversación con una despedida breve. No la uses si en la '
-    'misma frase pide otra acción. Sin argumentos.')
+    '«nada más», «ya con eso», «vale», «ok», «gracias»). Cierra la conversación con una despedida breve '
+    'y natural que pones en `message`. No la uses si en la misma frase pide otra acción.', 'message')
 
 
 def _tools():

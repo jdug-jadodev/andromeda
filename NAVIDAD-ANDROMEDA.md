@@ -50,9 +50,3 @@ adb shell settings put global andromeda_huila 1   # encender
 ```
 
 Con `1`: la escena (llega una chiva con los cinco viajeros, salen camuflados disparando al aire, los viajeros se bajan corriendo, se van todos y la chiva vacía explota) sale sola a las 10:00, 12:00, 17:00 y 20:00, y también al preguntar "¿cuántos días faltan para el viaje?". Ella dice los días después de la explosión. Después del 11 de diciembre se apaga sola. Prototipo: `artifacts/andromeda-huila-preview.html`.
-
-Además, en los horarios programados el aviso del **viaje al Huila** también se muestra en la **TV LG** si está encendida: Andrómeda abre el navegador de la TV a la **animación completa** (la chiva, los camuflados, la explosión — la misma de `andromeda-huila-preview.html`, servida por el teléfono en `/huila`) y, cuando acaba (~16 s), vuelve a la entrada/app que estabas viendo. Si la TV está apagada, no la enciende.
-
-La TV tiene dos interfaces y Andrómeda prueba ambas: por **cable** (`192.168.1.10`, MAC `F8:01:B4:11:D6:32`) y por **Wi-Fi** (`192.168.1.9`, MAC `8C:83:94:0D:F9:B4`); el Wake-on-LAN manda el paquete a las dos MAC. La animación se sirve desde `android-voice/huila.html` (variante autoplay, sin sonido: el teléfono ya da el sonido).
-
-La TV tiene dos interfaces y Andrómeda prueba ambas: por **cable** (`192.168.1.10`, MAC `F8:01:B4:11:D6:32`) y por **Wi-Fi** (`192.168.1.9`, MAC `8C:83:94:0D:F9:B4`); el Wake-on-LAN manda el paquete a las dos MAC. El toast requiere el permiso `WRITE_NOTIFICATION_TOAST` en el manifiesto (re-emparejar la TV si se añade).

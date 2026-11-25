@@ -330,9 +330,12 @@ def route_cloud_first(text, model, history=None):
     arguments = raw.get('arguments') if isinstance(raw.get('arguments'), dict) else None
     if name == 'close_chat':
         # DeepSeek decidió que el humano terminó (no una petición compuesta).
-        # La casa responde la despedida y cierra; nada se ejecuta.
+        # La casa responde la despedida (la de DeepSeek si la dio) y cierra.
+        farewell = ''
+        if isinstance(arguments, dict) and isinstance(arguments.get('message'), str):
+            farewell = arguments['message']
         tool_planner.success(latency)
-        return {'kind': 'close', 'reason': 'explicit_close'}, 'ok', 'close_chat'
+        return {'kind': 'close', 'reason': 'explicit_close', 'text': farewell}, 'ok', 'close_chat'
     if name in TOOL_ORDER:
         try:
             result = _dispatch(name, text, model, arguments)

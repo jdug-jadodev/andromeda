@@ -1,8 +1,6 @@
 """Cliente HTTP tipado de la API local de la TV. Sin shell, sin texto libre."""
 import json
 import os
-import re
-import time
 import urllib.request
 import urllib.error
 
@@ -102,55 +100,3 @@ def open_app(name=None, app_id=None, url=None):
 
 def scene(name):
     return _call('POST', '/scene', {'name': name})
-
-
-def toast(message, timeout=5):
-    """Notificación en pantalla (toast LG WebOS)."""
-    return _call('POST', '/toast', {'message': message}, timeout=timeout)
-
-
-def toast_if_on(message, timeout=2):
-    """Muestra un aviso en la TV solo si está encendida. Nunca lanza: devuelve
-    False si la TV está apagada, sin red o el puente no responde, para poder
-    llamarla en un turno programado sin tumbar al residente."""
-    try:
-        if not status(timeout=timeout).get('reachable'):
-            return False
-        toast(message, timeout=timeout)
-        return True
-    except TVError:
-        return False
-
-
-def announce(message, timeout=4):
-    """Muestra el aviso completo (animación) en la TV abriendo el navegador a la
-    página servida por el teléfono, y vuelve a la app/entrada anterior al acabar.
-    Nunca lanza; el sleep total ronda los 20 s, así que debe llamarse en un hilo."""
-    try:
-        st = status(timeout=timeout)
-        if not st.get('reachable'):
-            return False
-        previous = st.get('app')
-        host = st.get('host') or '192.168.1.86'
-        url = 'http://%s:8770/huila' % host
-        # Abre la animación en el navegador de la TV (a pantalla completa).
-        open_app(app_id='browser', url=url)
-        # La animación dura ~16 s; espera a que termine y vuelve a lo anterior.
-        time.sleep(19.0)
-        _restore(previous)
-        time.sleep(1.0)
-        return True
-    except TVError:
-        return False
-
-
-def _restore(app_id):
-    """Devuelve la TV a la entrada/app anterior. Una entrada HDMI se restaura con
-    switchInput (no como app), y el resto de apps se relanza."""
-    m = re.match(r'com\.webos\.app\.hdmi(\d)', app_id or '')
-    if m:
-        switch_input('HDMI_' + m.group(1))
-    elif app_id in ('com.webos.app.livetv', 'com.webos.app.liveplayback'):
-        switch_input('TV')
-    elif app_id:
-        open_app(app_id=app_id)

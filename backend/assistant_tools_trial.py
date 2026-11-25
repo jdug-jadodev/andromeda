@@ -281,10 +281,11 @@ class AssistantToolsTrial:
             return {'text': CANCEL_TEXT, 'offered_more': False, 'close_reason': 'explicit_close'}
         if result['kind'] == 'close':
             # DeepSeek señaló el cierre (frase de despedida sin otra petición).
-            # La casa responde la despedida y cierra; nada se ejecuta.
+            # La casa responde la despedida (la de DeepSeek si la dio) y cierra.
             self.cancel()
             self.inflight = None
-            return {'text': ConversationFlow.FAREWELL, 'offered_more': False, 'close_reason': 'explicit_close'}
+            farewell = result.get('text') if isinstance(result.get('text'), str) and result.get('text').strip() else ConversationFlow.FAREWELL
+            return {'text': farewell, 'offered_more': False, 'close_reason': 'explicit_close'}
         if result['kind'] == 'santa':
             # Android plays the scene (Santa, or the trip to Huila) if its parameter is on; otherwise an ordinary spoken answer.
             return {'text': ConversationFlow.with_offer(result['text']), 'face_scene': result.get('scene', 'SANTA'), 'offered_more': True}
