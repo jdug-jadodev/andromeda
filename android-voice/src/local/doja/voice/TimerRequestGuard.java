@@ -22,7 +22,7 @@ final class TimerRequestGuard {
         alternatives.sort(Comparator.comparingInt(String::length).reversed());
         String words = String.join("|", alternatives);
         DURATION = Pattern.compile("\\b([0-9]+|(?:" + words + ")(?:\\s+(?:" + words + "|y)){0,3})\\s+(segundos?|minutos?|horas?)\\b");
-        REQUEST = Pattern.compile("(?:(?:pon|pone|ponme|crea|inicia|programa)\\s+)?(?:un |una |el |la )?"
+        REQUEST = Pattern.compile("(?:(?:pon|pone|ponen|ponme|poner|pongas|pongan|crea|inicia|programa)\\s+)?(?:un |una |el |la )?"
             + "(?:temporizador|timer|cuenta atras)\\s+(?:(?:de|en)\\s+)?" + DURATION.pattern()
             + "(?:\\s+(?:y\\s+)?" + DURATION.pattern() + ")*(?:\\s+por favor)?(?:\\s+ahora)?");
         DURATION_ONLY = Pattern.compile(DURATION.pattern() + "(?:\\s+(?:y\\s+)?" + DURATION.pattern() + ")*");
