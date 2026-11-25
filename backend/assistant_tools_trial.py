@@ -386,7 +386,9 @@ class AssistantToolsTrial:
                 result.setdefault('minute_of_day', -1)
             value = {key: result[key] for key in ('event_kind', 'text', 'due_ms', 'delay_ms', 'zone')
                      + (('weekday', 'minute_of_day') if self.alarm_lifecycle else ()) if key in result}
-            if not value.get('text') or type(value['due_ms']) is not int or value['due_ms'] <= turn['calendar_anchor_ms'] + 1000:
+            # El tema solo se exige para recordatorios; una alarma puede tener text vacío.
+            if (value.get('event_kind') == 'REMINDER' and not value.get('text')) \
+                    or type(value['due_ms']) is not int or value['due_ms'] <= turn['calendar_anchor_ms'] + 1000:
                 raise ValueError('Natural agenda payload invalid/past')
         elif guided:
             if not self.guided_agenda: raise ValueError('Agenda dialogue not negotiated')

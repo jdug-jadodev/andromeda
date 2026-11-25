@@ -128,6 +128,34 @@ class NaturalReminderTests(unittest.TestCase):
         self.assertEqual(grant['event'].get('weekday'), 0)
         self.assertEqual(grant['event'].get('minute_of_day'), -1)
 
+    def test_natural_alarm_allows_empty_text(self):
+        from assistant_tools_trial import AssistantToolsTrial
+        args = {'text': '', 'when_text': 'todos los días a las nueve de la mañana', 'repeat': 'daily'}
+
+        class Model:
+            anchor_wall = _anchor()
+            alarm_lifecycle = True
+            series_supported = True
+            guided_agenda = True
+            reminder_clarification = True
+            reminder_deletion = False
+            pending_subject = ''
+
+        result = self.router._dispatch('create_alarm', 'pon una alarma todos los dias', Model(), args)
+        self.assertEqual(result['kind'], 'reminder_ready')
+        clock = [100000]
+        trial = AssistantToolsTrial(lambda: clock[0], guided_agenda=True, alarm_lifecycle=True)
+        t1 = {'id': '1' * 32, 'seq': 1, 'text': 'pon una alarma', 'speech_end': 99900,
+              'calendar_anchor_ms': _anchor(), 'calendar_boot_ms': 100000}
+        confirm = trial.model_result(result, t1, 'a' * 32, 'b' * 32, 400000)
+        self.assertIn('alarma', confirm['text'])
+        clock[0] = 103000
+        t2 = {'id': '2' * 32, 'seq': 2, 'text': 'sí', 'speech_end': 102900,
+              'calendar_anchor_ms': _anchor() + 3000, 'calendar_boot_ms': 103000}
+        grant = trial.human(t2, 'a' * 32, 'b' * 32, 400000)
+        self.assertTrue(grant.get('executing'))
+        self.assertEqual(grant['event']['event_kind'], 'ALARM')
+
 
 if __name__ == '__main__':
     unittest.main()
