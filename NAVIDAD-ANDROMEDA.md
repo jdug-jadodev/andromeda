@@ -39,3 +39,14 @@ Con `1`:
 Con `0` no se muestra nada de eso. Si con la Navidad apagada preguntan cuántos días faltan, Andrómeda responde solo con la voz.
 
 Código: `android-voice/src/local/doja/voice/ChristmasMode.java` (clave `andromeda_navidad`).
+
+## Viaje al Huila (cuenta regresiva al 11 de diciembre)
+
+Interruptor propio, aparte del de Navidad:
+
+```
+adb shell settings put global andromeda_huila 0   # apagar
+adb shell settings put global andromeda_huila 1   # encender
+```
+
+Con `1`: la escena (cinco viajeros, camuflados disparando al cielo, los viajeros huyen, llega el carro y explota) sale sola a las 10:00, 12:00, 17:00 y 20:00, y también al preguntar "¿cuántos días faltan para el viaje?". Ella dice los días después de la explosión. Después del 11 de diciembre se apaga sola. Prototipo: `artifacts/andromeda-huila-preview.html`.

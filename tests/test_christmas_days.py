@@ -132,3 +132,28 @@ class HuilaNotice(unittest.TestCase):
         after = events[events.index(said) + 1:]
         self.assertEqual([e['state'] for e in after if e['type'] == 'state'], ['wake'])
         model.start.assert_not_called()
+
+
+class HuilaQuestion(unittest.TestCase):
+    """'¿Cuántos días faltan para el viaje?' by voice: the Huila scene, then the usual offer."""
+    def test_recognises_the_trip_question(self):
+        from huila_trip import answer as huila
+        for phrase in ('cuántos días faltan para el viaje', 'cuánto falta para el viaje al Huila',
+                       'cuándo nos vamos para el Huila', 'cuántos días quedan para nuestro viaje'):
+            self.assertEqual(huila(phrase, date(2026, 11, 24)),
+                             {'kind': 'santa', 'scene': 'HUILA', 'text': 'Faltan 17 días para el viaje al Huila.'}, phrase)
+
+    def test_leaves_other_questions_alone(self):
+        from huila_trip import answer as huila
+        for phrase in ('cuánto cuesta ir al Huila', 'qué clima hace en el Huila', 'recuérdame el viaje al Huila',
+                       'cuántas horas hay al Huila', 'cuántos días faltan para navidad', 'hola'):
+            self.assertIsNone(huila(phrase, date(2026, 11, 24)), phrase)
+        self.assertIsNone(huila('cuánto falta para el viaje', date(2026, 12, 12)), 'after the trip')
+
+    def test_turn_carries_the_huila_scene_and_the_offer(self):
+        from assistant_tools_trial import AssistantToolsTrial
+        trial = AssistantToolsTrial(lambda: 1000)
+        reply = trial.model_result({'kind': 'santa', 'scene': 'HUILA', 'text': 'Faltan 17 días para el viaje al Huila.'},
+                                   {'id': 'a' * 32, 'seq': 1, 'speech_end': 1000, 'deadline_ms': 61000, 'text': 'x'}, 'b' * 32, 'c' * 32, 61000)
+        self.assertEqual(reply['face_scene'], 'HUILA')
+        self.assertTrue(reply['offered_more'])

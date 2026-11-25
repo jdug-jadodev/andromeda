@@ -12,16 +12,17 @@ import android.util.Log;
 import java.io.IOException;
 
 /**
- * The scene's sound (engine, honk, bursts, explosion), baked from the prototype into one file whose time is the
- * scene's time. It drops while she says the count, then comes back for the bursts. Playback only.
+ * The scene's sound (footsteps, bursts into the air, engine, honk, explosion), baked from the prototype into one
+ * file whose time is the scene's time. It drops when she speaks, after the explosion. Playback only.
  */
 final class HuilaSound {
     static final String ASSET = "huila-viaje.wav";
-    static final long DUCK_AT_MS = 2400, RESTORE_AT_MS = 5100;
+    /** Drops just before she speaks (FaceReaction.HUILA) and stays down to the end. */
+    static final long DUCK_AT_MS = 10800;
     static final float DUCKED = .35f;
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable duck = () -> volume(DUCKED), restore = () -> volume(1f);
+    private final Runnable duck = () -> volume(DUCKED);
     private MediaPlayer player;
 
     HuilaSound(Context context) { this.context = context.getApplicationContext(); }
@@ -38,7 +39,7 @@ final class HuilaSound {
             next.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
             next.setOnCompletionListener(done -> { if (player == done) stop(); });
             next.prepare(); next.start();
-            handler.postDelayed(duck, DUCK_AT_MS); handler.postDelayed(restore, RESTORE_AT_MS);
+            handler.postDelayed(duck, DUCK_AT_MS);
         } catch (IOException | RuntimeException unavailable) {
             Log.w("AndromedaHuila", "sound unavailable " + unavailable.getClass().getSimpleName());
             stop();   // the scene still plays without it
@@ -51,7 +52,7 @@ final class HuilaSound {
     }
 
     void stop() {
-        handler.removeCallbacks(duck); handler.removeCallbacks(restore);
+        handler.removeCallbacks(duck);
         if (player != null) { player.release(); player = null; }
     }
 

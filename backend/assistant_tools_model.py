@@ -19,6 +19,7 @@ from reminder_read import current_read
 from local_arithmetic import answer as arithmetic_answer
 from local_knowledge import answer as knowledge_answer
 from christmas_days import answer as christmas_answer
+from huila_trip import answer as huila_answer
 from tv_intents import parse_volume, parse_input, parse_scene, parse_audio, parse_app
 
 
@@ -254,9 +255,9 @@ class AssistantToolsModel(ConversationModel):
         self.work_deadline = self.turn_deadline(speech_end, session_end)
         if self.basic_assistant:
             # Before the date and arithmetic answers: "qué día es navidad" is not a date question.
-            christmas = christmas_answer(text)
+            christmas = christmas_answer(text) or huila_answer(text)
             local = christmas['text'] if christmas else arithmetic_answer(text)
-            validation = 'local_christmas' if christmas else 'local_arithmetic'
+            validation = ('local_huila' if christmas.get('scene') == 'HUILA' else 'local_christmas') if christmas else 'local_arithmetic'
             if local is None:
                 local = knowledge_answer(text)
                 validation = 'local_knowledge'
