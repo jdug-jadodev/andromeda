@@ -1554,6 +1554,11 @@ def serve(key_path, inference_key, detector, limit, cert, tls_key, source, resou
                             if isinstance(error,ValueError):
                                 try: record_protocol_technical(inference_key,protocol_technical(error))
                                 except (OSError,ValueError): pass
+                                try:
+                                    import traceback as _tb
+                                    with open('/tmp/voice_protocol_error.log','a',encoding='utf-8') as _f:
+                                        _f.write(f'{time.time():.0f}|{error!r}\n{_tb.format_exc()}\n')
+                                except Exception: pass
                                 if resident.monitor.reason == 'running':
                                     resident.monitor.reason = 'voice_protocol_error'
                                 resident.shutdown(); return
