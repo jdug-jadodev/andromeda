@@ -84,6 +84,11 @@ def natural_system():
             'recuerdo?"). Cuando ya tengas todo, llama de nuevo con text y when_text completos y, si hace '
             'falta, date y time. Si el humano responde solo la hora (p. ej. "a las cinco de la tarde"), '
             'conserva el tema que ya te dijo y ponlo en `text`; nunca llames con `text` vacío. '
+            'Cuando el humano diga "eso era todo", "ya con eso", "no necesito nada más" u otra frase de cierre '
+            'similar, interpreta que terminó y responde con una despedida breve y natural; no insistas en '
+            'recordatorios ni preguntes nada más. Si en la misma frase pide además otra cosa (por ejemplo '
+            '"eso era todo, pero enciende las luces"), atiende esa otra cosa en vez de despedirte; no trates '
+            '"eso era todo" como cierre cuando va seguido de otra petición. '
             'La casa confirmará antes de guardar; no digas que ya está guardado hasta que ella lo confirme.')
 
 
