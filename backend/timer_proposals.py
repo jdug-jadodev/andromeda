@@ -33,7 +33,7 @@ def direct_timer_prefix(text):
     plain = re.sub(r'^por favor\s+', '', plain)
     # Conectores que el ASR antepone: "con un temporizador", "o un temporizador".
     plain = re.sub(r'^(?:(?:o|con|y|tambien|ahora|por|de)\s+)+', '', plain)
-    return re.match(r'^(?:(?:pon|pone|ponen|ponme|poner|pongas|pongan|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
+    return re.match(r'^(?:(?:pon\w*|crea\w*|inicia\w*|programa\w*)\s+)?(?:un |una |el |la )?'
                     r'(?:temporizador|timer|cuenta atras)\b', plain) is not None
 
 
@@ -52,13 +52,13 @@ def literal_duration(text):
     duration = DURATION.pattern
     has_timer_word = bool(re.search(r'\b(?:temporizador|timer|cuenta atras)\b', plain))
     if has_timer_word:
-        if not re.match(r'^(?:(?:pon|pone|ponen|ponme|poner|pongas|pongan|crea|inicia|programa)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
+        if not re.match(r'^(?:(?:pon\w*|crea\w*|inicia\w*|programa\w*)\s+|(?:un |una )?(?:temporizador|timer|cuenta atras)\b)', plain):
             raise TimerValidationError('invalid_request')
         found = list(DURATION.finditer(plain))
         if not found: raise TimerValidationError('missing_duration')
         # Match the entire structure, not a bag of harmless words: two separate
         # commands or "one hour, in two minutes" must never become a summed timer.
-        if not re.fullmatch(r'(?:(?:pon|pone|ponen|ponme|poner|pongas|pongan|crea|inicia|programa)\s+)?(?:un |una |el |la )?'
+        if not re.fullmatch(r'(?:(?:pon\w*|crea\w*|inicia\w*|programa\w*)\s+)?(?:un |una |el |la )?'
                             r'(?:temporizador|timer|cuenta atras)\s+(?:(?:de|en)\s+)?' + duration +
                             r'(?:\s+(?:y\s+)?' + duration + r')*(?:\s+por favor)?(?:\s+ahora)?', plain):
             raise TimerValidationError('invalid_request')
