@@ -374,7 +374,8 @@ public class VoiceService extends Service {
             return START_NOT_STICKY;
         }
         if ("PUSH".equals(action)) { if (running) control("activate"); else stopSelf(); return START_NOT_STICKY; }
-        if (ChristmasNotice.ACTION.equals(action)) { if (running) christmasNotice(SystemClock.elapsedRealtime() + ChristmasNotice.RETRY_FOR_MS); else stopSelf(); return START_NOT_STICKY; }
+        if (ChristmasNotice.ACTION.equals(action)) { if (running) scheduledNotice("christmas_notice", SystemClock.elapsedRealtime() + ChristmasNotice.RETRY_FOR_MS); else stopSelf(); return START_NOT_STICKY; }
+        if (HuilaNotice.ACTION.equals(action)) { if (running) scheduledNotice("huila_notice", SystemClock.elapsedRealtime() + ChristmasNotice.RETRY_FOR_MS); else stopSelf(); return START_NOT_STICKY; }
         if (running) return START_NOT_STICKY;
         if (AgendaDeliveryService.active) { lastError = "Termina primero el aviso de agenda"; stopSelf(); return START_NOT_STICKY; }
         if (CaptureProbeService.active) { lastError = "Termina primero el diagnóstico de captura"; stopSelf(); return START_NOT_STICKY; }
@@ -446,14 +447,15 @@ public class VoiceService extends Service {
         new Thread(decoderCheck ? this::checkPublicDecoder : conversationOnly ? this::captureConversation : this::capture, "doja-pcm").start();
         return START_NOT_STICKY;
     }
-    /** Waits, up to the given time, until she is idle on the clock, then asks the backend for Santa's notice. */
-    private void christmasNotice(long until) {
-        if (!running || !continuousVoice || !ChristmasMode.enabled(this)) return;
+    /** Waits, up to the given time, until she is idle on the clock, then asks the backend for a scheduled notice. */
+    private void scheduledNotice(String notice, long until) {
+        boolean wanted = "huila_notice".equals(notice) ? HuilaMode.enabled(this) : ChristmasMode.enabled(this);
+        if (!running || !continuousVoice || !wanted) return;
         if (speaking || messagePlaying || dialogueListening || audioYielded || awaitingContext || cancelling || conversationTurn.hasActiveTurn()) {
-            if (SystemClock.elapsedRealtime() < until) main.postDelayed(() -> christmasNotice(until), 15000);
+            if (SystemClock.elapsedRealtime() < until) main.postDelayed(() -> scheduledNotice(notice, until), 15000);
             return;
         }
-        control("christmas_notice");
+        control(notice);
     }
     /** Reopens the continuous wake service after the local cancellation phrase. */
     static Intent restartIntent(Context context) {
@@ -1416,7 +1418,8 @@ public class VoiceService extends Service {
         noteReaction(scene);
         noteReaction(FaceReactionPolicy.forAssistant(message));
         // Without the Christmas scene her answer is an ordinary one and must not wait for it.
-        final long sceneDelay = scene == FaceReaction.SANTA && !ChristmasMode.playsSanta(this) ? 0 : scene.speechDelayMs();
+        final long sceneDelay = scene == FaceReaction.SANTA && !ChristmasMode.playsSanta(this)
+            || scene == FaceReaction.HUILA && !HuilaMode.plays(this) ? 0 : scene.speechDelayMs();
         // A phone order does not wait for the house scene: the phone needs the
         // voice now, and the house answer is silent anyway. Keeping the delay
         // made the phone wait 5.5 s and return no audio for Christmas.

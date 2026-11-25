@@ -52,6 +52,8 @@ python -c "import zipfile; z=zipfile.ZipFile(r'$output\unsigned.apk','a'); z.wri
 if ($LASTEXITCODE -ne 0) { throw 'Fixed public PCM packaging failed' }
 python -c "import zipfile; z=zipfile.ZipFile(r'$output\unsigned.apk','a'); z.write(r'$root\assets\navidad-bolsa.mp3','assets/navidad-bolsa.mp3'); z.close()"
 if ($LASTEXITCODE -ne 0) { throw 'Christmas jingle packaging failed' }
+python -c "import zipfile; z=zipfile.ZipFile(r'$output\unsigned.apk','a'); z.write(r'$root\assets\huila-viaje.wav','assets/huila-viaje.wav'); z.close()"
+if ($LASTEXITCODE -ne 0) { throw 'Huila sound packaging failed' }
 foreach ($dependency in $speechLock.dependencies) {
     $native = Join-Path $shared "speech-deps\$($dependency.name)\jni\$($speechLock.abi)\$($dependency.native)"
     $entry = "lib/$($speechLock.abi)/$($dependency.native)"

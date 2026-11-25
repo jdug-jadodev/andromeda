@@ -17,6 +17,7 @@ public class BootReceiver extends BroadcastReceiver {
             LightScheduleScheduler.schedule(context);
             RestModeScheduler.schedule(context);
             ChristmasNotice.schedule(context);
+            HuilaNotice.schedule(context);
             PendingResult pending = goAsync();
             Context app = context.getApplicationContext();
             new Thread(() -> {

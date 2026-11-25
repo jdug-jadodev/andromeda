@@ -40,6 +40,7 @@
         <receiver android:name=".LightScheduleReceiver" android:exported="false" />
         <receiver android:name=".RestModeReceiver" android:exported="false" />
         <receiver android:name=".ChristmasNotice" android:exported="false" />
+        <receiver android:name=".HuilaNotice" android:exported="false" />
         <receiver android:name=".AgendaReceiver" android:exported="false" />
         <receiver android:name=".TimerReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="false">

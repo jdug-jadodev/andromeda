@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
     private ChristmasClockDrawable clockDecor;
     private boolean christmas, faceHeld, santaPlaying, santaSpoke;
     ChristmasJingle jingle;
+    HuilaView huila; HuilaSound huilaSound;
+    private boolean huilaPlaying, huilaSpoke;
     private final Runnable christmasFaceEntry = () -> showHeldFace(true);
     // The time grows with the free height when the button below it hides. In navidad its size is capped so that
     // any time fits between the wreath and the reindeer; a single line ignores the width when it auto-sizes.
@@ -115,6 +117,7 @@ public class MainActivity extends Activity {
                 if (face != null && VoiceService.faceReaction != FaceReaction.NONE) {
                     FaceReaction reaction = VoiceService.faceReaction;
                     if (reaction == FaceReaction.SANTA) playSanta(ChristmasSanta.daysUntilChristmas(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
+                    else if (reaction == FaceReaction.HUILA) playHuila(HuilaMode.daysUntilTrip(java.time.LocalDate.now(java.time.ZoneId.of("America/Bogota"))));
                     else {
                         if (reaction.scene()) faceHoldUntil = sceneEnd = SystemClock.uptimeMillis() + reaction.durationMs();
                         face.setReaction(reaction, reaction.durationMs());
@@ -183,6 +186,7 @@ public class MainActivity extends Activity {
         try { RestModeScheduler.schedule(this); }
         catch (Exception ignored) { /* The boot receiver and the next UI save repair alarms. */ }
         try { ChristmasNotice.schedule(this); } catch (Exception ignored) { /* The boot receiver repairs it. */ }
+        try { HuilaNotice.schedule(this); } catch (Exception ignored) { /* The boot receiver repairs it. */ }
         // Re-register due agenda alarms on every app start, not only on boot, so a
         // force-stop/relaunch never leaves saved reminders stuck in SCHEDULED.
         new Thread(() -> { try { AgendaStore.restore(this); } catch (Exception ignored) { } }, "agenda-restore").start();
@@ -1123,6 +1127,32 @@ public class MainActivity extends Activity {
         backdrop.stopSanta(); faceHoldUntil = 0; endSanta();
     }
     boolean isSantaPlaying() { return santaPlaying; }
+    /** The trip-to-Huila countdown plays over everything while her face steps aside, then she leaves as usual. */
+    void playHuila(int days) {
+        if (days < 0 || !HuilaMode.enabled(this) || !showingFace || !resumed || reducedMotion() || huilaPlaying) return;
+        if (santaPlaying) stopSanta();
+        if (faceHeld) showHeldFace(false);
+        huilaPlaying = true; huilaSpoke = false;
+        faceHoldUntil = SystemClock.uptimeMillis() + HuilaMode.DURATION_MS;
+        faceLayer.setVisibility(View.INVISIBLE); border.setProcessing(false);
+        if (huila == null) { huila = new HuilaView(this); root.addView(huila, root.indexOfChild(faceLayer) + 1, new FrameLayout.LayoutParams(-1, -1)); }
+        huila.play(days, this::endHuila);
+        if (huilaSound == null) huilaSound = new HuilaSound(this);
+        huilaSound.play();
+    }
+    private void endHuila() {
+        huilaPlaying = false;
+        if (!showingFace) return;
+        faceLayer.setVisibility(View.VISIBLE);
+        if (!handler.hasCallbacks(releaseHeldFace)) face.enterRunning();
+    }
+    /** Someone is talking to her again: she comes back now. */
+    private void stopHuila() {
+        if (huilaSound != null) huilaSound.stop();
+        if (huila != null) huila.stop();
+        faceHoldUntil = 0; endHuila();
+    }
+    boolean isHuilaPlaying() { return huilaPlaying; }
     /** The backdrop had its moment, or something more important arrived: she comes out now. */
     private void showHeldFace(boolean enter) {
         handler.removeCallbacks(christmasFaceEntry); faceHeld = false;
@@ -1135,6 +1165,10 @@ public class MainActivity extends Activity {
         if (santaPlaying) {
             if (value == FaceState.SPEAKING) santaSpoke = true;
             else if (value == FaceState.THINKING && santaSpoke) stopSanta();
+        }
+        if (huilaPlaying) {
+            if (value == FaceState.SPEAKING) huilaSpoke = true;
+            else if (value == FaceState.THINKING && huilaSpoke) stopHuila();
         }
         if (!nextFace && showingFace && now < faceHoldUntil) {
             heldText = text;
@@ -1185,7 +1219,7 @@ public class MainActivity extends Activity {
                 faceLayer.setVisibility(View.GONE); idleLayer.setVisibility(View.VISIBLE); idleLayer.setAlpha(1);
             }
         }
-        border.setProcessing(value == FaceState.THINKING && !santaPlaying);
+        border.setProcessing(value == FaceState.THINKING && !santaPlaying && !huilaPlaying);
     }
     void showReaction(FaceReaction reaction) {
         if (face == null || reaction == null || reaction == FaceReaction.NONE) return;
@@ -1575,6 +1609,7 @@ public class MainActivity extends Activity {
         closeOptions(); stopPreview(); refreshServiceState(); face.setForeground(false); border.setForeground(false);
         if (christmas) { backdrop.setForeground(false); clockDecor.setRunning(false); }
         if (jingle != null) jingle.stop();
+        if (huilaPlaying) stopHuila();
         handler.removeCallbacks(tick); handler.removeCallbacks(weatherRefresh); unregisterReceiver(receiver); super.onPause();
     }
     public void onStop() {

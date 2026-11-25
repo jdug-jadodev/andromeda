@@ -5,7 +5,6 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import java.time.Instant;
 
 /**
  * The trip countdown at 10:00, 12:00, 17:00 and 20:00 (Bogotá) up to the day of the trip, then never again.
@@ -17,8 +16,7 @@ public final class HuilaNotice extends BroadcastReceiver {
 
     /** The next notice, or 0 once it would fall after the trip. */
     static long nextDue(long nowMs) {
-        long due = ChristmasNoticeTimes.next(nowMs, HOURS);
-        return Instant.ofEpochMilli(due).atZone(ChristmasNoticeTimes.BOGOTA).toLocalDate().isAfter(HuilaMode.TRIP) ? 0 : due;
+        return ChristmasNoticeTimes.nextUntil(nowMs, HOURS, HuilaMode.TRIP);
     }
 
     static void schedule(Context context) {

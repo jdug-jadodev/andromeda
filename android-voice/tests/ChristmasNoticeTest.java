@@ -17,6 +17,15 @@ public final class ChristmasNoticeTest {
         expect(!ChristmasNoticeTimes.onTime(due, due + 11 * 60_000L), "too late is skipped");
         expect(!ChristmasNoticeTimes.onTime(due, due - 5 * 60_000L), "too early is skipped");
         expect(!ChristmasNoticeTimes.onTime(0, due), "an alarm without a time is skipped");
+        int[] huila = {10, 12, 17, 20};
+        java.time.LocalDate trip = java.time.LocalDate.of(2026, 12, 11);
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-11-24T09:00"), huila, trip) == at("2026-11-24T10:00"), "huila 10:00");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-11-24T10:00"), huila, trip) == at("2026-11-24T12:00"), "huila 12:00");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-11-24T16:59"), huila, trip) == at("2026-11-24T17:00"), "huila 17:00");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-11-24T17:00"), huila, trip) == at("2026-11-24T20:00"), "huila 20:00");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-11-24T20:00"), huila, trip) == at("2026-11-25T10:00"), "huila next morning");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-12-11T17:30"), huila, trip) == at("2026-12-11T20:00"), "the trip day still counts");
+        expect(ChristmasNoticeTimes.nextUntil(at("2026-12-11T20:00"), huila, trip) == 0, "nothing after the trip");
         System.out.println("Christmas notice tests passed.");
     }
 

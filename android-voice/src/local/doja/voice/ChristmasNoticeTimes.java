@@ -13,13 +13,22 @@ final class ChristmasNoticeTimes {
     private ChristmasNoticeTimes() {}
 
     /** The first notice strictly after {@code nowMs}. */
-    static long next(long nowMs) {
+    static long next(long nowMs) { return next(nowMs, HOURS); }
+
+    /** The first of these daily hours (ascending) strictly after {@code nowMs}. */
+    static long next(long nowMs, int[] hours) {
         ZonedDateTime now = java.time.Instant.ofEpochMilli(nowMs).atZone(BOGOTA);
-        for (int day = 0; day < 2; day++) for (int hour : HOURS) {
+        for (int day = 0; day < 2; day++) for (int hour : hours) {
             ZonedDateTime at = now.toLocalDate().plusDays(day).atTime(hour, 0).atZone(BOGOTA);
             if (at.isAfter(now)) return at.toInstant().toEpochMilli();
         }
         throw new IllegalStateException("No notice within two days");
+    }
+
+    /** Like next(), but 0 once the next one would fall after {@code lastDay}. */
+    static long nextUntil(long nowMs, int[] hours, java.time.LocalDate lastDay) {
+        long due = next(nowMs, hours);
+        return java.time.Instant.ofEpochMilli(due).atZone(BOGOTA).toLocalDate().isAfter(lastDay) ? 0 : due;
     }
 
     static boolean onTime(long dueMs, long nowMs) {
