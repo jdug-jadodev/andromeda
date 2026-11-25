@@ -10,7 +10,7 @@ public enum FaceReaction {
     SANTA(true, 0, 5500),
     // The trip-to-Huila countdown. She speaks once the explosion has passed, never over the bursts, so a
     // follow-up "¿algo más?" also listens in quiet. See HuilaArt for its length (16 s).
-    HUILA(true, 0, 11000);
+    HUILA(true, 0, 10400);
 
     private final boolean scene;
     private final long durationMs, speechDelayMs;

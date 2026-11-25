@@ -4,29 +4,28 @@ import android.graphics.*;
 
 /**
  * The trip-to-Huila scene, a line-by-line port of artifacts/andromeda-huila-preview.html (approved there first).
- * Five chubby travellers walk in, men in camouflage pop up and fire into the sky, the travellers run off, then the
- * empty car arrives and blows up. Drawn in a 2280x1080 design space scaled to the view; times match the prototype
- * and the sound baked into assets/huila-viaje.wav. Cartoon only: nobody is hit, the suitcases land intact.
+ * A chiva arrives with five chubby travellers, men in camouflage pop up and fire into the sky, the five jump out and
+ * run, everybody leaves, then the empty chiva blows up. Drawn in a 2280x1080 design space scaled to the view; times
+ * match the prototype and the sound baked into assets/huila-viaje.wav. Cartoon only: nobody is hit.
  */
 final class HuilaArt {
     static final float W = 2280, H = 1080;
     // timeline (seconds)
-    static final float WALK_IN = .2f, WALK_STOP = 2.8f, COUNT = 3.0f, SCARE = 3.95f, RUN = 4.4f,
-        CAR_IN = 6.6f, CAR_STOP = 8.4f, BOOM = 9.2f, DUCK = 12.0f, END = 16f;
+    static final float BUS_IN = .2f, BUS_STOP = 2.6f, COUNT = 3.0f, SCARE = 3.95f, DOOR = 4.25f, EXIT = 4.4f, EXIT_GAP = .3f,
+        DUCK = 6.9f, BOOM = 8.6f, END = 16f;
     static final float GAP = .085f;
     // layout
-    static final float HORIZON = 560, VERGE = 690, ROAD_TOP = 800, ROAD_BOT = 955, CAR_X = 900, CAR_Y = 888;
-    static final int CAR_COLOR = c("#e2553b");
+    static final float HORIZON = 560, VERGE = 690, ROAD_TOP = 800, ROAD_BOT = 955, BUS_X = 700, BUS_Y = 888, DOOR_X = 215;
 
     // men in camouflage: x, y (feet), scale, rise time, rifle tilt to the sky
     static final float[][] SOLDIERS = {
-        {1690, 700, .6f, 3.62f, 1.2f}, {1960, 705, .6f, 3.42f, .92f}, {2200, 718, .64f, 3.7f, 1.15f},
-        {1560, 742, .74f, 3.5f, 1.02f}, {1810, 800, 1, 3.4f, .95f}, {2090, 800, 1, 3.55f, 1.12f}};
+        {1690, 700, .6f, 3.52f, 1.2f}, {1960, 705, .6f, 3.32f, .92f}, {2200, 718, .64f, 3.6f, 1.15f},
+        {1560, 742, .74f, 3.4f, 1.02f}, {1810, 800, 1, 3.3f, .95f}, {2090, 800, 1, 3.45f, 1.12f}};
     static final float[] SHOT_T; static final int[] SHOT_WHO, SHOT_K;
     static {
         int n = SOLDIERS.length * 15; float[] t = new float[n]; int[] who = new int[n], k = new int[n]; int m = 0;
         for (int s = 0; s < SOLDIERS.length; s++) for (int b = 0; b < 3; b++) for (int i = 0; i < 5; i++) {
-            t[m] = SOLDIERS[s][3] + .45f + b * .95f + (s % 3) * .11f + i * GAP; who[m] = s; k[m] = s * 100 + b * 10 + i; m++;
+            t[m] = SOLDIERS[s][3] + .45f + b * .8f + (s % 3) * .1f + i * GAP; who[m] = s; k[m] = s * 100 + b * 10 + i; m++;
         }
         Integer[] order = new Integer[n]; for (int i = 0; i < n; i++) order[i] = i;
         java.util.Arrays.sort(order, (a, b) -> Float.compare(t[a], t[b]));
@@ -34,22 +33,23 @@ final class HuilaArt {
         for (int i = 0; i < n; i++) { SHOT_T[i] = t[order[i]]; SHOT_WHO[i] = who[order[i]]; SHOT_K[i] = k[order[i]]; }
     }
 
-    // the five travellers
+    // the five travellers; seat k = window k, 0 at the back. The one nearest the door gets out first.
     private static final class Person {
-        final float stop, y; final int shirt, pants, skin, hair, dress, cap; final boolean female, mustache, bald, ponytail, vueltiao; final String number;
-        Person(float stop, float y, int shirt, int pants, int skin, int hair, int dress, int cap, boolean female, boolean mustache,
+        final float y; final int shirt, pants, skin, hair, dress, cap; final boolean female, mustache, bald, ponytail, vueltiao; final String number;
+        Person(float y, int shirt, int pants, int skin, int hair, int dress, int cap, boolean female, boolean mustache,
                boolean bald, boolean ponytail, boolean vueltiao, String number) {
-            this.stop = stop; this.y = y; this.shirt = shirt; this.pants = pants; this.skin = skin; this.hair = hair; this.dress = dress; this.cap = cap;
+            this.y = y; this.shirt = shirt; this.pants = pants; this.skin = skin; this.hair = hair; this.dress = dress; this.cap = cap;
             this.female = female; this.mustache = mustache; this.bald = bald; this.ponytail = ponytail; this.vueltiao = vueltiao; this.number = number;
         }
     }
     private static final Person[] PEOPLE = {
-        new Person(470, 912, c("#e74c3c"), c("#34495e"), c("#e0ac7e"), 0, 0, c("#2e6fd1"), false, true, false, false, false, null),
-        new Person(610, 896, 0, 0, c("#c68863"), c("#1d1410"), c("#ff7eb6"), 0, true, false, false, false, false, null),
-        new Person(750, 914, c("#f9d71c"), c("#1f4fa3"), c("#d39a6a"), 0, 0, 0, false, false, true, false, false, "10"),
-        new Person(890, 898, 0, 0, c("#e8b590"), c("#6b3a1f"), c("#8e44ad"), 0, true, false, false, true, false, null),
-        new Person(1030, 912, c("#3498db"), c("#c8b48a"), c("#b97a50"), 0, 0, 0, false, false, false, false, true, null),
+        new Person(912, c("#e74c3c"), c("#34495e"), c("#e0ac7e"), 0, 0, c("#2e6fd1"), false, true, false, false, false, null),
+        new Person(896, 0, 0, c("#c68863"), c("#1d1410"), c("#ff7eb6"), 0, true, false, false, false, false, null),
+        new Person(918, c("#f9d71c"), c("#1f4fa3"), c("#d39a6a"), 0, 0, 0, false, false, true, false, false, "10"),
+        new Person(900, 0, 0, c("#e8b590"), c("#6b3a1f"), c("#8e44ad"), 0, true, false, false, true, false, null),
+        new Person(914, c("#3498db"), c("#c8b48a"), c("#b97a50"), 0, 0, 0, false, false, false, false, true, null),
     };
+    static float exitAt(int i) { return EXIT + (PEOPLE.length - 1 - i) * EXIT_GAP; }
 
     private Canvas g;
     private final Path path = new Path(), oval = new Path(), blob = new Path();
@@ -181,9 +181,9 @@ final class HuilaArt {
         begin(); rr(dir < 0 ? ax : ax - 40, ay - 10, 70, 30, 15); fill(body);
     }
 
-    // ---------- suitcases and car ----------
-    static final float[][] ROOF_BAGS = {{-60, -232, 130, 70}, {62, -226, 96, 58}, {-40, -298, 86, 56}};
-    static final int[] BAG_COLORS = {c("#2f7fd1"), c("#f2b632"), c("#9b59b6")};
+    // ---------- suitcases and the chiva ----------
+    static final float[][] ROOF_BAGS = {{-230, -357, 120, 66}, {-95, -352, 96, 56}, {30, -360, 130, 72}, {160, -350, 90, 52}};
+    static final int[] BAG_COLORS = {c("#2f7fd1"), c("#f2b632"), c("#9b59b6"), c("#27ae60")};
     private void suitcase(float cx, float cy, float w, float h, int col, float ang) {
         g.save(); g.translate(cx, cy); g.rotate(deg(ang));
         begin(); path.moveTo(-w * .18f, -h / 2); path.lineTo(-w * .18f, -h / 2 - 16); path.lineTo(w * .18f, -h / 2 - 16); path.lineTo(w * .18f, -h / 2);
@@ -193,34 +193,56 @@ final class HuilaArt {
         circle(w * .05f, h * .05f, Math.min(w, h) * .12f, Color.argb(204, 255, 255, 255));
         g.restore();
     }
-    private void car(float x, float y, float roll, boolean burnt, boolean bags) {
+    static float windowX(int k) { return -300 + k * 95; }   // left edge of window k, 80 wide
+    private void chiva(float x, float y, boolean burnt, boolean doorOpen, float t) {
         g.save(); g.translate(x, y);
-        ellipse(0, 44, 250, 16, 0, Color.argb(71, 0, 0, 0));
-        if (burnt) { g.translate(135, 0); g.rotate(deg(-0.06)); g.translate(-135, 14); }
-        int body = burnt ? c("#2c2826") : CAR_COLOR;
+        ellipse(10, 46, 370, 18, 0, Color.argb(71, 0, 0, 0));
+        if (burnt) { g.translate(190, 0); g.rotate(deg(0.04)); g.translate(-190, 8); }   // rear sinks: its wheel flew off
+        int dark = c("#2c2826");
+        rect(-310, -322, 560, 9, burnt ? c("#1c1a19") : c("#3b2a1e"));
+        for (int px = -300; px <= 240; px += 90) rect(px, -322, 7, 20, burnt ? c("#1c1a19") : c("#3b2a1e"));
+        if (!burnt) for (int i = 0; i < 4; i++) { float[] b = ROOF_BAGS[i]; suitcase(b[0], b[1], b[2], b[3], BAG_COLORS[i], 0); }
+        begin(); rr(-330, -305, 600, 200, 16); fill(burnt ? dark : c("#2e86de"));
         if (!burnt) {
-            rect(-125, -196, 210, 9, c("#2b2b2b")); rect(-110, -196, 8, 14, c("#2b2b2b")); rect(60, -196, 8, 14, c("#2b2b2b"));
-            if (bags) for (int i = 0; i < 3; i++) { float[] b = ROOF_BAGS[i]; suitcase(b[0], b[1], b[2], b[3], BAG_COLORS[i], 0); }
+            rect(-330, -305, 600, 14, c("#e74c3c"));
+            for (int zx = -326; zx < 266; zx += 24) { begin(); path.moveTo(zx, -291); path.lineTo(zx + 12, -281); path.lineTo(zx + 24, -291); path.close(); fill(c("#f9d71c")); }
         }
-        begin(); path.moveTo(-178, -92); path.lineTo(-140, -172); path.quadTo(-130, -186, -110, -186);
-        path.lineTo(70, -186); path.quadTo(92, -186, 106, -170); path.lineTo(170, -92); path.close(); fill(body);
-        begin(); rr(-228, -100, 456, 92, 28); fill(body);
-        int glass = burnt ? c("#141212") : c("#a6d8ee");
-        poly(-156, -100, -126, -164, -36, -164, -36, -100); fill(glass);
-        poly(-20, -100, -20, -164, 66, -164, 84, -158, 134, -100); fill(glass);
-        if (!burnt) { poly(-110, -160, -90, -160, -120, -104, -140, -104); fill(Color.argb(140, 255, 255, 255)); }
-        seg(-28, -100, -28, -18, Color.argb(64, 0, 0, 0), 3);
-        ellipse(214, -66, 14, 10, 0, burnt ? c("#222222") : c("#ffe9a8"));
-        rect(-230, -82, 14, 22, burnt ? c("#222222") : c("#b3202a"));
-        begin(); rr(-232, -32, 464, 20, 9); fill(c("#2a2a2a"));
-        if (!burnt) rect(-200, -90, 380, 8, Color.argb(46, 255, 255, 255));
-        float[] wheels = burnt ? new float[]{135} : new float[]{-135, 135};
+        for (int k = 0; k < 5; k++) {   // windows, with the travellers inside until they get out
+            float wx = windowX(k);
+            begin(); rr(wx, -272, 80, 104, 10); fill(burnt ? c("#111111") : c("#3b2a1e"));
+            Person p = PEOPLE[k];
+            if (!burnt && t < exitAt(k)) {
+                g.save(); begin(); rr(wx, -272, 80, 104, 10); g.clipPath(path);
+                ellipse(wx + 40, -170, 40, 30, 0, p.female ? p.dress : p.shirt);
+                float hop = t > SCARE ? Math.abs((float) Math.sin(t * 22 + k)) * 6 : Math.abs((float) Math.sin(t * 9 + k)) * 2;
+                g.save(); g.translate(wx + 36, -42 - hop); g.scale(.78f, .78f); head(p, t >= SCARE + k * .04f, t); g.restore();
+                g.restore();
+            }
+        }
+        float open = doorOpen ? clamp((t - DOOR) / .2f) : 0;
+        begin(); rr(DOOR_X - 35, -272, 72, 250, 8); fill(c("#1e140d"));
+        if (!burnt) { begin(); rr(DOOR_X - 35 - open * 62, -272, 72, 250, 8); fill(c("#f39c12"));
+            begin(); rr(DOOR_X - 25 - open * 62, -260, 52, 80, 6); fill(c("#a6d8ee")); }
+        begin(); rr(-330, -118, 610, 100, 16); fill(burnt ? dark : c("#f2c230"));
+        if (!burnt) {
+            rect(-330, -104, 540, 12, c("#e74c3c")); rect(-330, -86, 540, 10, c("#1f6fd1")); rect(-330, -70, 540, 8, c("#27ae60"));
+            text.setShadowLayer(0, 0, 0, 0); text.setStyle(Paint.Style.FILL); text.setTypeface(heavy); text.setTextSize(30); text.setColor(c("#7a2a12"));
+            g.drawText("NEIVA · GARZÓN", 0, -32, text);
+        }
+        begin(); rr(262, -175, 100, 160, 22); fill(burnt ? dark : c("#d63a2f"));
+        begin(); rr(256, -302, 78, 140, 14); fill(burnt ? dark : c("#d63a2f"));   // driver's cab
+        begin(); rr(266, -290, 58, 100, 10); fill(burnt ? c("#111111") : c("#a6d8ee"));
+        rect(255, -30, 115, 16, c("#2a2a2a")); rect(-338, -30, 30, 16, c("#2a2a2a"));
+        circle(350, -95, 14, burnt ? c("#222222") : c("#ffe9a8"));
+        if (!burnt) for (int gy = -150; gy < -110; gy += 10) seg(300, gy, 355, gy, Color.argb(89, 0, 0, 0), 4);
+        float roll = (x + 700) / 56;
+        float[] wheels = burnt ? new float[]{190} : new float[]{-210, 190};
         for (float wx : wheels) {
-            circle(wx, 0, 50, c("#151515")); circle(wx, 0, 24, burnt ? c("#3a3533") : c("#c9ccd1"));
+            circle(wx, 0, 56, c("#151515")); circle(wx, 0, 27, burnt ? c("#3a3533") : c("#c9ccd1"));
             for (int k = 0; k < 5; k++) { double a = roll + k * 1.2566;
-                seg(wx, 0, wx + (float) Math.cos(a) * 24, (float) Math.sin(a) * 24, burnt ? c("#222222") : c("#7b7f86"), 5); }
+                seg(wx, 0, wx + (float) Math.cos(a) * 27, (float) Math.sin(a) * 27, burnt ? c("#222222") : c("#7b7f86"), 5); }
         }
-        if (burnt) ellipse(-150, 20, 40, 12, 0, c("#151515"));
+        if (burnt) ellipse(-230, 22, 44, 12, 0, c("#151515"));
         g.restore();
     }
 
@@ -283,46 +305,8 @@ final class HuilaArt {
     }
 
     // ---------- the travellers ----------
-    private static float personX(Person p, int i, float t) {
-        if (t < RUN + i * .07f) return p.stop - 1500 * (1 - clamp((t - WALK_IN) / (WALK_STOP - WALK_IN)));
-        float r = t - (RUN + i * .07f);
-        return p.stop - 260 * r * r - 700 * r;   // speeds up as they flee
-    }
-    private void person(Person p, int i, float t) {
-        float x = personX(p, i, t); if (x < -200 || x > W + 200) return;
-        boolean running = t >= RUN + i * .07f, walking = !running && t < WALK_STOP && t > WALK_IN, scared = t >= SCARE + i * .04f;
-        float w = running ? t * 19 + i : t * 9 + i * 1.3f;
-        float js = t - SCARE - i * .04f, jump = js >= 0 && js < .35f ? (float) Math.sin(js / .35f * Math.PI) * 55 : 0;
-        float bob = walking ? Math.abs((float) Math.sin(w)) * 6 : running ? Math.abs((float) Math.sin(w)) * 14 : 0;
-        g.save(); g.translate(x, p.y - jump - bob);
-        ellipse(0, jump + bob, 62, 12, 0, Color.argb(56, 0, 0, 0));
-        g.scale(running ? -1 : 1, 1); if (running) g.rotate(deg(.14));
-        float swing = walking ? (float) Math.sin(w) * .5f : running ? (float) Math.sin(w) * .95f : 0;
-        float[][] legs = {{-17, swing}, {17, -swing}};
-        for (float[] l : legs) {
-            g.save(); g.translate(l[0], -58); g.rotate(deg(l[1]));
-            begin(); rr(-13, 0, 26, 56, 12); fill(p.female ? p.skin : p.pants);
-            ellipse(8, 56, 20, 10, 0, c("#2b2b2b")); g.restore();
-        }
-        if (p.female) {
-            begin(); path.moveTo(-58, -40); path.quadTo(-70, -120, -40, -150); path.lineTo(40, -150); path.quadTo(72, -120, 60, -40); path.close(); fill(p.dress);
-            ellipse(0, -110, 54, 52, 0, p.dress);
-        } else {
-            ellipse(0, -108, 56, 60, 0, p.shirt);
-            if (p.number != null) {   // the shirt number never reads backwards
-                g.save(); if (running) g.scale(-1, 1);
-                text.setShadowLayer(0, 0, 0, 0); text.setStyle(Paint.Style.FILL); text.setTypeface(heavy); text.setTextSize(34); text.setColor(c("#1f4fa3"));
-                g.drawText(p.number, running ? -4 : 4, -98, text); g.restore();
-            }
-        }
-        ellipse(-16, -128, 18, 26, -.4f, Color.argb(46, 255, 255, 255));
-        float[][] arms = {{-46, 1}, {46, -1}};
-        for (float[] a0 : arms) {
-            float a = scared ? (a0[1] > 0 ? -2.6f : 2.6f) + (float) Math.sin(t * 30 + a0[0]) * .15f : a0[1] * swing * .8f;
-            g.save(); g.translate(a0[0], -140); g.rotate(deg(a));
-            begin(); rr(-11, 0, 22, 52, 11); fill(p.female ? p.skin : p.shirt);
-            circle(0, 54, 11, p.skin); g.restore();
-        }
+    /** Head and face only: used in the windows and on the running bodies. Origin: feet of a standing person. */
+    private void head(Person p, boolean scared, float t) {
         if (p.female) { ellipse(-6, -178, 36, 44, 0, p.hair); if (p.ponytail) ellipse(-36, -190, 14, 26, .5f, p.hair); }
         circle(4, -188, 31, p.skin);
         circle(24, -178, 8, Color.argb(89, 230, 90, 90));
@@ -342,28 +326,68 @@ final class HuilaArt {
             begin(); arc(24, -178, 9, .2, Math.PI - .2); stroke(c("#5a1f1f"), 3);
         }
         if (p.mustache) ellipse(26, -176, 13, 5, 0, c("#2b1d14"));
-        if (running) ellipse(-22, -214 - (t * 120 % 30), 5, 8, 0, Color.argb(230, 120, 190, 255));
-        g.restore();
-        float ex = t - (SCARE + i * .04f);
-        if (ex > 0 && ex < .9f) {   // "!" when the shooting starts
-            float s = ex < .15f ? easeBack(ex / .15f) : 1;
-            g.save(); g.translate(x + 10, p.y - 290 - jump); g.scale(s, s);
-            circle(0, 0, 30, Color.WHITE);
-            line.setColor(c("#e63b1f")); line.setStrokeWidth(4); g.drawCircle(0, 0, 30, line);
-            text.setShadowLayer(0, 0, 0, 0); text.setStyle(Paint.Style.FILL); text.setTypeface(heavy); text.setTextSize(44); text.setColor(c("#e63b1f"));
-            centered("!", 0, 2); g.restore();
+    }
+    /** Out of the door and running to the left, faster and faster. */
+    private static float personX(int i, float t) { float r = t - exitAt(i); return BUS_X + DOOR_X - 260 * r * r - 750 * r; }
+    private void person(Person p, int i, float t) {
+        float r = t - exitAt(i); if (r < 0) return;
+        float x = personX(i, t); if (x < -200) return;
+        float w = t * 19 + i, drop = r < .18f ? (1 - r / .18f) * 60 : 0, bob = Math.abs((float) Math.sin(w)) * 14;
+        g.save(); g.translate(x, p.y - drop - bob);
+        ellipse(0, drop + bob, 62, 12, 0, Color.argb(56, 0, 0, 0));
+        g.scale(-1, 1); g.rotate(deg(.14));
+        float swing = (float) Math.sin(w) * .95f;
+        float[][] legs = {{-17, swing}, {17, -swing}};
+        for (float[] l : legs) {
+            g.save(); g.translate(l[0], -58); g.rotate(deg(l[1]));
+            begin(); rr(-13, 0, 26, 56, 12); fill(p.female ? p.skin : p.pants);
+            ellipse(8, 56, 20, 10, 0, c("#2b2b2b")); g.restore();
         }
-        if (running) for (int k = 0; k < 4; k++) {   // dust behind their feet
+        if (p.female) {
+            begin(); path.moveTo(-58, -40); path.quadTo(-70, -120, -40, -150); path.lineTo(40, -150); path.quadTo(72, -120, 60, -40); path.close(); fill(p.dress);
+            ellipse(0, -110, 54, 52, 0, p.dress);
+        } else {
+            ellipse(0, -108, 56, 60, 0, p.shirt);
+            if (p.number != null) {   // the shirt number never reads backwards
+                g.save(); g.scale(-1, 1);
+                text.setShadowLayer(0, 0, 0, 0); text.setStyle(Paint.Style.FILL); text.setTypeface(heavy); text.setTextSize(34); text.setColor(c("#1f4fa3"));
+                g.drawText(p.number, -4, -98, text); g.restore();
+            }
+        }
+        ellipse(-16, -128, 18, 26, -.4f, Color.argb(46, 255, 255, 255));
+        float[][] arms = {{-46, 1}, {46, -1}};
+        for (float[] a0 : arms) {   // arms up in panic
+            float a = (a0[1] > 0 ? -2.6f : 2.6f) + (float) Math.sin(t * 30 + a0[0]) * .15f;
+            g.save(); g.translate(a0[0], -140); g.rotate(deg(a));
+            begin(); rr(-11, 0, 22, 52, 11); fill(p.female ? p.skin : p.shirt);
+            circle(0, 54, 11, p.skin); g.restore();
+        }
+        head(p, true, t);
+        ellipse(-22, -214 - (t * 120 % 30), 5, 8, 0, Color.argb(230, 120, 190, 255));
+        g.restore();
+        for (int k = 0; k < 4; k++) {   // dust behind their feet
             float age = (t * 3 + k * .25f) % 1;
             circle(x + 40 + age * 70, p.y - 6 - age * 20, 10 + age * 18, argb(.5f * (1 - age), 200, 190, 160));
         }
     }
+    /** "!" over each window when the shooting starts. */
+    private void scareMarks(float t, float busX) {
+        for (int k = 0; k < PEOPLE.length; k++) {
+            float ex = t - (SCARE + k * .04f); if (ex <= 0 || ex >= .9f || t >= exitAt(k)) continue;
+            float s = ex < .15f ? easeBack(ex / .15f) : 1;
+            g.save(); g.translate(busX + windowX(k) + 40, BUS_Y - 292); g.scale(s, s);
+            circle(0, 0, 28, Color.WHITE);
+            line.setColor(c("#e63b1f")); line.setStrokeWidth(4); g.drawCircle(0, 0, 28, line);
+            text.setShadowLayer(0, 0, 0, 0); text.setStyle(Paint.Style.FILL); text.setTypeface(heavy); text.setTextSize(42); text.setColor(c("#e63b1f"));
+            centered("!", 0, 2); g.restore();
+        }
+    }
 
     // ---------- explosion pieces ----------
-    private static final int DEBRIS = 46;
+    private static final int DEBRIS = 60;
     private static final float[][] DEB = new float[DEBRIS][6];
-    private static final int[] DEB_COLORS = {CAR_COLOR, c("#262626"), c("#8a8a8a"), c("#a6d8ee"), c("#f2b632")};
-    private static final float[][] FLY = {{-420, -1150, -6, 905}, {330, -1350, 7, 930}, {120, -1700, -9, 880}};
+    private static final int[] DEB_COLORS = {c("#2e86de"), c("#262626"), c("#f2c230"), c("#a6d8ee"), c("#e74c3c")};
+    private static final float[][] FLY = {{-460, -1100, -6, 905}, {-150, -1500, 8, 930}, {260, -1350, 7, 880}, {520, -1050, -9, 915}};
     static {
         for (int i = 0; i < DEBRIS; i++) {
             double a = -Math.PI / 2 + (rnd(i, 1) - .5) * 2.6, sp = 700 + rnd(i, 2) * 1100;
@@ -383,15 +407,15 @@ final class HuilaArt {
         if (background == null || sx != scaleX || sy != scaleY) prepare(width, height, sx, sy);
         float amp = 0, db = t - BOOM;
         for (float s : SHOT_T) if (t >= s && t < s + .05f) { amp = 3; break; }
-        if (db >= 0 && db < 2) amp = Math.max(amp, 36 * (float) Math.exp(-db * 2.4));
+        if (db >= 0 && db < 2.2f) amp = Math.max(amp, 42 * (float) Math.exp(-db * 2.3));
         int fr = (int) Math.floor(t * 60); float ox = (rnd(fr, 1) - .5f) * 2 * amp, oy = (rnd(fr, 2) - .5f) * 2 * amp;
         if (amp > 0) g.drawBitmap(background, 0, 0, null);   // fills the edge the shake uncovers
         g.save(); g.translate(ox * sx, oy * sy); g.drawBitmap(background, 0, 0, null); g.scale(sx, sy);
 
-        // the men in camouflage, back row first, each behind his own bush
+        // the men in camouflage, back row first, each behind his own bush; gone before the blast
         for (int who = 0; who < SOLDIERS.length; who++) {
             float[] sd = SOLDIERS[who]; float s = sd[2];
-            float up = clamp((t - sd[3]) / .45f), down = clamp((t - DUCK - who * .06f) / .5f), rise = easeOut(up) * (1 - easeOut(down));
+            float up = clamp((t - sd[3]) / .45f), down = clamp((t - DUCK - who * .08f) / .5f), rise = easeOut(up) * (1 - easeOut(down));
             float kick = 0;
             for (int i = 0; i < SHOT_T.length; i++) if (SHOT_WHO[i] == who && t >= SHOT_T[i] && t < SHOT_T[i] + .05f) { kick = 6 * s; break; }
             if (rise > 0) {
@@ -426,14 +450,14 @@ final class HuilaArt {
             if (cy < sd[1] + 30) { g.save(); g.translate(cx, cy); g.rotate(deg(a * 25)); rect(-5 * s, -3 * s, 10 * s, 6 * s, c("#d9a72e")); g.restore(); }
         }
 
-        // the travellers walk in, jump, and run away
-        for (int i = 0; i < PEOPLE.length; i++) person(PEOPLE[i], i, t);
+        // the chiva arrives with the five inside
+        float pIn = clamp((t - BUS_IN) / (BUS_STOP - BUS_IN)), busX = lerp(-760, BUS_X, easeOut(pIn)), ds = t - BUS_STOP;
+        float bob = t < BUS_STOP ? (float) Math.sin(t * 26) * 2 : 6 * (float) (Math.exp(-ds * 5) * Math.sin(ds * 22));
+        if (t < BOOM) { chiva(busX, BUS_Y + bob, false, t >= DOOR, t); scareMarks(t, busX); }
+        else if (db > .12f) chiva(BUS_X, BUS_Y, true, false, t);
 
-        // the car arrives once they have gone
-        float pIn = clamp((t - CAR_IN) / (CAR_STOP - CAR_IN)), carX = lerp(-420, CAR_X, easeOut(pIn)), ds = t - CAR_STOP;
-        float bob = t < CAR_STOP ? (float) Math.sin(t * 30) * 1.5f : 5 * (float) (Math.exp(-ds * 6) * Math.sin(ds * 26));
-        if (t >= CAR_IN && t < BOOM) car(carX, CAR_Y + bob, (carX + 420) / 50, false, true);
-        else if (db > .12f) car(CAR_X, CAR_Y, 0, true, false);
+        // they jump out and run
+        for (int i = 0; i < PEOPLE.length; i++) person(PEOPLE[i], i, t);
 
         if (db >= 0) explosion(t, db);
         drawCount(t, days);
@@ -443,18 +467,18 @@ final class HuilaArt {
     }
 
     private void explosion(float t, float db) {
-        float cx = CAR_X, cy = CAR_Y - 70;
-        for (int i = 0; i < 90; i++) {
-            float born = .12f + i * .055f, age = db - born; if (age < 0 || age > 4.5f) continue;
-            float spread = i < 25 ? 220 : 70, px = cx + (rnd(i, 31) - .5f) * spread + age * 45, py = cy - 20 - age * (120 + rnd(i, 32) * 80);
-            float r = 50 + age * 55 + (i < 25 ? 60 : 0), al = .55f * (1 - age / 4.5f);
-            circle(px, py, r, i < 25 ? argb(al, 52, 48, 46) : argb(al, 96, 90, 86));
+        float cx = BUS_X, cy = BUS_Y - 120;
+        for (int i = 0; i < 110; i++) {
+            float born = .12f + i * .05f, age = db - born; if (age < 0 || age > 4.5f) continue;
+            float spread = i < 30 ? 380 : 120, px = cx + (rnd(i, 31) - .5f) * spread + age * 45, py = cy - 20 - age * (120 + rnd(i, 32) * 80);
+            float r = 60 + age * 60 + (i < 30 ? 70 : 0), al = .55f * (1 - age / 4.5f);
+            circle(px, py, r, i < 30 ? argb(al, 52, 48, 46) : argb(al, 96, 90, 86));
         }
-        if (db > .3f) for (int k = 0; k < 6; k++) {
-            float fx = cx - 120 + k * 45, fh = 50 + 35 * (float) Math.abs(Math.sin(t * 9 + k * 1.7)) + 20 * rnd(Math.floor(t * 14), k);
-            begin(); path.moveTo(fx - 22, cy - 60); path.quadTo(fx - 18, cy - 70 - fh * .6f, fx, cy - 70 - fh);
-            path.quadTo(fx + 18, cy - 70 - fh * .6f, fx + 22, cy - 60); path.close();
-            fill(new LinearGradient(0, cy - 90 - fh, 0, cy - 60, new int[]{Color.argb(0, 255, 220, 90), Color.argb(242, 255, 170, 40), Color.argb(242, 230, 70, 20)},
+        if (db > .3f) for (int k = 0; k < 10; k++) {
+            float fx = cx - 270 + k * 58, fh = 55 + 40 * (float) Math.abs(Math.sin(t * 9 + k * 1.7)) + 22 * rnd(Math.floor(t * 14), k), base = cy - 90;
+            begin(); path.moveTo(fx - 26, base); path.quadTo(fx - 20, base - 10 - fh * .6f, fx, base - 10 - fh);
+            path.quadTo(fx + 20, base - 10 - fh * .6f, fx + 26, base); path.close();
+            fill(new LinearGradient(0, base - 30 - fh, 0, base, new int[]{Color.argb(0, 255, 220, 90), Color.argb(242, 255, 170, 40), Color.argb(242, 230, 70, 20)},
                 new float[]{0, .4f, 1}, Shader.TileMode.CLAMP));
         }
         for (float[] d : DEB) {
@@ -462,33 +486,33 @@ final class HuilaArt {
             g.save(); g.translate(p[0], p[1]); g.rotate(deg(d[3] * Math.min(db, p[3])));
             rect(-d[2] / 2, -d[2] / 3, d[2], d[2] * .66f, DEB_COLORS[(int) d[4]]); g.restore();
         }
-        { float[] w = ballistic(cx - 135, CAR_Y, -520, -950, db, CAR_Y + 10); float wx = w[0], wy = w[1];
-          if (w[2] == 1) { float r = db - w[3]; wx = w[0] - 520 * (1 - (float) Math.exp(-r * 1.2)) / 1.2f; }
+        { float[] w = ballistic(cx - 210, BUS_Y, -560, -900, db, BUS_Y + 10); float wx = w[0], wy = w[1];
+          if (w[2] == 1) { float r = db - w[3]; wx = w[0] - 560 * (1 - (float) Math.exp(-r * 1.2)) / 1.2f; }
           g.save(); g.translate(wx, wy); g.rotate(deg(-db * 9));
-          circle(0, 0, 50, c("#151515")); circle(0, 0, 24, c("#9a9da3")); rect(-4, -24, 8, 48, c("#151515")); g.restore(); }
-        for (int i = 0; i < 3; i++) {
-            float[] b = ROOF_BAGS[i], f = FLY[i], p = ballistic(cx + b[0], CAR_Y + b[1], f[0], f[1], db, f[3]);
+          circle(0, 0, 56, c("#151515")); circle(0, 0, 27, c("#9a9da3")); rect(-4, -27, 8, 54, c("#151515")); g.restore(); }
+        for (int i = 0; i < 4; i++) {
+            float[] b = ROOF_BAGS[i], f = FLY[i], p = ballistic(cx + b[0], BUS_Y + b[1], f[0], f[1], db, f[3]);
             float ang = f[2] * Math.min(db, p[3]); boolean landed = p[2] == 1;
             if (landed) ang = (float) (Math.round(ang / (Math.PI / 2)) * (Math.PI / 2));
             suitcase(p[0], p[1] - (landed ? b[3] / 2 - 20 : 0), b[2], b[3], BAG_COLORS[i], ang);
         }
-        if (db < 1.8f) {
-            float R = 400 * (1 - (float) Math.exp(-db * 5)), al = db < .5f ? 1 : Math.max(0, 1 - (db - .5f) / 1.3f);
-            for (int k = 0; k < 7; k++) {
-                float ox = (rnd(k, 41) - .5f) * R * .9f, oy = (rnd(k, 42) - .5f) * R * .6f - db * 90, r = R * (.45f + rnd(k, 43) * .45f);
+        if (db < 1.9f) {
+            float R = 500 * (1 - (float) Math.exp(-db * 5)), al = db < .5f ? 1 : Math.max(0, 1 - (db - .5f) / 1.4f);
+            for (int k = 0; k < 8; k++) {
+                float ox = (rnd(k, 41) - .5f) * R * 1.1f, oy = (rnd(k, 42) - .5f) * R * .6f - db * 90, r = R * (.45f + rnd(k, 43) * .45f);
                 if (r < 1) continue;
                 fill.setShader(new RadialGradient(cx + ox, cy + oy, r, new int[]{argb(al, 255, 250, 215), argb(al, 255, 190, 60), argb(al * .85f, 225, 70, 25), Color.argb(0, 120, 30, 10)},
                     new float[]{0, .35f, .7f, 1}, Shader.TileMode.CLAMP));
                 fill.setColor(Color.BLACK); g.drawCircle(cx + ox, cy + oy, r, fill); fill.setShader(null);
             }
         }
-        if (db < .5f) { line.setColor(argb(.6f * (1 - db / .5f), 255, 255, 255)); line.setStrokeWidth(26); g.drawCircle(cx, cy, 120 + db * 1700, line); }
+        if (db < .5f) { line.setColor(argb(.6f * (1 - db / .5f), 255, 255, 255)); line.setStrokeWidth(30); g.drawCircle(cx, cy, 140 + db * 1800, line); }
     }
 
     private void boom(float db) {
         float s = db < .33f ? easeBack(clamp(db / .33f)) : 1, al = db > 2.3f ? 1 - (db - 2.3f) / .5f : 1;
         int layer = al < 1 ? g.saveLayerAlpha(null, Math.round(clamp(al) * 255)) : g.save();
-        g.translate(CAR_X - 210, 700); g.rotate(deg(-.12)); g.scale(s, s);
+        g.translate(BUS_X - 260, 700); g.rotate(deg(-.12)); g.scale(s, s);
         star(0, 0, 230, 150, 14, .2f); fill(c("#ffd23f")); stroke(c("#c0392b"), 12);
         text.setShadowLayer(0, 0, 0, 0); text.setTypeface(heavy); text.setTextSize(120);
         text.setStyle(Paint.Style.STROKE); text.setStrokeWidth(14); text.setStrokeJoin(Paint.Join.ROUND); text.setColor(Color.WHITE);

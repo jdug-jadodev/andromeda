@@ -12,13 +12,13 @@ import android.util.Log;
 import java.io.IOException;
 
 /**
- * The scene's sound (footsteps, bursts into the air, engine, honk, explosion), baked from the prototype into one
+ * The scene's sound (diesel, brakes, honk, door, bursts into the air, running feet, explosion), baked from the prototype into one
  * file whose time is the scene's time. It drops when she speaks, after the explosion. Playback only.
  */
 final class HuilaSound {
     static final String ASSET = "huila-viaje.wav";
     /** Drops just before she speaks (FaceReaction.HUILA) and stays down to the end. */
-    static final long DUCK_AT_MS = 10800;
+    static final long DUCK_AT_MS = 10200;
     static final float DUCKED = .35f;
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());

@@ -49,4 +49,4 @@ adb shell settings put global andromeda_huila 0   # apagar
 adb shell settings put global andromeda_huila 1   # encender
 ```
 
-Con `1`: la escena (cinco viajeros, camuflados disparando al cielo, los viajeros huyen, llega el carro y explota) sale sola a las 10:00, 12:00, 17:00 y 20:00, y también al preguntar "¿cuántos días faltan para el viaje?". Ella dice los días después de la explosión. Después del 11 de diciembre se apaga sola. Prototipo: `artifacts/andromeda-huila-preview.html`.
+Con `1`: la escena (llega una chiva con los cinco viajeros, salen camuflados disparando al aire, los viajeros se bajan corriendo, se van todos y la chiva vacía explota) sale sola a las 10:00, 12:00, 17:00 y 20:00, y también al preguntar "¿cuántos días faltan para el viaje?". Ella dice los días después de la explosión. Después del 11 de diciembre se apaga sola. Prototipo: `artifacts/andromeda-huila-preview.html`.
