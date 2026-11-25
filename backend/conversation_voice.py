@@ -762,7 +762,7 @@ def session(conn, detector, model, limit, resource_check, source='microphone', c
 
     def request_context(reason, followup=False):
         nonlocal state, recognizer, timeline, turn, entry, pending_reset, checkpoint_followup
-        if pending_reset is not None: raise ValueError('Continuous context already pending')
+        if pending_reset is not None: return  # Ya hay un reinicio de contexto en curso; no se pide otro (evita ValueError y deja la voz viva).
         if reason != 'turn_checkpoint' and model.purge_cache() is not True: raise ContinuousVoiceFault('voice_cache_clear_failed')
         pending_reset = ContextReset(session_id, context_id, reason, now_ms,
             len(model.memory.pairs) if reason=='turn_checkpoint' else 0, model.memory.last_human if reason=='turn_checkpoint' else 0)
