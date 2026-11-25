@@ -1,6 +1,8 @@
 """Cliente HTTP tipado de la API local de la TV. Sin shell, sin texto libre."""
 import json
 import os
+import re
+import time
 import urllib.request
 import urllib.error
 
@@ -118,3 +120,39 @@ def toast_if_on(message, timeout=2):
         return True
     except TVError:
         return False
+
+
+def announce(message, timeout=4):
+    """Muestra el aviso en la TV pasando primero al inicio y volviendo después a
+    la app/entrada anterior. Sirve para que el aviso se vea aunque la TV esté en
+    una entrada HDMI (donde los toast de webOS no se superponen). Nunca lanza;
+    el sleep total ronda los 9-11 s, así que debe llamarse en un hilo aparte."""
+    try:
+        st = status(timeout=timeout)
+        if not st.get('reachable'):
+            return False
+        previous = st.get('app')
+        switched = bool(previous) and previous != 'com.webos.app.home'
+        if switched:
+            open_app(app_id='com.webos.app.home')
+            time.sleep(2.5)
+        toast(message, timeout=timeout)
+        time.sleep(6.0)
+        if switched:
+            _restore(previous)
+            time.sleep(1.0)
+        return True
+    except TVError:
+        return False
+
+
+def _restore(app_id):
+    """Devuelve la TV a la entrada/app anterior. Una entrada HDMI se restaura con
+    switchInput (no como app), y el resto de apps se relanza."""
+    m = re.match(r'com\.webos\.app\.hdmi(\d)', app_id or '')
+    if m:
+        switch_input('HDMI_' + m.group(1))
+    elif app_id in ('com.webos.app.livetv', 'com.webos.app.liveplayback'):
+        switch_input('TV')
+    elif app_id:
+        open_app(app_id=app_id)

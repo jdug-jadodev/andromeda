@@ -584,17 +584,17 @@ class ConversationModel:
 
 
 def _show_tv_toast(message):
-    """Muestra un aviso en la TV LG (toast) si está encendida, en un hilo daemon
-    para no bloquear la voz ni el TTS. Nunca lanza: la TV es lo último que debe
-    tumbar al residente."""
+    """Muestra el aviso en la TV en un hilo daemon (para no bloquear la voz ni el
+    TTS). Pasa al inicio, muestra el toast y vuelve a la app/entrada anterior.
+    Nunca lanza: la TV es lo último que debe tumbar al residente."""
     def run():
         try:
             import tv_control
-            tv_control.toast_if_on(message)
+            tv_control.announce(message)
         except Exception:
             pass
     try:
-        threading.Thread(target=run, daemon=True, name='tv-toast').start()
+        threading.Thread(target=run, daemon=True, name='tv-announce').start()
     except Exception:
         pass
 

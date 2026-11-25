@@ -45,8 +45,20 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-TV_IP = os.environ.get("TV_IP", "192.168.1.10")
-TV_MAC = os.environ.get("TV_MAC", "F8:01:B4:11:D6:32")
+# La TV tiene dos interfaces de red: por cable (192.168.1.10 / F8:01:B4:11:D6:32)
+# y por Wi-Fi (192.168.1.9 / 8C:83:94:0D:F9:B4). Según cómo esté conectada usa una
+# u otra; probamos ambas (cable primero) para que el control y el WoL funcionen
+# en los dos casos.
+TV_IPS = [
+    os.environ.get("TV_IP", "192.168.1.10"),
+    os.environ.get("TV_IP2", "192.168.1.9"),
+]
+TV_MACS = [
+    os.environ.get("TV_MAC", "F8:01:B4:11:D6:32"),
+    os.environ.get("TV_MAC2", "8C:83:94:0D:F9:B4"),
+]
+TV_IP = TV_IPS[0]
+TV_MAC = TV_MACS[0]
 API_HOST = os.environ.get("TV_API_HOST", "0.0.0.0")
 API_PORT = int(os.environ.get("TV_API_PORT", "8770"))
 TOKEN_FILE = Path(__file__).resolve().parent / "api_token.txt"
@@ -104,23 +116,26 @@ MANIFEST["permissions"] = PERMISSIONS
 # --------------------------------------------------------------------------
 # Wake-on-LAN
 # --------------------------------------------------------------------------
-def wake_on_lan(mac=TV_MAC, broadcast="255.255.255.255", port=9):
-    mac_clean = mac.replace(":", "").replace("-", "").replace(".", "")
-    if len(mac_clean) != 12:
-        raise ValueError("MAC invalida: %s" % mac)
-    payload = b"\xff" * 6 + bytes.fromhex(mac_clean) * 16
-
-    targets = [(broadcast, port), ("192.168.1.255", port), (TV_IP, port)]
+def wake_on_lan(macs=None, broadcast="255.255.255.255", port=9):
+    """Despierta la TV por WoL mandando el magic packet a TODAS las MAC conocidas
+    (cable y Wi-Fi): así acierta sea cual sea la interfaz activa en ese momento."""
+    macs = macs if macs is not None else TV_MACS
     sent = []
-    for host, prt in targets:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                s.sendto(payload, (host, prt))
-            sent.append(host)
-        except OSError:
-            pass
-    return sent
+    for mac in macs:
+        mac_clean = mac.replace(":", "").replace("-", "").replace(".", "")
+        if len(mac_clean) != 12:
+            continue
+        payload = b"\xff" * 6 + bytes.fromhex(mac_clean) * 16
+        hosts = [broadcast, "192.168.1.255"] + [ip for ip in TV_IPS if ip]
+        for host in hosts:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                    s.sendto(payload, (host, port))
+                sent.append(mac)
+            except OSError:
+                pass
+    return sorted(set(sent))
 
 
 # --------------------------------------------------------------------------
@@ -139,13 +154,21 @@ class TV:
             return ""
 
     def connect(self, interactive=False):
-        ws = slopbro.WebSocket.connect(self.ip, slopbro.PORT_TLS, secure=True, timeout=10)
-        client = slopbro.SSAPClient(ws)
-        new_key = client.register(self._key(), MANIFEST, timeout=60 if interactive else 20)
-        if new_key:
-            KEY_FILE.write_text(new_key)
-        self.client = client
-        return client
+        last_error = None
+        for ip in TV_IPS:
+            try:
+                ws = slopbro.WebSocket.connect(ip, slopbro.PORT_TLS, secure=True, timeout=10)
+                client = slopbro.SSAPClient(ws)
+                new_key = client.register(self._key(), MANIFEST, timeout=60 if interactive else 20)
+                if new_key:
+                    KEY_FILE.write_text(new_key)
+                self.ip = ip
+                self.client = client
+                return client
+            except Exception as error:  # noqa: BLE001
+                last_error = error
+                continue
+        raise (last_error if last_error is not None else slopbro.WebSocketError("TV no responde en ninguna IP"))
 
     def request(self, uri, payload=None, timeout=10.0):
         with self.lock:
@@ -169,26 +192,30 @@ tv = TV()
 
 
 def is_reachable(timeout=1.5):
-    try:
-        with socket.create_connection((TV_IP, slopbro.PORT_TLS), timeout=timeout):
-            return True
-    except OSError:
-        return False
+    for ip in TV_IPS:
+        try:
+            with socket.create_connection((ip, slopbro.PORT_TLS), timeout=timeout):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def is_awake(timeout=6.0):
     """True solo si la TV responde de verdad por SSAP (no vale solo el puerto:
-    en standby el stack de red sigue aceptando TCP)."""
-    try:
-        with socket.create_connection((TV_IP, slopbro.PORT_TLS), timeout=timeout):
-            pass
-    except OSError:
-        return False
-    try:
-        tv.request("ssap://com.webos.applicationManager/getForegroundAppInfo", timeout=timeout)
-        return True
-    except Exception:  # noqa: BLE001
-        return False
+    en standby el stack de red sigue aceptando TCP). Prueba ambas IP (cable/Wi-Fi)."""
+    for ip in TV_IPS:
+        try:
+            with socket.create_connection((ip, slopbro.PORT_TLS), timeout=timeout):
+                pass
+        except OSError:
+            continue
+        try:
+            tv.request("ssap://com.webos.applicationManager/getForegroundAppInfo", timeout=timeout)
+            return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
 
 
 def wait_until_awake(timeout_s=45):
@@ -220,6 +247,10 @@ def status():
         fg = tv.request("ssap://com.webos.applicationManager/getForegroundAppInfo", timeout=6)
         info["app"] = (fg.get("payload") or {}).get("appId")
         info["reachable"] = True
+        # La IP por la que de verdad respondió la TV (cable o Wi-Fi).
+        if tv.ip in TV_IPS:
+            info["ip"] = tv.ip
+            info["mac"] = TV_MACS[TV_IPS.index(tv.ip)]
     except Exception:  # noqa: BLE001
         info["power"] = "standby (puerto abierto, SSAP no responde)"
         return info
@@ -678,7 +709,7 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
 
     if cmd == "pair":
-        print("Emparejando con %s..." % TV_IP)
+        print("Emparejando con %s..." % " o ".join(TV_IPS))
         print(">>> ACEPTA EL AVISO EN LA TV (boton 'Si'/'Aceptar') <<<")
         t = TV()
         t.connect(interactive=True)
