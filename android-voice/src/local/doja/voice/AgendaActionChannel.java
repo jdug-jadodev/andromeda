@@ -48,11 +48,20 @@ final class AgendaActionChannel {
         turn = text(event, "turn_id"); human = text(event, "text"); sequence = integer(event, "turn_seq"); speechEnd = integer(event, "speech_end_ms");
         wall = integer(event, "calendar_anchor_ms"); boot = integer(event, "calendar_boot_ms"); accepted = null; receipt = null;
         nonce = eventId = ""; timerAccepted = volumeAccepted = alarmAccepted = lightAccepted = false;
-        if (boot > now + 100 || now - boot > 1500 || Math.abs((nowWall - wall) - (now - boot)) > 1500) throw new IOException("Calendar clock mismatch");
+        if (boot > now + 100 || now - boot > 1500 || Math.abs((nowWall - wall) - (now - boot)) > 1500) {
+            android.util.Log.e("AndromedaNatural", "human clock mismatch: now=" + now + " boot=" + boot
+                + " wall=" + wall + " nowWall=" + nowWall + " text=" + human);
+            throw new IOException("Calendar clock mismatch");
+        }
         if (guided) {
             if (continuous) sessionEnd = ContinuousVoicePolicy.actionEnd(integer(event,"action_window_end_ms"),speechEnd,now);
-            latestHuman = new AgendaDialogue.Human(turn, sequence, human, speechEnd, wall, boot, now,continuous ? 64 : 24);
-            dialogueDecision = dialogue.answer(latestHuman, now);
+            try {
+                latestHuman = new AgendaDialogue.Human(turn, sequence, human, speechEnd, wall, boot, now,continuous ? 64 : 24);
+                dialogueDecision = dialogue.answer(latestHuman, now);
+            } catch (Exception failure) {
+                android.util.Log.e("AndromedaNatural", "human dialogue failed: " + failure + " text=" + human);
+                throw failure;
+            }
         }
     }
     synchronized void timerExecution() throws IOException {
